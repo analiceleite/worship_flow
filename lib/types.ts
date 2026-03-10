@@ -26,6 +26,7 @@ export interface RepertoireItem {
   id: string
   song_id: string
   minister_id: string | null
+  event_name: string | null
   event_date: string
   order_index: number
   created_at: string
