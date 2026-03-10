@@ -125,9 +125,7 @@ export default function EscalaPage() {
 
                 {/* Page heading */}
                 <div className="mb-8">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                        Escala de Louvor
-                    </h1>
+                    <h1 className="text-2xl font-bold text-foreground">Escala de Louvor</h1>
                     <p className="mt-1 text-sm text-muted-foreground">
                         Todos os ministros visualizam sempre o último arquivo enviado pelo admin.
                     </p>
