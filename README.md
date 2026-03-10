@@ -65,6 +65,7 @@ Execute os scripts em ordem no SQL Editor do Supabase:
 3. `scripts/004_update_repertoire_policies.sql`
 4. `scripts/005_allow_admin_songs.sql`
 5. `scripts/006_add_event_name_to_repertoire.sql`
+6. `scripts/007_worship_schedule_upload.sql`
 
 ## Executar o projeto
 

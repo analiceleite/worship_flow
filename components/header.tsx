@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Music, Users, ListMusic, Menu, LogOut } from 'lucide-react'
+import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,12 @@ const navigation = [
     name: 'Repertório',
     href: '/repertorio',
     icon: ListMusic,
+  },
+  {
+    name: 'Escala',
+    description: 'Visualizar escala de ministros de louvor',
+    href: '/escala',
+    icon: FileSpreadsheet,
   },
   {
     name: 'Ministros',
