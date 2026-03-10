@@ -89,7 +89,85 @@ export async function DELETE(
       },
     })
 
-    // Delete auth user (this will cascade delete minister record due to ON DELETE CASCADE)
+    // Explicit cleanup (service role) to guarantee full removal of related data
+    // 1) Find songs owned by minister
+    const { data: ministerSongs, error: songsFetchError } = await supabaseAdmin
+      .from('songs')
+      .select('id')
+      .eq('minister_id', ministerId)
+
+    if (songsFetchError) {
+      console.error('Error fetching minister songs:', songsFetchError)
+      return NextResponse.json(
+        { error: `Erro ao buscar músicas do ministro: ${songsFetchError.message}` },
+        { status: 400 }
+      )
+    }
+
+    const songIds: string[] = []
+    for (const song of (ministerSongs ?? []) as Array<{ id: string }>) {
+      songIds.push(song.id)
+    }
+
+    // 2) Delete repertoire items directly assigned to minister
+    const { error: repertoireByMinisterError } = await supabaseAdmin
+      .from('repertoire')
+      .delete()
+      .eq('minister_id', ministerId)
+
+    if (repertoireByMinisterError) {
+      console.error('Error deleting repertoire by minister:', repertoireByMinisterError)
+      return NextResponse.json(
+        { error: `Erro ao excluir repertório do ministro: ${repertoireByMinisterError.message}` },
+        { status: 400 }
+      )
+    }
+
+    // 3) Delete repertoire items that reference songs owned by minister
+    if (songIds.length > 0) {
+      const { error: repertoireBySongsError } = await supabaseAdmin
+        .from('repertoire')
+        .delete()
+        .in('song_id', songIds)
+
+      if (repertoireBySongsError) {
+        console.error('Error deleting repertoire by songs:', repertoireBySongsError)
+        return NextResponse.json(
+          { error: `Erro ao excluir itens de repertório vinculados às músicas: ${repertoireBySongsError.message}` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // 4) Delete songs owned by minister
+    const { error: deleteSongsError } = await supabaseAdmin
+      .from('songs')
+      .delete()
+      .eq('minister_id', ministerId)
+
+    if (deleteSongsError) {
+      console.error('Error deleting minister songs:', deleteSongsError)
+      return NextResponse.json(
+        { error: `Erro ao excluir músicas do ministro: ${deleteSongsError.message}` },
+        { status: 400 }
+      )
+    }
+
+    // 5) Delete minister profile
+    const { error: deleteMinisterError } = await supabaseAdmin
+      .from('ministers')
+      .delete()
+      .eq('id', ministerId)
+
+    if (deleteMinisterError) {
+      console.error('Error deleting minister:', deleteMinisterError)
+      return NextResponse.json(
+        { error: `Erro ao excluir ministro: ${deleteMinisterError.message}` },
+        { status: 400 }
+      )
+    }
+
+    // 6) Delete auth user if linked
     if (ministerToDelete.user_id) {
       const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(
         ministerToDelete.user_id
@@ -98,28 +176,14 @@ export async function DELETE(
       if (deleteAuthError) {
         console.error('Error deleting auth user:', deleteAuthError)
         return NextResponse.json(
-          { error: `Erro ao excluir usuário: ${deleteAuthError.message}` },
-          { status: 400 }
-        )
-      }
-    } else {
-      // If no user_id, just delete minister record directly
-      const { error: deleteError } = await supabase
-        .from('ministers')
-        .delete()
-        .eq('id', ministerId)
-
-      if (deleteError) {
-        console.error('Error deleting minister:', deleteError)
-        return NextResponse.json(
-          { error: `Erro ao excluir ministro: ${deleteError.message}` },
+          { error: `Ministro e dados relacionados excluídos, mas falhou ao excluir usuário de autenticação: ${deleteAuthError.message}` },
           { status: 400 }
         )
       }
     }
 
     return NextResponse.json({
-      message: 'Ministro excluído com sucesso. Todas as músicas e registros relacionados foram removidos.',
+      message: 'Ministro excluído com sucesso. Todas as músicas e itens de repertório associados foram removidos.',
     })
   } catch (error: any) {
     console.error('Unexpected error:', error)
