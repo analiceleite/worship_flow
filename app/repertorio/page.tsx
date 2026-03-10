@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/header'
 import { DeleteDialog } from '@/components/delete-dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -30,10 +29,11 @@ import {
   Plus,
   ListMusic,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   Music,
   User,
   Trash2,
-  GripVertical,
   Youtube,
   FileText,
 } from 'lucide-react'
@@ -41,13 +41,59 @@ import { Spinner } from '@/components/ui/spinner'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
+type ServiceType = 'thursday' | 'sunday'
+
+function toDateInputValue(date: Date) {
+  return format(date, 'yyyy-MM-dd')
+}
+
+function fromDateInputValue(value: string) {
+  return new Date(`${value}T12:00:00`)
+}
+
+function getNextWeekday(baseDate: Date, weekday: number) {
+  const date = new Date(baseDate)
+  const currentDay = date.getDay()
+  const diff = (weekday - currentDay + 7) % 7
+  date.setDate(date.getDate() + diff)
+  return date
+}
+
+function getNearestServiceDate(baseDate: Date) {
+  const nextThursday = getNextWeekday(baseDate, 4)
+  const nextSunday = getNextWeekday(baseDate, 0)
+  return nextThursday <= nextSunday ? nextThursday : nextSunday
+}
+
+function getServiceTypeFromDate(date: Date): ServiceType {
+  return date.getDay() === 4 ? 'thursday' : 'sunday'
+}
+
+function getServiceDateInWeek(anchorDate: Date, serviceType: ServiceType) {
+  const date = new Date(anchorDate)
+  const day = date.getDay()
+  const diffToMonday = (day + 6) % 7
+  date.setDate(date.getDate() - diffToMonday)
+  const offset = serviceType === 'thursday' ? 3 : 6
+  date.setDate(date.getDate() + offset)
+  return date
+}
+
+function isCultDay(dateValue: string) {
+  const day = fromDateInputValue(dateValue).getDay()
+  return day === 4 || day === 0
+}
+
 export default function RepertorioPage() {
+  const initialServiceDate = getNearestServiceDate(new Date())
+
   const [repertoire, setRepertoire] = useState<RepertoireItem[]>([])
   const [songs, setSongs] = useState<Song[]>([])
   const [ministers, setMinisters] = useState<Minister[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedDate, setSelectedDate] = useState<string>(
-    format(new Date(), 'yyyy-MM-dd')
+  const [selectedDate, setSelectedDate] = useState<string>(toDateInputValue(initialServiceDate))
+  const [selectedService, setSelectedService] = useState<ServiceType>(
+    getServiceTypeFromDate(initialServiceDate)
   )
   const [formOpen, setFormOpen] = useState(false)
   const [deletingItem, setDeletingItem] = useState<RepertoireItem | null>(null)
@@ -108,6 +154,12 @@ export default function RepertorioPage() {
   const handleAddToRepertoire = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
+
+    if (!isCultDay(selectedDate)) {
+      setFormError('O repertório só pode ser criado para cultos de quinta ou domingo.')
+      return
+    }
+
     if (!isAdmin && !currentMinister) {
       setFormError('Não foi possível identificar o ministro logado.')
       return
@@ -155,6 +207,23 @@ export default function RepertorioPage() {
     locale: ptBR,
   })
 
+  const selectedDateObj = fromDateInputValue(selectedDate)
+
+  const handleSelectService = (service: ServiceType) => {
+    setSelectedService(service)
+    const date = getServiceDateInWeek(selectedDateObj, service)
+    setSelectedDate(toDateInputValue(date))
+    setLoading(true)
+  }
+
+  const handleChangeWeek = (direction: 'prev' | 'next') => {
+    const date = new Date(selectedDateObj)
+    date.setDate(date.getDate() + (direction === 'next' ? 7 : -7))
+    const serviceDate = getServiceDateInWeek(date, selectedService)
+    setSelectedDate(toDateInputValue(serviceDate))
+    setLoading(true)
+  }
+
   const availableSongs = songs.filter(
     (song) =>
       !repertoire.some((r) => r.song_id === song.id) &&
@@ -192,17 +261,47 @@ export default function RepertorioPage() {
           <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
             <div className="flex items-center gap-2">
               <Calendar className="h-5 w-5 text-muted-foreground" />
-              <span className="font-medium text-foreground">Data do Culto:</span>
+              <span className="font-medium text-foreground">Culto:</span>
             </div>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                setSelectedDate(e.target.value)
-                setLoading(true)
-              }}
-              className="w-full sm:w-auto"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={selectedService === 'thursday' ? 'default' : 'outline'}
+                onClick={() => handleSelectService('thursday')}
+              >
+                Quinta
+              </Button>
+              <Button
+                type="button"
+                variant={selectedService === 'sunday' ? 'default' : 'outline'}
+                onClick={() => handleSelectService('sunday')}
+              >
+                Domingo
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleChangeWeek('prev')}
+                aria-label="Semana anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleChangeWeek('next')}
+                aria-label="Próxima semana"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <Badge variant="secondary" className="capitalize">
+              {selectedService === 'thursday' ? 'Culto de Quinta' : 'Culto de Domingo'}
+            </Badge>
             <span className="text-sm capitalize text-muted-foreground">
               {formattedDate}
             </span>
@@ -269,6 +368,8 @@ export default function RepertorioPage() {
                             href={item.song.cipher_url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            title="Abrir cifra"
+                            aria-label="Abrir cifra"
                           >
                             <FileText className="h-4 w-4" />
                           </a>
@@ -280,6 +381,8 @@ export default function RepertorioPage() {
                             href={item.song.youtube_url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            title="Abrir YouTube"
+                            aria-label="Abrir YouTube"
                           >
                             <Youtube className="h-4 w-4" />
                           </a>
