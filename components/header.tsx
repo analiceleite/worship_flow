@@ -28,11 +28,14 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 const navigation = [
   {
     name: 'Músicas',
+    description: 'Visualizar músicas disponíveis',
     href: '/',
+    
     icon: Music,
   },
   {
     name: 'Repertório',
+    description: 'Visualizar repertório de músicas',
     href: '/repertorio',
     icon: ListMusic,
   },
@@ -103,7 +106,7 @@ export function Header() {
             </div>
             <span className="text-xl font-semibold text-foreground">Worship Flow</span>
           </div>
-    
+
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:items-center md:gap-4">
             <ThemeToggle />
@@ -163,7 +166,7 @@ export function Header() {
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden" aria-label="Abrir menu">
-              <Menu className="h-5 w-5" />
+                <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="md:hidden p-0">
@@ -192,37 +195,37 @@ export function Header() {
                     Navegação
                   </p>
                   <div className="flex flex-col gap-1">
-                  {visibleNavigation.map((item) => {
-                    const isActive = pathname === item.href
-                    return (
-                      <Link
-                        key={item.name}
-                        href={item.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={cn(
-                          'rounded-lg px-4 py-3 transition-colors',
-                          isActive
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <item.icon className="h-5 w-5 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium leading-none">{item.name}</p>
-                            <p
-                              className={cn(
-                                'mt-1 text-xs',
-                                isActive ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                              )}
-                            >
-                              {item.description}
-                            </p>
+                    {visibleNavigation.map((item) => {
+                      const isActive = pathname === item.href
+                      return (
+                        <Link
+                          key={item.name}
+                          href={item.href}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={cn(
+                            'rounded-lg px-4 py-3 transition-colors',
+                            isActive
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <item.icon className="h-5 w-5 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium leading-none">{item.name}</p>
+                              <p
+                                className={cn(
+                                  'mt-1 text-xs',
+                                  isActive ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                                )}
+                              >
+                                {item.description}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </Link>
-                    )
-                  })}
+                        </Link>
+                      )
+                    })}
                   </div>
                 </div>
 
