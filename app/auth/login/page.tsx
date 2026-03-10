@@ -8,8 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Spinner } from '@/components/ui/spinner'
-import { Music } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -72,8 +70,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-muted p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-            <Music className="h-6 w-6 text-primary-foreground" />
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary overflow-hidden">
+            <img src="/logo.jpg" alt="Logo da Igreja" className="h-full w-full object-contain" />
           </div>
           <CardTitle className="text-2xl font-bold">Worship Flow</CardTitle>
           <CardDescription>
@@ -119,7 +117,7 @@ export default function LoginPage() {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Spinner className="mr-2 h-4 w-4" />}
+              {loading && <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />}
               Entrar
             </Button>
           </form>

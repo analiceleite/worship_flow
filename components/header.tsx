@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Music, Users, ListMusic, Menu, X, LogOut, User } from 'lucide-react'
+import { Music, Users, ListMusic, Menu, X, LogOut } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
+import { ThemeToggle } from '@/components/theme-toggle'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,14 +39,14 @@ export function Header() {
   const loadUser = async () => {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (user) {
       const { data: minister } = await supabase
         .from('ministers')
         .select('name, role, avatar_url')
         .eq('user_id', user.id)
         .single()
-      
+
       if (minister) {
         setUserName(minister.name)
         setUserRole(minister.role)
@@ -61,7 +62,7 @@ export function Header() {
     router.refresh()
   }
 
-  const visibleNavigation = navigation.filter(item => 
+  const visibleNavigation = navigation.filter(item =>
     !item.adminOnly || userRole === 'admin'
   )
 
@@ -70,14 +71,15 @@ export function Header() {
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Music className="h-5 w-5 text-primary-foreground" />
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary overflow-hidden">
+              <img src="/logo.jpg" alt="Logo da Igreja" className="h-full w-full object-contain" />
             </div>
             <span className="text-xl font-semibold text-foreground">Worship Flow</span>
           </div>
-
+    
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:items-center md:gap-4">
+            <ThemeToggle />
             <div className="flex items-center gap-1">
               {visibleNavigation.map((item) => {
                 const isActive = pathname === item.href
@@ -148,6 +150,9 @@ export function Header() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <div className="md:hidden pb-4 space-y-4">
+            <div className="px-2">
+              <ThemeToggle />
+            </div>
             <div className="flex flex-col gap-1">
               {visibleNavigation.map((item) => {
                 const isActive = pathname === item.href
