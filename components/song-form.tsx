@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Song, TONES, Minister } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,18 +34,50 @@ interface SongFormProps {
 export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister }: SongFormProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
-    title: song?.title || '',
-    artist: song?.artist || '',
-    tone: song?.tone || 'C',
-    cipher_url: song?.cipher_url || '',
-    youtube_url: song?.youtube_url || '',
+    title: '',
+    artist: '',
+    tone: 'C',
+    cipher_url: '',
+    youtube_url: '',
   })
+
+  useEffect(() => {
+    if (!open) return
+
+    if (song) {
+      setFormData({
+        title: song.title || '',
+        artist: song.artist || '',
+        tone: song.tone || 'C',
+        cipher_url: song.cipher_url || '',
+        youtube_url: song.youtube_url || '',
+      })
+      return
+    }
+
+    setFormData({
+      title: '',
+      artist: '',
+      tone: 'C',
+      cipher_url: '',
+      youtube_url: '',
+    })
+  }, [open, song])
+
+  const ensureHttps = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    if (/^https?:\/\//i.test(trimmed)) return trimmed
+    return `https://${trimmed}`
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     const supabase = createClient()
+    const normalizedCipherUrl = ensureHttps(formData.cipher_url)
+    const normalizedYoutubeUrl = ensureHttps(formData.youtube_url)
 
     try {
       if (song) {
@@ -55,8 +87,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
             title: formData.title,
             artist: formData.artist,
             tone: formData.tone,
-            cipher_url: formData.cipher_url || null,
-            youtube_url: formData.youtube_url || null,
+            cipher_url: normalizedCipherUrl || null,
+            youtube_url: normalizedYoutubeUrl || null,
           })
           .eq('id', song.id)
 
@@ -66,8 +98,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           title: formData.title,
           artist: formData.artist,
           tone: formData.tone,
-          cipher_url: formData.cipher_url || null,
-          youtube_url: formData.youtube_url || null,
+          cipher_url: normalizedCipherUrl || null,
+          youtube_url: normalizedYoutubeUrl || null,
           minister_id: currentMinister?.id,
         })
 
@@ -159,6 +191,9 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               onChange={(e) =>
                 setFormData({ ...formData, cipher_url: e.target.value })
               }
+              onBlur={(e) =>
+                setFormData({ ...formData, cipher_url: ensureHttps(e.target.value) })
+              }
               placeholder="https://cifraclub.com.br/..."
             />
           </div>
@@ -171,6 +206,9 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               value={formData.youtube_url}
               onChange={(e) =>
                 setFormData({ ...formData, youtube_url: e.target.value })
+              }
+              onBlur={(e) =>
+                setFormData({ ...formData, youtube_url: ensureHttps(e.target.value) })
               }
               placeholder="https://youtube.com/watch?v=..."
             />

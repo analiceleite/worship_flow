@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { SongDetailClient } from './song-detail-client'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -19,6 +18,4 @@ export default async function SongDetailPage({ params }: PageProps) {
   if (error || !song) {
     notFound()
   }
-
-  return <SongDetailClient song={song} />
 }

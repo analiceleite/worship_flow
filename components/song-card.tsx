@@ -5,7 +5,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Music, Youtube, FileText, Pencil, Trash2 } from 'lucide-react'
-import Link from 'next/link'
 
 interface SongCardProps {
   song: Song
@@ -36,17 +35,77 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
                 href={song.youtube_url}
                 target="_blank"
                 rel="noopener noreferrer"
+                title="Abrir no YouTube"
+                aria-label="Abrir no YouTube"
                 className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-lg transition-transform hover:scale-110"
               >
                 <Youtube className="h-7 w-7" />
               </a>
             </div>
+
+            {canEdit && (onEdit || onDelete) && (
+              <div className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-background/80 p-1 backdrop-blur">
+                {onEdit && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => onEdit(song)}
+                    title="Editar música"
+                    aria-label="Editar música"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => onDelete(song)}
+                    title="Excluir música"
+                    aria-label="Excluir música"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         )}
         
         {!song.youtube_url && (
-          <div className="flex aspect-video items-center justify-center bg-muted">
+          <div className="relative flex aspect-video items-center justify-center bg-muted">
             <Music className="h-12 w-12 text-muted-foreground" />
+
+            {canEdit && (onEdit || onDelete) && (
+              <div className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-background/80 p-1 backdrop-blur">
+                {onEdit && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => onEdit(song)}
+                    title="Editar música"
+                    aria-label="Editar música"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => onDelete(song)}
+                    title="Excluir música"
+                    aria-label="Excluir música"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -74,49 +133,46 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
           )}
 
           <div className="flex items-center gap-2">
-            {song.cipher_url && (
-              <Button variant="outline" size="sm" className="flex-1" asChild>
-                <a href={song.cipher_url} target="_blank" rel="noopener noreferrer">
+            {song.cipher_url ? (
+              <Button variant="secondary" size="sm" className="flex-1" asChild>
+                <a
+                  href={song.cipher_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir cifra"
+                  aria-label="Abrir cifra"
+                >
                   <FileText className="mr-1.5 h-4 w-4" />
                   Cifra
                 </a>
               </Button>
-            )}
-            
-            <Link href={`/musica/${song.id}`} className="flex-1">
-              <Button variant="outline" size="sm" className="w-full">
-                <Music className="mr-1.5 h-4 w-4" />
-                Ver
+            ) : (
+              <Button variant="secondary" size="sm" className="flex-1" disabled title="Sem link de cifra">
+                <FileText className="mr-1.5 h-4 w-4" />
+                Cifra
               </Button>
-            </Link>
-          </div>
+            )}
 
-          {canEdit && (onEdit || onDelete) && (
-            <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-              {onEdit && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => onEdit(song)}
+            {song.youtube_url ? (
+              <Button variant="secondary" size="sm" className="flex-1" asChild>
+                <a
+                  href={song.youtube_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir no YouTube"
+                  aria-label="Abrir no YouTube"
                 >
-                  <Pencil className="mr-1.5 h-4 w-4" />
-                  Editar
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => onDelete(song)}
-                >
-                  <Trash2 className="mr-1.5 h-4 w-4" />
-                  Excluir
-                </Button>
-              )}
-            </div>
-          )}
+                  <Youtube className="mr-1.5 h-4 w-4" />
+                  YouTube
+                </a>
+              </Button>
+            ) : (
+              <Button variant="secondary" size="sm" className="flex-1" disabled title="Sem link de YouTube">
+                <Youtube className="mr-1.5 h-4 w-4" />
+                YouTube
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
