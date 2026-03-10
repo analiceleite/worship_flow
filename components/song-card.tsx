@@ -4,7 +4,7 @@ import { Song } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Music, Youtube, FileText, Pencil, Trash2 } from 'lucide-react'
+import { Music, Youtube, FileText, Pencil, Trash2, Copy } from 'lucide-react'
 
 interface SongCardProps {
   song: Song
@@ -12,9 +12,10 @@ interface SongCardProps {
   onDelete?: (song: Song) => void
   canEdit?: boolean
   showMinister?: boolean
+  duplicateCount?: number
 }
 
-export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister = false }: SongCardProps) {
+export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister = false, duplicateCount = 1 }: SongCardProps) {
   const getYoutubeId = (url: string) => {
     const match = url.match(/(?:youtu\.be\/|youtube\.com(?:\/embed\/|\/v\/|\/watch\?v=|\/watch\?.+&v=))([\w-]{11})/)
     return match ? match[1] : null
@@ -124,11 +125,23 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
             </Badge>
           </div>
 
-          {showMinister && song.minister && (
-            <div className="mb-2">
-              <Badge variant="outline" className="text-xs">
-                {song.minister.name} • {song.minister.instrument}
-              </Badge>
+          {(showMinister || duplicateCount > 1) && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {showMinister && song.minister && (
+                <Badge variant="outline" className="text-xs">
+                  {song.minister.name} • {song.minister.instrument}
+                </Badge>
+              )}
+              {duplicateCount > 1 && (
+                <Badge
+                  variant="secondary"
+                  className="gap-1 bg-amber-100 text-xs text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                  title={`Esta música tem ${duplicateCount} versões cadastradas por ministros diferentes`}
+                >
+                  <Copy className="h-3 w-3" />
+                  {duplicateCount} versões
+                </Badge>
+              )}
             </div>
           )}
 

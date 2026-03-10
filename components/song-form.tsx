@@ -64,6 +64,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     })
   }, [open, song])
 
+  const toTitleCase = (value: string) =>
+    value
+      .trim()
+      .replace(/\S+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+
   const ensureHttps = (value: string) => {
     const trimmed = value.trim()
     if (!trimmed) return ''
@@ -76,6 +81,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     setLoading(true)
 
     const supabase = createClient()
+    const normalizedTitle = toTitleCase(formData.title)
+    const normalizedArtist = toTitleCase(formData.artist)
     const normalizedCipherUrl = ensureHttps(formData.cipher_url)
     const normalizedYoutubeUrl = ensureHttps(formData.youtube_url)
 
@@ -84,8 +91,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         const { error } = await supabase
           .from('songs')
           .update({
-            title: formData.title,
-            artist: formData.artist,
+            title: normalizedTitle,
+            artist: normalizedArtist,
             tone: formData.tone,
             cipher_url: normalizedCipherUrl || null,
             youtube_url: normalizedYoutubeUrl || null,
@@ -95,8 +102,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         if (error) throw error
       } else {
         const { error } = await supabase.from('songs').insert({
-          title: formData.title,
-          artist: formData.artist,
+          title: normalizedTitle,
+          artist: normalizedArtist,
           tone: formData.tone,
           cipher_url: normalizedCipherUrl || null,
           youtube_url: normalizedYoutubeUrl || null,

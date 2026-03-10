@@ -12,6 +12,13 @@ import { Input } from '@/components/ui/input'
 import { Plus, Search, Music } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 export default function HomePage() {
   const [songs, setSongs] = useState<Song[]>([])
@@ -22,6 +29,8 @@ export default function HomePage() {
   const [deletingSong, setDeletingSong] = useState<Song | null>(null)
   const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [ministers, setMinisters] = useState<Minister[]>([])
+  const [selectedMinisterId, setSelectedMinisterId] = useState<string>('all')
 
   useEffect(() => {
     checkUserRole()
@@ -75,6 +84,17 @@ export default function HomePage() {
   }, [currentMinister, isAdmin])
 
   useEffect(() => {
+    if (!isAdmin) return
+    const supabase = createClient()
+    supabase
+      .from('ministers')
+      .select('*')
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }: { data: Minister[] | null }) => { if (data) setMinisters(data) })
+  }, [isAdmin])
+
+  useEffect(() => {
     fetchSongs()
   }, [fetchSongs])
 
@@ -96,12 +116,30 @@ export default function HomePage() {
     await fetchSongs()
   }
 
-  const filteredSongs = songs.filter(
-    (song) =>
+  // Build a map of normalized title → number of versions (used only in admin view).
+  // Groups by title only (ignoring artist) so that small differences in artist name
+  // between ministers don't prevent duplicates from being detected.
+  const normalizeTitle = (t: string) => t.toLowerCase().trim().replace(/\s+/g, ' ')
+
+  const versionCountMap = isAdmin
+    ? songs.reduce<Record<string, number>>((acc, s) => {
+        const key = normalizeTitle(s.title)
+        acc[key] = (acc[key] ?? 0) + 1
+        return acc
+      }, {})
+    : {}
+
+  const getVersionCount = (song: Song) => versionCountMap[normalizeTitle(song.title)] ?? 1
+
+  const filteredSongs = songs.filter((song) => {
+    const matchesSearch =
       song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       song.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
       song.tone.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+    const matchesMinister =
+      !isAdmin || selectedMinisterId === 'all' || song.minister_id === selectedMinisterId
+    return matchesSearch && matchesMinister
+  })
 
   return (
     <div className="min-h-screen bg-background">
@@ -124,14 +162,31 @@ export default function HomePage() {
           </Button>
         </div>
 
-        <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por título ou artista..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por título ou artista..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          {isAdmin && (
+            <Select value={selectedMinisterId} onValueChange={setSelectedMinisterId}>
+              <SelectTrigger className="w-full sm:w-56">
+                <SelectValue placeholder="Filtrar por ministro" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os ministros</SelectItem>
+                {ministers.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {loading ? (
@@ -171,6 +226,7 @@ export default function HomePage() {
                 onDelete={(s) => setDeletingSong(s)}
                 canEdit={canEditSong(song)}
                 showMinister={isAdmin}
+                duplicateCount={getVersionCount(song)}
               />
             ))}
           </div>
