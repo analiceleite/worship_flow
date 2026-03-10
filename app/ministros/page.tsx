@@ -87,7 +87,7 @@ export default function MinistrosPage() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-9">
+      <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
 
         {/* ── Header ── */}
         <div className="mb-6 flex items-start justify-between gap-4">
