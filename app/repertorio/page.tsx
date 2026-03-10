@@ -407,10 +407,10 @@ export default function RepertorioPage() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
 
         {/* ── Page header ── */}
-        <div className="mb-5 flex items-center justify-between gap-4">
+        <div className="mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Repertório</h1>
             <p className="text-sm text-muted-foreground">Selecione um dia abaixo</p>

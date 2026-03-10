@@ -121,12 +121,12 @@ export default function EscalaPage() {
         <div className="min-h-screen bg-background">
             <Header />
 
-            <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+            <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
 
                 {/* Page heading */}
-                <div className="mb-8">
+                <div className="mb-6">
                     <h1 className="text-2xl font-bold text-foreground">Escala de Louvor</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                         Todos os ministros visualizam sempre o último arquivo enviado pelo admin.
                     </p>
                 </div>

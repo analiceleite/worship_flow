@@ -101,7 +101,7 @@ export function Header() {
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary overflow-hidden">
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted">
               <img src="/logo.jpg" alt="Logo da Igreja" className="h-full w-full object-contain" />
             </div>
             <span className="text-xl font-semibold text-foreground">Worship Flow</span>
