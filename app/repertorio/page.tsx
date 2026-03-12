@@ -41,7 +41,8 @@ import {
   Pencil,
   Lock,
   Unlock,
-  GripVertical,
+  ArrowUp,
+  ArrowDown,
   Youtube,
   FileText,
   ListMusic,
@@ -467,39 +468,7 @@ export default function RepertorioPage() {
     setDragOverIndex(null)
   }
 
-  const handleTouchStart = (index: number) => {
-    if (!reorderEnabled) return
-    setDraggingIndex(index)
-    setDragOverIndex(index)
-    setReorderError(null)
-  }
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!reorderEnabled || draggingIndex === null) return
-    const touch = e.touches[0]
-    if (!touch) return
-
-    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-reorder-index]')
-    const indexAttr = target?.getAttribute('data-reorder-index')
-    if (!indexAttr) return
-
-    const index = Number(indexAttr)
-    if (!Number.isNaN(index) && dragOverIndex !== index) {
-      e.preventDefault()
-      setDragOverIndex(index)
-    }
-  }
-
-  const handleTouchEnd = async () => {
-    if (!reorderEnabled || draggingIndex === null) return
-
-    const from = draggingIndex
-    const to = dragOverIndex ?? draggingIndex
-    setDraggingIndex(null)
-    setDragOverIndex(null)
-
-    await moveRepertoireItem(from, to)
-  }
+  
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -764,15 +733,16 @@ export default function RepertorioPage() {
                     ].join(' ')}
                   >
                     {reorderEnabled && (
-                      <span
-                        className="touch-none text-muted-foreground cursor-grab active:cursor-grabbing"
-                        onTouchStart={() => handleTouchStart(index)}
-                        onTouchMove={handleTouchMove}
-                        onTouchEnd={() => void handleTouchEnd()}
-                        onTouchCancel={() => void handleTouchEnd()}
-                      >
-                        <GripVertical className="h-4 w-4" />
-                      </span>
+                      <div className="flex flex-col items-center mr-2 space-y-0.5 sm:space-y-1">
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
+                          onClick={() => void moveRepertoireItem(index, index - 1)} disabled={index === 0}>
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
+                          onClick={() => void moveRepertoireItem(index, index + 1)} disabled={index === repertoire.length - 1}>
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     )}
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
                         {index + 1}
