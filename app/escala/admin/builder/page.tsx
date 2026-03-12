@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -50,7 +50,7 @@ interface SavePayload {
   minister_name: string | null
 }
 
-export default function EscalaBuilderPage() {
+function EscalaBuilderContent() {
   const { toast } = useToast()
   const searchParams = useSearchParams()
 
@@ -412,5 +412,20 @@ export default function EscalaBuilderPage() {
         }}
       />
     </div>
+  )
+}
+
+export default function EscalaBuilderPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center gap-2 text-muted-foreground">
+          <Spinner className="h-6 w-6" />
+          Carregando builder...
+        </div>
+      }
+    >
+      <EscalaBuilderContent />
+    </Suspense>
   )
 }
