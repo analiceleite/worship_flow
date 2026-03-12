@@ -180,30 +180,11 @@ export default function EscalaPage() {
               </CardHeader>
             </Card>
 
-            <Tabs defaultValue="sunday" className="w-full">
+            <Tabs defaultValue="thursday" className="w-full">
               <TabsList>
-                <TabsTrigger value="sunday">Domingos</TabsTrigger>
                 <TabsTrigger value="thursday">Quintas</TabsTrigger>
+                <TabsTrigger value="sunday">Domingos</TabsTrigger>
               </TabsList>
-
-              <TabsContent value="sunday" className="mt-3">
-                {schedule.dates.sunday.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                      O trimestre publicado não possui datas de domingo.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <ScheduleGrid
-                    roles={schedule.roles}
-                    dates={schedule.dates.sunday}
-                    eventType="sunday"
-                    assignments={schedule.assignments}
-                    readOnly
-                    highlightedMinisterId={viewer?.id ?? null}
-                  />
-                )}
-              </TabsContent>
 
               <TabsContent value="thursday" className="mt-3">
                 {schedule.dates.thursday.length === 0 ? (
@@ -217,6 +198,25 @@ export default function EscalaPage() {
                     roles={schedule.roles}
                     dates={schedule.dates.thursday}
                     eventType="thursday"
+                    assignments={schedule.assignments}
+                    readOnly
+                    highlightedMinisterId={viewer?.id ?? null}
+                  />
+                )}
+              </TabsContent>
+
+              <TabsContent value="sunday" className="mt-3">
+                {schedule.dates.sunday.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                      O trimestre publicado não possui datas de domingo.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ScheduleGrid
+                    roles={schedule.roles}
+                    dates={schedule.dates.sunday}
+                    eventType="sunday"
                     assignments={schedule.assignments}
                     readOnly
                     highlightedMinisterId={viewer?.id ?? null}

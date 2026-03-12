@@ -355,30 +355,11 @@ export default function EscalaBuilderPage() {
               Alterações são salvas automaticamente ao selecionar cada ministro.
             </div>
 
-            <Tabs defaultValue="sunday" className="w-full">
+            <Tabs defaultValue="thursday" className="w-full">
               <TabsList>
-                <TabsTrigger value="sunday">Domingos</TabsTrigger>
                 <TabsTrigger value="thursday">Quintas</TabsTrigger>
+                <TabsTrigger value="sunday">Domingos</TabsTrigger>
               </TabsList>
-
-              <TabsContent value="sunday" className="mt-3">
-                {data.dates.sunday.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                      O trimestre não possui datas de domingo nesse período.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <ScheduleGrid
-                    roles={data.roles}
-                    dates={data.dates.sunday}
-                    eventType="sunday"
-                    assignments={data.assignments}
-                    savingKeys={savingMap}
-                    onSaveAssignment={handleSaveAssignment}
-                  />
-                )}
-              </TabsContent>
 
               <TabsContent value="thursday" className="mt-3">
                 {data.dates.thursday.length === 0 ? (
@@ -392,6 +373,25 @@ export default function EscalaBuilderPage() {
                     roles={data.roles}
                     dates={data.dates.thursday}
                     eventType="thursday"
+                    assignments={data.assignments}
+                    savingKeys={savingMap}
+                    onSaveAssignment={handleSaveAssignment}
+                  />
+                )}
+              </TabsContent>
+
+              <TabsContent value="sunday" className="mt-3">
+                {data.dates.sunday.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                      O trimestre não possui datas de domingo nesse período.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ScheduleGrid
+                    roles={data.roles}
+                    dates={data.dates.sunday}
+                    eventType="sunday"
                     assignments={data.assignments}
                     savingKeys={savingMap}
                     onSaveAssignment={handleSaveAssignment}
