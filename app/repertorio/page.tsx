@@ -38,6 +38,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
+  Pencil,
   Youtube,
   FileText,
   ListMusic,
@@ -66,6 +67,7 @@ interface SpecialEvent {
   id: string
   name: string
   event_date: string
+  created_by: string | null
 }
 
 interface DayInfo {
@@ -219,6 +221,9 @@ export default function RepertorioPage() {
   const [deletingItem, setDeletingItem] = useState<RepertoireItem | null>(null)
   const [deletingEvent, setDeletingEvent] = useState<SpecialEvent | null>(null)
   const [createEventOpen, setCreateEventOpen] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<SpecialEvent | null>(null)
+  const [editEventName, setEditEventName] = useState('')
+  const [editEventError, setEditEventError] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({ song_id: '', minister_id: '' })
   const [formError, setFormError] = useState<string | null>(null)
@@ -350,12 +355,30 @@ export default function RepertorioPage() {
     buildDayInfoMap(events, getWeekDays(weekAnchor))
   }
 
+  const handleRenameEvent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEditEventError(null)
+    if (!editingEvent) return
+    if (!editEventName.trim()) { setEditEventError('Informe o nome do evento.'); return }
+    const { error } = await createClient()
+      .from('special_events')
+      .update({ name: editEventName.trim() })
+      .eq('id', editingEvent.id)
+    if (error) { setEditEventError(error.message); return }
+    if (selectedDay?.specialEventId === editingEvent.id) {
+      setSelectedDay(prev => prev ? { ...prev, eventName: editEventName.trim() } : prev)
+    }
+    setEditingEvent(null)
+    const events = await fetchSpecialEvents()
+    buildDayInfoMap(events, getWeekDays(weekAnchor))
+  }
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault()
     setNewEventError(null)
     if (!newEventName.trim()) { setNewEventError('Informe o nome do evento.'); return }
     if (!newEventDate) { setNewEventError('Informe a data.'); return }
-    const { data, error } = await createClient().from('special_events').insert({ name: newEventName.trim(), event_date: newEventDate }).select().single()
+    const { data, error } = await createClient().from('special_events').insert({ name: newEventName.trim(), event_date: newEventDate, created_by: currentMinister?.id ?? null }).select().single()
     if (error) { setNewEventError(error.message); return }
     setCreateEventOpen(false)
     setNewEventName('')
@@ -535,12 +558,23 @@ export default function RepertorioPage() {
                     {format(selectedDay.date, "EEEE, d 'de' MMMM", { locale: ptBR })}
                   </p>
                 </div>
-                {isAdmin && selectedDay.serviceType === 'special' && activeSpecialEvent && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    title="Excluir evento especial" onClick={() => setDeletingEvent(activeSpecialEvent)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
+{(() => {
+                  const canManage = selectedDay.serviceType === 'special' && activeSpecialEvent &&
+                    (isAdmin || currentMinister?.id === activeSpecialEvent?.created_by)
+                  return canManage ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-muted"
+                        title="Renomear evento especial"
+                        onClick={() => { setEditingEvent(activeSpecialEvent!); setEditEventName(activeSpecialEvent!.name); setEditEventError(null) }}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        title="Excluir evento especial" onClick={() => setDeletingEvent(activeSpecialEvent!)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null
+                })()}
               </div>
             </div>
 
@@ -697,6 +731,30 @@ export default function RepertorioPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Rename event dialog ── */}
+      <Dialog open={!!editingEvent} onOpenChange={open => !open && setEditingEvent(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-amber-500" />
+              Renomear Evento Especial
+            </DialogTitle>
+            <DialogDescription>Altere o nome do evento especial.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRenameEvent} className="space-y-4">
+            {editEventError && <Alert variant="destructive"><AlertDescription>{editEventError}</AlertDescription></Alert>}
+            <div className="space-y-2">
+              <Label>Nome do evento</Label>
+              <Input value={editEventName} onChange={e => setEditEventName(e.target.value)} autoFocus />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditingEvent(null)}>Cancelar</Button>
+              <Button type="submit">Salvar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Delete event dialog ── */}
       <AlertDialog open={!!deletingEvent} onOpenChange={open => !open && setDeletingEvent(null)}>
