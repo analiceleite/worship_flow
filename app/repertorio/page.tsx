@@ -504,7 +504,7 @@ export default function RepertorioPage() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 
         {/* ── Page header ── */}
         <div className="mb-6 flex items-center justify-between gap-4">

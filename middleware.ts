@@ -89,7 +89,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Admin-only routes
-    const adminRoutes = ['/ministros']
+    const adminRoutes = ['/ministros', '/escala/admin']
     const isAdminRoute = adminRoutes.some(route => 
       request.nextUrl.pathname.startsWith(route)
     )

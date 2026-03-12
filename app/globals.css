@@ -8,6 +8,8 @@
   --background: oklch(0.985 0 0);
   --foreground: oklch(0.2 0 0);
   --card: oklch(1 0 0);
+  --table-grid: #f6f6f7;
+  --table-border: #e4e4e7;
   --card-foreground: oklch(0.2 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0 0);
@@ -45,6 +47,8 @@
   --background: oklch(0.138 0 0);      /* #1c1c1e */
   --foreground: oklch(0.97 0 0);
   --card: oklch(0.185 0 0);            /* #2c2c2e */
+  --table-grid: #131313;
+  --table-border: #252525;
   --card-foreground: oklch(0.97 0 0);
   --popover: oklch(0.185 0 0);
   --popover-foreground: oklch(0.97 0 0);
@@ -83,6 +87,8 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-table-grid: var(--table-grid);
+  --color-table-border: var(--table-border);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);

@@ -1,0 +1,108 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+interface AssignmentPayload {
+  id?: string
+  quarter_id?: string
+  role_id?: string
+  event_date?: string
+  event_type?: 'thursday' | 'sunday'
+  minister_id?: string | null
+}
+
+export async function PATCH(request: Request) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const payload = (await request.json()) as AssignmentPayload
+
+  if (!payload.id && (!payload.quarter_id || !payload.role_id || !payload.event_date || !payload.event_type)) {
+    return NextResponse.json(
+      { error: 'Dados insuficientes para atualizar a célula da escala' },
+      { status: 400 }
+    )
+  }
+
+  const adminSupabase = createAdminClient()
+
+  let assignmentId = payload.id
+
+  if (!assignmentId) {
+    const { data: existing, error: existingError } = await adminSupabase
+      .from('schedule_assignments')
+      .select('id')
+      .eq('quarter_id', payload.quarter_id as string)
+      .eq('role_id', payload.role_id as string)
+      .eq('event_date', payload.event_date as string)
+      .eq('event_type', payload.event_type as string)
+      .maybeSingle()
+
+    if (existingError) {
+      return NextResponse.json({ error: existingError.message }, { status: 500 })
+    }
+
+    if (existing?.id) {
+      assignmentId = existing.id
+    }
+  }
+
+  const writePayload = {
+    minister_id: payload.minister_id ?? null,
+  }
+
+  let writeError: string | null = null
+
+  if (assignmentId) {
+    const { error } = await adminSupabase
+      .from('schedule_assignments')
+      .update(writePayload)
+      .eq('id', assignmentId)
+
+    if (error) writeError = error.message
+  } else {
+    const { error } = await adminSupabase
+      .from('schedule_assignments')
+      .insert({
+        quarter_id: payload.quarter_id,
+        role_id: payload.role_id,
+        event_date: payload.event_date,
+        event_type: payload.event_type,
+        ...writePayload,
+      })
+
+    if (error) writeError = error.message
+  }
+
+  if (writeError) {
+    return NextResponse.json({ error: writeError }, { status: 500 })
+  }
+
+  const query = adminSupabase
+    .from('schedule_assignments')
+    .select('id, quarter_id, role_id, minister_id, event_date, event_type, minister:ministers(id, name)')
+
+  const { data: assignment, error: assignmentError } = assignmentId
+    ? await query.eq('id', assignmentId).single()
+    : await query
+        .eq('quarter_id', payload.quarter_id as string)
+        .eq('role_id', payload.role_id as string)
+        .eq('event_date', payload.event_date as string)
+        .eq('event_type', payload.event_type as string)
+        .single()
+
+  if (assignmentError || !assignment) {
+    return NextResponse.json(
+      { error: assignmentError?.message ?? 'Falha ao retornar a célula atualizada' },
+      { status: 500 }
+    )
+  }
+
+  return NextResponse.json({ assignment })
+}
