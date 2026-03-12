@@ -424,6 +424,20 @@ export default function RepertorioPage() {
     }
   }
 
+  const moveRepertoireItem = async (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= repertoire.length || to >= repertoire.length) {
+      return
+    }
+
+    const updated = [...repertoire]
+    const [moved] = updated.splice(from, 1)
+    updated.splice(to, 0, moved)
+    const normalized = updated.map((item, idx) => ({ ...item, order_index: idx + 1 }))
+
+    setRepertoire(normalized)
+    await saveRepertoireOrder(normalized)
+  }
+
   const handleDragStart = (index: number) => {
     if (!reorderEnabled) return
     setDraggingIndex(index)
@@ -445,20 +459,46 @@ export default function RepertorioPage() {
     setDraggingIndex(null)
     setDragOverIndex(null)
 
-    if (from === to) return
-
-    const updated = [...repertoire]
-    const [moved] = updated.splice(from, 1)
-    updated.splice(to, 0, moved)
-    const normalized = updated.map((item, idx) => ({ ...item, order_index: idx + 1 }))
-
-    setRepertoire(normalized)
-    await saveRepertoireOrder(normalized)
+    await moveRepertoireItem(from, to)
   }
 
   const handleDragEnd = () => {
     setDraggingIndex(null)
     setDragOverIndex(null)
+  }
+
+  const handleTouchStart = (index: number) => {
+    if (!reorderEnabled) return
+    setDraggingIndex(index)
+    setDragOverIndex(index)
+    setReorderError(null)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!reorderEnabled || draggingIndex === null) return
+    const touch = e.touches[0]
+    if (!touch) return
+
+    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-reorder-index]')
+    const indexAttr = target?.getAttribute('data-reorder-index')
+    if (!indexAttr) return
+
+    const index = Number(indexAttr)
+    if (!Number.isNaN(index) && dragOverIndex !== index) {
+      e.preventDefault()
+      setDragOverIndex(index)
+    }
+  }
+
+  const handleTouchEnd = async () => {
+    if (!reorderEnabled || draggingIndex === null) return
+
+    const from = draggingIndex
+    const to = dragOverIndex ?? draggingIndex
+    setDraggingIndex(null)
+    setDragOverIndex(null)
+
+    await moveRepertoireItem(from, to)
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -677,7 +717,7 @@ export default function RepertorioPage() {
             {reorderEnabled && (
               <Alert>
                 <AlertDescription>
-                  Modo de ordenação ativo.
+                  Modo de ordenação ativo. No celular, arraste pelo ícone de pontinhos.
                 </AlertDescription>
               </Alert>
             )}
@@ -710,6 +750,7 @@ export default function RepertorioPage() {
                 {repertoire.map((item, index) => (
                   <div
                     key={item.id}
+                    data-reorder-index={index}
                     draggable={reorderEnabled}
                     onDragStart={() => handleDragStart(index)}
                     onDragOver={e => handleDragOver(e, index)}
@@ -717,12 +758,19 @@ export default function RepertorioPage() {
                     onDragEnd={handleDragEnd}
                     className={[
                       'flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-shadow hover:shadow-sm',
-                      reorderEnabled ? 'cursor-grab active:cursor-grabbing' : '',
+                      reorderEnabled ? 'select-none' : '',
+                      draggingIndex === index ? 'opacity-60' : '',
                       dragOverIndex === index && draggingIndex !== index ? 'border-primary bg-primary/5' : '',
                     ].join(' ')}
                   >
                     {reorderEnabled && (
-                      <span className="text-muted-foreground">
+                      <span
+                        className="touch-none text-muted-foreground cursor-grab active:cursor-grabbing"
+                        onTouchStart={() => handleTouchStart(index)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={() => void handleTouchEnd()}
+                        onTouchCancel={() => void handleTouchEnd()}
+                      >
                         <GripVertical className="h-4 w-4" />
                       </span>
                     )}
