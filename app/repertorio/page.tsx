@@ -686,7 +686,7 @@ export default function RepertorioPage() {
             {reorderEnabled && (
               <Alert>
                 <AlertDescription>
-                  Modo de ordenação ativo. No celular, arraste pelo ícone de pontinhos.
+                  Modo de ordenação ativo. 
                 </AlertDescription>
               </Alert>
             )}
