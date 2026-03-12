@@ -101,6 +101,11 @@ function getRecurringEventName(date: Date) {
   return getDay(date) === 4 ? 'Culto de Quinta' : 'Culto de Domingo'
 }
 
+function getWeekdayShortLabel(date: Date) {
+  const labels = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
+  return labels[getDay(date)]
+}
+
 function getWeekDays(anchor: Date): Date[] {
   const start = startOfWeek(anchor, { weekStartsOn: 1 })
   const end = endOfWeek(anchor, { weekStartsOn: 1 })
@@ -163,7 +168,7 @@ function WeekDayCell({
       onClick={handleClick}
       disabled={!isClickable}
       className={[
-        'relative flex min-w-[48px] flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2.5 transition-all select-none',
+        'relative flex flex-1 flex-col items-center gap-1 rounded-xl px-0.5 py-2 transition-all select-none sm:px-1 sm:py-2.5',
         isClickable ? 'cursor-pointer' : 'cursor-default',
         isSelected ? `${selectedBg} shadow-md` : isClickable ? 'hover:bg-muted' : 'opacity-25',
       ].join(' ')}
@@ -172,11 +177,11 @@ function WeekDayCell({
         'text-[10px] font-semibold uppercase tracking-wider',
         isSelected ? 'opacity-80' : 'text-muted-foreground',
       ].join(' ')}>
-        {format(date, 'EEE', { locale: ptBR })}
+        {getWeekdayShortLabel(date)}
       </span>
 
       <span className={[
-        'flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold',
+        'flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold sm:h-8 sm:w-8 sm:text-sm',
         today && !isSelected ? 'ring-2 ring-foreground/40 bg-foreground/10' : '',
       ].join(' ')}>
         {format(date, 'd')}
@@ -524,13 +529,13 @@ export default function RepertorioPage() {
           </div>
 
           {/* Day cells */}
-          <div className="overflow-x-auto px-1 py-2 sm:px-2">
-            <div className="flex min-w-[360px] gap-0.5">
+          <div className="px-1 py-2 sm:px-2">
+            <div className="grid grid-cols-7 gap-0.5">
               {weekLoading
                 ? Array(7).fill(null).map((_, i) => (
-                  <div key={i} className="flex min-w-[48px] flex-1 flex-col items-center gap-1 py-2.5">
+                  <div key={i} className="flex flex-col items-center gap-1 py-2">
                     <div className="h-2 w-5 animate-pulse rounded bg-muted" />
-                    <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
+                    <div className="h-7 w-7 animate-pulse rounded-full bg-muted sm:h-8 sm:w-8" />
                     <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
                   </div>
                 ))
