@@ -163,7 +163,7 @@ function WeekDayCell({
       onClick={handleClick}
       disabled={!isClickable}
       className={[
-        'relative flex flex-1 flex-col items-center gap-1 rounded-xl py-2.5 px-1 transition-all select-none',
+        'relative flex min-w-[48px] flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2.5 transition-all select-none',
         isClickable ? 'cursor-pointer' : 'cursor-default',
         isSelected ? `${selectedBg} shadow-md` : isClickable ? 'hover:bg-muted' : 'opacity-25',
       ].join(' ')}
@@ -508,13 +508,13 @@ export default function RepertorioPage() {
         <div className="mb-5 overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
 
           {/* Navigation header */}
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-2 sm:px-3">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleWeekChange('prev')}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="text-center">
+            <div className="min-w-0 flex-1 px-1 text-center">
               <p className="text-xs font-semibold text-foreground">{weekLabel}</p>
-              <p className="text-[10px] text-muted-foreground">
+              <p className="truncate text-[10px] text-muted-foreground">
                 {format(weekDays[0], 'd MMM', { locale: ptBR })} – {format(weekDays[6], "d MMM yyyy", { locale: ptBR })}
               </p>
             </div>
@@ -524,25 +524,27 @@ export default function RepertorioPage() {
           </div>
 
           {/* Day cells */}
-          <div className="flex gap-0.5 px-2 py-2">
-            {weekLoading
-              ? Array(7).fill(null).map((_, i) => (
-                <div key={i} className="flex flex-1 flex-col items-center gap-1 py-2.5">
-                  <div className="h-2 w-5 animate-pulse rounded bg-muted" />
-                  <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
-                  <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
-                </div>
-              ))
-              : weekDays.map(d => (
-                <WeekDayCell
-                  key={toDateStr(d)}
-                  date={d}
-                  info={dayInfoMap[toDateStr(d)]}
-                  selectedDay={selectedDay}
-                  onSelect={setSelectedDay}
-                />
-              ))
-            }
+          <div className="overflow-x-auto px-1 py-2 sm:px-2">
+            <div className="flex min-w-[360px] gap-0.5">
+              {weekLoading
+                ? Array(7).fill(null).map((_, i) => (
+                  <div key={i} className="flex min-w-[48px] flex-1 flex-col items-center gap-1 py-2.5">
+                    <div className="h-2 w-5 animate-pulse rounded bg-muted" />
+                    <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
+                    <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
+                  </div>
+                ))
+                : weekDays.map(d => (
+                  <WeekDayCell
+                    key={toDateStr(d)}
+                    date={d}
+                    info={dayInfoMap[toDateStr(d)]}
+                    selectedDay={selectedDay}
+                    onSelect={setSelectedDay}
+                  />
+                ))
+              }
+            </div>
           </div>
 
           {/* Legend */}
