@@ -39,6 +39,9 @@ import {
   ChevronRight,
   Trash2,
   Pencil,
+  Lock,
+  Unlock,
+  GripVertical,
   Youtube,
   FileText,
   ListMusic,
@@ -224,6 +227,10 @@ export default function RepertorioPage() {
   const [editingEvent, setEditingEvent] = useState<SpecialEvent | null>(null)
   const [editEventName, setEditEventName] = useState('')
   const [editEventError, setEditEventError] = useState<string | null>(null)
+  const [reorderEnabled, setReorderEnabled] = useState(false)
+  const [reorderError, setReorderError] = useState<string | null>(null)
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   const [formData, setFormData] = useState({ song_id: '', minister_id: '' })
   const [formError, setFormError] = useState<string | null>(null)
@@ -394,6 +401,59 @@ export default function RepertorioPage() {
     setFormData({ song_id: '', minister_id: (!isAdmin && currentMinister) ? currentMinister.id : '' })
     setFormError(null)
     setFormOpen(true)
+  }
+
+  const saveRepertoireOrder = async (items: RepertoireItem[]) => {
+    setReorderError(null)
+    const supabase = createClient()
+    const updates = items.map(item =>
+      supabase.from('repertoire').update({ order_index: item.order_index }).eq('id', item.id)
+    )
+    const results = await Promise.all(updates)
+    for (const result of results) {
+      if (result.error) {
+        setReorderError(result.error.message || 'Não foi possível salvar a nova ordem.')
+        fetchRepertoire()
+        return
+      }
+    }
+  }
+
+  const handleDragStart = (index: number) => {
+    if (!reorderEnabled) return
+    setDraggingIndex(index)
+    setDragOverIndex(index)
+    setReorderError(null)
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    if (!reorderEnabled || draggingIndex === null) return
+    e.preventDefault()
+    if (dragOverIndex !== index) setDragOverIndex(index)
+  }
+
+  const handleDrop = async (dropIndex: number) => {
+    if (!reorderEnabled || draggingIndex === null) return
+
+    const from = draggingIndex
+    const to = dropIndex
+    setDraggingIndex(null)
+    setDragOverIndex(null)
+
+    if (from === to) return
+
+    const updated = [...repertoire]
+    const [moved] = updated.splice(from, 1)
+    updated.splice(to, 0, moved)
+    const normalized = updated.map((item, idx) => ({ ...item, order_index: idx + 1 }))
+
+    setRepertoire(normalized)
+    await saveRepertoireOrder(normalized)
+  }
+
+  const handleDragEnd = () => {
+    setDraggingIndex(null)
+    setDragOverIndex(null)
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -585,11 +645,41 @@ export default function RepertorioPage() {
                   {repertoire.length} {repertoire.length === 1 ? 'música' : 'músicas'}
                 </p>
               )}
-              <Button size="sm" onClick={handleOpenAddForm} disabled={availableSongs.length === 0}>
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                Adicionar
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant={reorderEnabled ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setReorderEnabled(prev => !prev)
+                    setDraggingIndex(null)
+                    setDragOverIndex(null)
+                    setReorderError(null)
+                  }}
+                >
+                  {reorderEnabled ? <Unlock className="mr-1.5 h-3.5 w-3.5" /> : <Lock className="mr-1.5 h-3.5 w-3.5" />}
+                  {reorderEnabled ? 'Ordenação ativa' : 'Ordenar'}
+                </Button>
+                <Button size="sm" onClick={handleOpenAddForm} disabled={availableSongs.length === 0}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Adicionar
+                </Button>
+              </div>
             </div>
+
+            {reorderEnabled && (
+              <Alert>
+                <AlertDescription>
+                  Modo de ordenação ativo.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reorderError && (
+              <Alert variant="destructive">
+                <AlertDescription>{reorderError}</AlertDescription>
+              </Alert>
+            )}
 
             {/* ── List ── */}
             {loading ? (
@@ -611,10 +701,27 @@ export default function RepertorioPage() {
             ) : (
               <div className="space-y-2">
                 {repertoire.map((item, index) => (
-                  <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-shadow hover:shadow-sm">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
-                      {index + 1}
-                    </span>
+                  <div
+                    key={item.id}
+                    draggable={reorderEnabled}
+                    onDragStart={() => handleDragStart(index)}
+                    onDragOver={e => handleDragOver(e, index)}
+                    onDrop={() => void handleDrop(index)}
+                    onDragEnd={handleDragEnd}
+                    className={[
+                      'flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-shadow hover:shadow-sm',
+                      reorderEnabled ? 'cursor-grab active:cursor-grabbing' : '',
+                      dragOverIndex === index && draggingIndex !== index ? 'border-primary bg-primary/5' : '',
+                    ].join(' ')}
+                  >
+                    {reorderEnabled && (
+                      <span className="text-muted-foreground">
+                        <GripVertical className="h-4 w-4" />
+                      </span>
+                    )}
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
+                        {index + 1}
+                      </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-semibold text-foreground">{item.song?.title}</span>
@@ -628,12 +735,12 @@ export default function RepertorioPage() {
                     <div className="flex shrink-0 items-center">
                       {item.song?.cipher_url && (
                         <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                          <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer"><FileText className="h-3.5 w-3.5" /></a>
+                          <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer" title="Abrir cifra"><FileText className="h-3.5 w-3.5" /></a>
                         </Button>
                       )}
                       {item.song?.youtube_url && (
                         <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                          <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer"><Youtube className="h-3.5 w-3.5" /></a>
+                          <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
                         </Button>
                       )}
                       {(isAdmin || item.minister_id === currentMinister?.id) && (
