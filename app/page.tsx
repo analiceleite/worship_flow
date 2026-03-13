@@ -32,6 +32,16 @@ export default function HomePage() {
   const [ministers, setMinisters] = useState<Minister[]>([])
   const [selectedMinisterId, setSelectedMinisterId] = useState<string>('all')
 
+  const hasVoiceRole = (value: string | null | undefined) =>
+    (value ?? '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+      .includes('voz')
+
+  const isSinger = hasVoiceRole(currentMinister?.instrument)
+  const canManageSongs = isAdmin || isSinger
+
   useEffect(() => {
     checkUserRole()
   }, [])
@@ -56,24 +66,17 @@ export default function HomePage() {
 
   const fetchSongs = useCallback(async () => {
     if (!currentMinister) return
-    
+
     const supabase = createClient()
-    
-    // Ministers see only their songs, admins see all songs with minister info
-    let query = supabase
+
+    // Everyone can visualize the full catalog; edit/delete permissions are applied in the UI and RLS.
+    const { data, error } = await supabase
       .from('songs')
       .select(`
         *,
         minister:ministers(id, name, instrument)
       `)
       .order('title', { ascending: true })
-    
-    // Filter by minister_id if not admin
-    if (!isAdmin) {
-      query = query.eq('minister_id', currentMinister.id)
-    }
-
-    const { data, error } = await query
 
     if (error) {
       console.error('Erro ao buscar músicas:', error)
@@ -84,7 +87,6 @@ export default function HomePage() {
   }, [currentMinister, isAdmin])
 
   useEffect(() => {
-    if (!isAdmin) return
     const supabase = createClient()
     supabase
       .from('ministers')
@@ -92,19 +94,24 @@ export default function HomePage() {
       .eq('is_active', true)
       .order('name')
       .then(({ data }: { data: Minister[] | null }) => { if (data) setMinisters(data) })
-  }, [isAdmin])
+  }, [])
 
   useEffect(() => {
     fetchSongs()
   }, [fetchSongs])
 
   const canEditSong = (song: Song) => {
+    if (!canManageSongs) return false
     if (isAdmin) return true
     return song.minister_id === currentMinister?.id
   }
 
   const handleDeleteSong = async () => {
     if (!deletingSong) return
+    if (!canEditSong(deletingSong)) {
+      setDeletingSong(null)
+      return
+    }
 
     const supabase = createClient()
     const { error } = await supabase
@@ -136,8 +143,7 @@ export default function HomePage() {
       song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       song.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
       song.tone.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesMinister =
-      !isAdmin || selectedMinisterId === 'all' || song.minister_id === selectedMinisterId
+    const matchesMinister = selectedMinisterId === 'all' || song.minister_id === selectedMinisterId
     return matchesSearch && matchesMinister
   })
 
@@ -149,18 +155,24 @@ export default function HomePage() {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">
-              {isAdmin ? 'Todas as Músicas' : 'Minhas Músicas'}
+              Repertório Geral de Músicas
             </h1>
             <p className="text-sm text-muted-foreground">
-              {songs.length} {songs.length === 1 ? 'música' : 'músicas'} {isAdmin ? 'cadastradas' : 'no seu repertório'}
+              {songs.length} {songs.length === 1 ? 'música' : 'músicas'} cadastradas
             </p>
           </div>
 
-          <Button onClick={() => setFormOpen(true)}>
+          <Button onClick={() => setFormOpen(true)} disabled={!canManageSongs} title={!canManageSongs ? 'Somente cantores e admins podem cadastrar músicas.' : undefined}>
             <Plus className="mr-2 h-4 w-4" />
             Nova Música
           </Button>
         </div>
+
+        {!canManageSongs && (
+          <div className="mb-4 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Você está em modo visualização: músicos podem ver todo o repertório, mas apenas cantores (criadores) e admins podem criar, editar ou excluir músicas.
+          </div>
+        )}
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
@@ -172,21 +184,19 @@ export default function HomePage() {
               className="pl-10"
             />
           </div>
-          {isAdmin && (
-            <Select value={selectedMinisterId} onValueChange={setSelectedMinisterId}>
-              <SelectTrigger className="w-full sm:w-56">
-                <SelectValue placeholder="Filtrar por ministro" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os ministros</SelectItem>
-                {ministers.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <Select value={selectedMinisterId} onValueChange={setSelectedMinisterId}>
+            <SelectTrigger className="w-full sm:w-56">
+              <SelectValue placeholder="Filtrar por ministro" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os ministros</SelectItem>
+              {ministers.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {loading ? (
@@ -207,7 +217,7 @@ export default function HomePage() {
                 : 'Comece adicionando sua primeira música.'}
             </p>
             {!searchQuery && (
-              <Button onClick={() => setFormOpen(true)}>
+              <Button onClick={() => setFormOpen(true)} disabled={!canManageSongs} title={!canManageSongs ? 'Somente cantores e admins podem cadastrar músicas.' : undefined}>
                 <Plus className="mr-2 h-4 w-4" />
                 Adicionar Música
               </Button>
@@ -219,13 +229,13 @@ export default function HomePage() {
               <SongCard
                 key={song.id}
                 song={song}
-                onEdit={(s) => {
+                onEdit={canEditSong(song) ? (s) => {
                   setEditingSong(s)
                   setFormOpen(true)
-                }}
-                onDelete={(s) => setDeletingSong(s)}
+                } : undefined}
+                onDelete={canEditSong(song) ? (s) => setDeletingSong(s) : undefined}
                 canEdit={canEditSong(song)}
-                showMinister={isAdmin}
+                showMinister
                 duplicateCount={getVersionCount(song)}
               />
             ))}

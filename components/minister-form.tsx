@@ -1,17 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Minister, INSTRUMENTS } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -41,18 +34,60 @@ export function MinisterForm({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null)
+  const parseInstruments = (value: string | null | undefined) =>
+    (value ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
   const [formData, setFormData] = useState({
     name: minister?.name || '',
     email: minister?.email || '',
-    instrument: minister?.instrument || 'Voz',
+    instruments: parseInstruments(minister?.instrument).length > 0 ? parseInstruments(minister?.instrument) : ['Voz'],
   })
+
+  useEffect(() => {
+    if (!open) return
+
+    setError(null)
+    setTemporaryPassword(null)
+
+    if (minister) {
+      const parsedInstruments = parseInstruments(minister.instrument)
+      setFormData({
+        name: minister.name || '',
+        email: minister.email || '',
+        instruments: parsedInstruments.length > 0 ? parsedInstruments : ['Voz'],
+      })
+      return
+    }
+
+    setFormData({ name: '', email: '', instruments: ['Voz'] })
+  }, [open, minister])
+
+  const toggleInstrument = (instrument: string) => {
+    setFormData((prev) => {
+      const exists = prev.instruments.includes(instrument)
+      const next = exists
+        ? prev.instruments.filter((item) => item !== instrument)
+        : [...prev.instruments, instrument]
+      return { ...prev, instruments: next }
+    })
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
+    if (formData.instruments.length === 0) {
+      setError('Selecione ao menos uma função para o ministro.')
+      setLoading(false)
+      return
+    }
+
     const supabase = createClient()
+    const instrumentValue = formData.instruments.join(', ')
 
     try {
       if (minister) {
@@ -62,6 +97,7 @@ export function MinisterForm({
           .update({
             name: formData.name,
             email: formData.email || null,
+            instrument: instrumentValue,
           })
           .eq('id', minister.id)
 
@@ -74,7 +110,7 @@ export function MinisterForm({
           body: JSON.stringify({
             email: formData.email,
             name: formData.name,
-            instrument: formData.instrument,
+            instrument: instrumentValue,
           }),
         })
 
@@ -94,7 +130,7 @@ export function MinisterForm({
 
       onSuccess()
       onOpenChange(false)
-      setFormData({ name: '', email: '', instrument: 'Voz' })
+      setFormData({ name: '', email: '', instruments: ['Voz'] })
       setTemporaryPassword(null)
     } catch (error: any) {
       console.error('Erro ao salvar ministro:', error)
@@ -106,7 +142,7 @@ export function MinisterForm({
 
   const handleClose = () => {
     onOpenChange(false)
-    setFormData({ name: '', email: '', instrument: 'Voz' })
+    setFormData({ name: '', email: '', instruments: ['Voz'] })
     setTemporaryPassword(null)
     setError(null)
   }
@@ -202,28 +238,28 @@ export function MinisterForm({
             )} */}
           </div>
 
-          {!minister && (
-            <div className="space-y-2">
-              <Label htmlFor="instrument">Instrumento</Label>
-              <Select
-                value={formData.instrument}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, instrument: value })
-                }
-              >
-                <SelectTrigger id="instrument">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INSTRUMENTS.map((instrument) => (
-                    <SelectItem key={instrument} value={instrument}>
-                      {instrument}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-2">
+            <Label>Funções</Label>
+            <div className="flex flex-wrap gap-2">
+              {INSTRUMENTS.map((instrument) => {
+                const selected = formData.instruments.includes(instrument)
+                return (
+                  <Button
+                    key={instrument}
+                    type="button"
+                    variant={selected ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => toggleInstrument(instrument)}
+                  >
+                    {instrument}
+                  </Button>
+                )
+              })}
             </div>
-          )}
+            <p className="text-xs text-muted-foreground">
+              Selecione uma ou mais funções. Exemplo: Voz, Violão, Teclado.
+            </p>
+          </div>
 
             <DialogFooter>
               <Button

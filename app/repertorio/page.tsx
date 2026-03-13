@@ -225,6 +225,14 @@ export default function RepertorioPage() {
 
   const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const hasVoiceRole = (value: string | null | undefined) =>
+    (value ?? '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+      .includes('voz')
+  const isSinger = hasVoiceRole(currentMinister?.instrument)
+  const canAddSongsToRepertoire = isAdmin || isSinger
 
   const [formOpen, setFormOpen] = useState(false)
   const [deletingItem, setDeletingItem] = useState<RepertoireItem | null>(null)
@@ -334,6 +342,10 @@ export default function RepertorioPage() {
     e.preventDefault()
     setFormError(null)
     if (!selectedDay) return
+    if (!canAddSongsToRepertoire) {
+      setFormError('Apenas cantores e administradores podem adicionar músicas ao repertório.')
+      return
+    }
     if (!isAdmin && !currentMinister) { setFormError('Não foi possível identificar o ministro logado.'); return }
     const supabase = createClient()
     const maxOrder = repertoire.length > 0 ? Math.max(...repertoire.map(r => r.order_index)) : 0
@@ -404,6 +416,7 @@ export default function RepertorioPage() {
   }
 
   const handleOpenAddForm = () => {
+    if (!canAddSongsToRepertoire) return
     setFormData({ song_id: '', minister_id: (!isAdmin && currentMinister) ? currentMinister.id : '' })
     setFormError(null)
     setFormOpen(true)
@@ -676,12 +689,25 @@ export default function RepertorioPage() {
                   {reorderEnabled ? <Unlock className="mr-1.5 h-3.5 w-3.5" /> : <Lock className="mr-1.5 h-3.5 w-3.5" />}
                   {reorderEnabled ? 'Ordenação ativa' : 'Ordenar'}
                 </Button>
-                <Button size="sm" onClick={handleOpenAddForm} disabled={availableSongs.length === 0}>
+                <Button
+                  size="sm"
+                  onClick={handleOpenAddForm}
+                  disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
+                  title={!canAddSongsToRepertoire ? 'Apenas cantores e administradores podem adicionar músicas ao repertório.' : undefined}
+                >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Adicionar
                 </Button>
               </div>
             </div>
+
+            {!canAddSongsToRepertoire && (
+              <Alert>
+                <AlertDescription>
+                  Modo visualização: músicos podem consultar o repertório, mas somente cantores e admins podem adicionar músicas.
+                </AlertDescription>
+              </Alert>
+            )}
 
             {reorderEnabled && (
               <Alert>
@@ -709,7 +735,12 @@ export default function RepertorioPage() {
                 <p className="mb-4 text-xs text-muted-foreground">
                   Adicione músicas para este {selectedDay.serviceType === 'special' ? 'evento' : 'culto'}.
                 </p>
-                <Button size="sm" onClick={handleOpenAddForm} disabled={availableSongs.length === 0}>
+                <Button
+                  size="sm"
+                  onClick={handleOpenAddForm}
+                  disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
+                  title={!canAddSongsToRepertoire ? 'Apenas cantores e administradores podem adicionar músicas ao repertório.' : undefined}
+                >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Adicionar música
                 </Button>
@@ -816,7 +847,7 @@ export default function RepertorioPage() {
             )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={!formData.song_id}>Adicionar</Button>
+              <Button type="submit" disabled={!canAddSongsToRepertoire || !formData.song_id}>Adicionar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
