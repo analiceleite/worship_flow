@@ -1,0 +1,31 @@
+name: Schedule Email Reminders
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  enqueue-and-process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enqueue D-7 reminders
+        run: |
+          curl -sS -X POST "${{ secrets.APP_BASE_URL }}/api/notifications/schedule/enqueue-reminder-7days" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -d '{}'
+
+      - name: Enqueue D-1 reminders
+        run: |
+          curl -sS -X POST "${{ secrets.APP_BASE_URL }}/api/notifications/schedule/enqueue-reminder-1day" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -d '{}'
+
+      - name: Process queue
+        run: |
+          curl -sS -X POST "${{ secrets.APP_BASE_URL }}/api/notifications/schedule/process-queue" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -d '{"batchSize": 100}'
