@@ -341,7 +341,44 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
 
   if (!response.ok) {
     const body = await response.text()
-    throw new Error(`Erro ao enviar e-mail: ${body}`)
+    const retryAfterHeader = response.headers.get('retry-after')
+    const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : null
+    const error = new Error(`Erro ao enviar e-mail: ${body}`) as Error & {
+      status?: number
+      retryAfterMs?: number | null
+    }
+    error.status = response.status
+    error.retryAfterMs = Number.isFinite(retryAfterMs) ? retryAfterMs : null
+    throw error
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function sendEmailWithRetry(params: { to: string; subject: string; text: string; html: string }) {
+  const maxAttempts = 3
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await sendEmail(params)
+      return
+    } catch (err) {
+      const error = err as Error & { status?: number; retryAfterMs?: number | null }
+      const isRateLimit = error.status === 429
+      const isLastAttempt = attempt === maxAttempts
+
+      if (!isRateLimit || isLastAttempt) {
+        throw err
+      }
+
+      const waitMs = error.retryAfterMs && error.retryAfterMs > 0
+        ? error.retryAfterMs
+        : attempt * 1000
+
+      await sleep(waitMs)
+    }
   }
 }
 
@@ -382,6 +419,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   let sent = 0
   let failed = 0
   let skipped = 0
+  let lastSendAt = 0
 
   for (const row of rows ?? []) {
     const payload = (row.payload_json ?? {}) as Record<string, unknown>
@@ -405,12 +443,19 @@ export async function processScheduleEmailQueue(batchSize = 50) {
         payload,
       })
 
-      await sendEmail({
+      const elapsedMs = Date.now() - lastSendAt
+      const minIntervalMs = 600
+      if (lastSendAt > 0 && elapsedMs < minIntervalMs) {
+        await sleep(minIntervalMs - elapsedMs)
+      }
+
+      await sendEmailWithRetry({
         to: email,
         subject: template.subject,
         text: template.text,
         html: template.html,
       })
+      lastSendAt = Date.now()
 
       await markQueueStatus({
         id: row.id,
