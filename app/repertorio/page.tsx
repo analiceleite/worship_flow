@@ -346,6 +346,10 @@ export default function RepertorioPage() {
       setFormError('Apenas cantores e administradores podem adicionar músicas ao repertório.')
       return
     }
+    if (isAdmin && !formData.minister_id) {
+      setFormError('Selecione o ministro para carregar e adicionar as músicas dele.')
+      return
+    }
     if (!isAdmin && !currentMinister) { setFormError('Não foi possível identificar o ministro logado.'); return }
     const supabase = createClient()
     const maxOrder = repertoire.length > 0 ? Math.max(...repertoire.map(r => r.order_index)) : 0
@@ -491,6 +495,12 @@ export default function RepertorioPage() {
   const availableSongs = songs.filter(
     s => !repertoire.some(r => r.song_id === s.id) && (isAdmin || s.minister_id === currentMinister?.id)
   )
+
+  const filteredSongsForForm = availableSongs.filter((song) => {
+    if (isAdmin && formData.minister_id && song.minister_id !== formData.minister_id) return false
+    if (isAdmin && !formData.minister_id) return false
+    return true
+  })
 
   const selectedDayOptions = (() => {
     if (!selectedDay) return []
@@ -825,29 +835,56 @@ export default function RepertorioPage() {
           </DialogHeader>
           <form onSubmit={handleAddToRepertoire} className="space-y-4">
             {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
-            <div className="space-y-2">
-              <Label>Música</Label>
-              <Select value={formData.song_id} onValueChange={v => setFormData(f => ({ ...f, song_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Selecione uma música" /></SelectTrigger>
-                <SelectContent>
-                  {availableSongs.map(s => <SelectItem key={s.id} value={s.id}>{s.title} — {s.artist} ({s.tone})</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
             {isAdmin && (
               <div className="space-y-2">
-                <Label>Ministro <span className="text-muted-foreground">(opcional)</span></Label>
-                <Select value={formData.minister_id} onValueChange={v => setFormData(f => ({ ...f, minister_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecione um ministro" /></SelectTrigger>
+                <Label>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">1</span>
+                    Selecione o ministro
+                  </span>
+                </Label>
+                <Select value={formData.minister_id} onValueChange={v => setFormData(f => ({ ...f, minister_id: v, song_id: '' }))}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Selecione um ministro" /></SelectTrigger>
                   <SelectContent>
-                    {ministers.map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.instrument})</SelectItem>)}
+                    {ministers
+                      .filter((m) => hasVoiceRole(m.instrument))
+                      .map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.instrument})</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             )}
+            <div className="space-y-2">
+              <Label>
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">{isAdmin ? '2' : '1'}</span>
+                  Selecione a música
+                </span>
+              </Label>
+              <Select value={formData.song_id} onValueChange={v => setFormData(f => ({ ...f, song_id: v }))} disabled={isAdmin && !formData.minister_id}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={isAdmin && !formData.minister_id ? 'Selecione primeiro o ministro' : 'Selecione uma música'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredSongsForForm.length > 0 ? (
+                    filteredSongsForForm.map(s => <SelectItem key={s.id} value={s.id}>{s.title} — {s.artist} ({s.tone})</SelectItem>)
+                  ) : (
+                    <SelectItem value="__empty" disabled>
+                      {isAdmin && !formData.minister_id ? 'Selecione um ministro para listar músicas' : 'Nenhuma música encontrada'}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {isAdmin
+                  ? (formData.minister_id
+                    ? `Mostrando ${filteredSongsForForm.length} música(s) disponíveis para o ministro selecionado.`
+                    : 'Primeiro selecione o ministro para listar as músicas dele.')
+                  : `Mostrando ${filteredSongsForForm.length} música(s) disponíveis.`}
+              </p>
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={!canAddSongsToRepertoire || !formData.song_id}>Adicionar</Button>
+              <Button type="submit" disabled={!canAddSongsToRepertoire || !formData.song_id || (isAdmin && !formData.minister_id)}>Adicionar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
