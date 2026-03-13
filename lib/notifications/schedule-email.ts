@@ -113,12 +113,24 @@ export async function enqueueQuarterPublishedNotifications(input: {
     },
   }))
 
+  const dedupeKeys = rows.map((r) => r.dedupe_key)
+  const { data: alreadySent } = await admin
+    .from('schedule_email_notifications')
+    .select('dedupe_key')
+    .in('dedupe_key', dedupeKeys)
+    .eq('status', 'sent')
+
+  const sentKeys = new Set((alreadySent ?? []).map((r: { dedupe_key: string }) => r.dedupe_key))
+  const rowsToUpsert = rows.filter((r) => !sentKeys.has(r.dedupe_key))
+
+  if (rowsToUpsert.length === 0) return { queued: 0 }
+
   const { error: insertError } = await admin
     .from('schedule_email_notifications')
-    .upsert(rows, { onConflict: 'dedupe_key' })
+    .upsert(rowsToUpsert, { onConflict: 'dedupe_key' })
 
   if (insertError) throw new Error(insertError.message)
-  return { queued: rows.length }
+  return { queued: rowsToUpsert.length }
 }
 
 async function enqueueReminderNotifications(input: {
@@ -171,12 +183,24 @@ async function enqueueReminderNotifications(input: {
     },
   }))
 
+  const dedupeKeys = rows.map((r) => r.dedupe_key)
+  const { data: alreadySent } = await admin
+    .from('schedule_email_notifications')
+    .select('dedupe_key')
+    .in('dedupe_key', dedupeKeys)
+    .eq('status', 'sent')
+
+  const sentKeys = new Set((alreadySent ?? []).map((r: { dedupe_key: string }) => r.dedupe_key))
+  const rowsToUpsert = rows.filter((r) => !sentKeys.has(r.dedupe_key))
+
+  if (rowsToUpsert.length === 0) return { queued: 0 }
+
   const { error: insertError } = await admin
     .from('schedule_email_notifications')
-    .upsert(rows, { onConflict: 'dedupe_key' })
+    .upsert(rowsToUpsert, { onConflict: 'dedupe_key' })
 
   if (insertError) throw new Error(insertError.message)
-  return { queued: rows.length }
+  return { queued: rowsToUpsert.length }
 }
 
 export async function enqueueReminder7DaysNotifications(targetDate: string) {
