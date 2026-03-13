@@ -101,6 +101,10 @@ export async function enqueueQuarterPublishedNotifications(input: {
     quarter_id: input.quarterId,
     minister_id: g.minister_id,
     event_date: null,
+    status: 'pending',
+    attempts: 0,
+    last_error: null,
+    sent_at: null,
     payload_json: {
       quarter_name: input.quarterName,
       minister_name: g.minister_name,
@@ -111,7 +115,7 @@ export async function enqueueQuarterPublishedNotifications(input: {
 
   const { error: insertError } = await admin
     .from('schedule_email_notifications')
-    .upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true })
+    .upsert(rows, { onConflict: 'dedupe_key' })
 
   if (insertError) throw new Error(insertError.message)
   return { queued: rows.length }
@@ -154,6 +158,10 @@ async function enqueueReminderNotifications(input: {
     quarter_id: publishedQuarter.id,
     minister_id: g.minister_id,
     event_date: input.targetDate,
+    status: 'pending',
+    attempts: 0,
+    last_error: null,
+    sent_at: null,
     payload_json: {
       quarter_name: publishedQuarter.name,
       minister_name: g.minister_name,
@@ -165,7 +173,7 @@ async function enqueueReminderNotifications(input: {
 
   const { error: insertError } = await admin
     .from('schedule_email_notifications')
-    .upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true })
+    .upsert(rows, { onConflict: 'dedupe_key' })
 
   if (insertError) throw new Error(insertError.message)
   return { queued: rows.length }
