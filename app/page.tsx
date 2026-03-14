@@ -19,6 +19,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
+
+const PAGE_SIZE = 20
+
+function getPaginationRange(current: number, total: number): (number | '...')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const delta = 2
+  const range: (number | '...')[] = []
+  const left = Math.max(2, current - delta)
+  const right = Math.min(total - 1, current + delta)
+  range.push(1)
+  if (left > 2) range.push('...')
+  for (let i = left; i <= right; i++) range.push(i)
+  if (right < total - 1) range.push('...')
+  range.push(total)
+  return range
+}
 
 export default function HomePage() {
   const [songs, setSongs] = useState<Song[]>([])
@@ -31,6 +56,9 @@ export default function HomePage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [ministers, setMinisters] = useState<Minister[]>([])
   const [selectedMinisterId, setSelectedMinisterId] = useState<string>('all')
+  const [totalSongs, setTotalSongs] = useState(0)
+  const [page, setPage] = useState(1)
+  const [appliedSearch, setAppliedSearch] = useState('')
 
   const hasVoiceRole = (value: string | null | undefined) =>
     (value ?? '')
@@ -45,6 +73,15 @@ export default function HomePage() {
   useEffect(() => {
     checkUserRole()
   }, [])
+
+  // Debounce search input and reset page together so only one fetch fires
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppliedSearch(searchQuery)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   const checkUserRole = async () => {
     const supabase = createClient()
@@ -66,25 +103,35 @@ export default function HomePage() {
 
   const fetchSongs = useCallback(async () => {
     if (!currentMinister) return
-
+    setLoading(true)
     const supabase = createClient()
 
-    // Everyone can visualize the full catalog; edit/delete permissions are applied in the UI and RLS.
-    const { data, error } = await supabase
+    let query = supabase
       .from('songs')
-      .select(`
-        *,
-        minister:ministers(id, name, instrument)
-      `)
+      .select('*, minister:ministers(id, name, instrument)', { count: 'exact' })
       .order('title', { ascending: true })
+      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
+
+    if (appliedSearch.trim()) {
+      query = query.or(
+        `title.ilike.%${appliedSearch.trim()}%,artist.ilike.%${appliedSearch.trim()}%,tone.ilike.%${appliedSearch.trim()}%`
+      )
+    }
+
+    if (selectedMinisterId !== 'all') {
+      query = query.eq('minister_id', selectedMinisterId)
+    }
+
+    const { data, error, count } = await query
 
     if (error) {
       console.error('Erro ao buscar músicas:', error)
     } else {
       setSongs(data || [])
+      setTotalSongs(count ?? 0)
     }
     setLoading(false)
-  }, [currentMinister, isAdmin])
+  }, [currentMinister, page, appliedSearch, selectedMinisterId])
 
   useEffect(() => {
     const supabase = createClient()
@@ -138,14 +185,8 @@ export default function HomePage() {
 
   const getVersionCount = (song: Song) => versionCountMap[normalizeTitle(song.title)] ?? 1
 
-  const filteredSongs = songs.filter((song) => {
-    const matchesSearch =
-      song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      song.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      song.tone.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesMinister = selectedMinisterId === 'all' || song.minister_id === selectedMinisterId
-    return matchesSearch && matchesMinister
-  })
+  // Filtering and pagination handled server-side; songs already contains the current page.
+  const filteredSongs = songs
 
   return (
     <div className="min-h-screen bg-background">
@@ -158,7 +199,7 @@ export default function HomePage() {
               Repertório Geral de Músicas
             </h1>
             <p className="text-sm text-muted-foreground">
-              {songs.length} {songs.length === 1 ? 'música' : 'músicas'} cadastradas
+              {totalSongs} {totalSongs === 1 ? 'música' : 'músicas'} {appliedSearch || selectedMinisterId !== 'all' ? 'encontradas' : 'cadastradas'}
             </p>
           </div>
 
@@ -184,7 +225,7 @@ export default function HomePage() {
               className="pl-10"
             />
           </div>
-          <Select value={selectedMinisterId} onValueChange={setSelectedMinisterId}>
+          <Select value={selectedMinisterId} onValueChange={(v) => { setSelectedMinisterId(v); setPage(1) }}>
             <SelectTrigger className="w-full sm:w-56">
               <SelectValue placeholder="Filtrar por ministro" />
             </SelectTrigger>
@@ -202,7 +243,7 @@ export default function HomePage() {
           {selectedMinisterId !== 'all' && (
             <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
               <span>
-                {songs.filter((s) => s.minister_id === selectedMinisterId).length} música(s) cadastrada(s) para o ministro selecionado.
+                {totalSongs} música(s) cadastrada(s) para o ministro selecionado.
               </span>
             </div>
           )}
@@ -232,22 +273,65 @@ export default function HomePage() {
             )}
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredSongs.map((song) => (
-              <SongCard
-                key={song.id}
-                song={song}
-                onEdit={canEditSong(song) ? (s) => {
-                  setEditingSong(s)
-                  setFormOpen(true)
-                } : undefined}
-                onDelete={canEditSong(song) ? (s) => setDeletingSong(s) : undefined}
-                canEdit={canEditSong(song)}
-                showMinister
-                duplicateCount={getVersionCount(song)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredSongs.map((song) => (
+                <SongCard
+                  key={song.id}
+                  song={song}
+                  onEdit={canEditSong(song) ? (s) => {
+                    setEditingSong(s)
+                    setFormOpen(true)
+                  } : undefined}
+                  onDelete={canEditSong(song) ? (s) => setDeletingSong(s) : undefined}
+                  canEdit={canEditSong(song)}
+                  showMinister
+                  duplicateCount={getVersionCount(song)}
+                />
+              ))}
+            </div>
+            {totalSongs > PAGE_SIZE && (
+              <div className="mt-6">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)) }}
+                        aria-disabled={page === 1}
+                        className={page === 1 ? 'pointer-events-none opacity-50' : ''}
+                      />
+                    </PaginationItem>
+                    {getPaginationRange(page, Math.ceil(totalSongs / PAGE_SIZE)).map((p, i) =>
+                      p === '...' ? (
+                        <PaginationItem key={`ellipsis-${i}`}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      ) : (
+                        <PaginationItem key={p}>
+                          <PaginationLink
+                            href="#"
+                            isActive={page === p}
+                            onClick={(e) => { e.preventDefault(); setPage(p as number) }}
+                          >
+                            {p}
+                          </PaginationLink>
+                        </PaginationItem>
+                      )
+                    )}
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); setPage((p) => Math.min(Math.ceil(totalSongs / PAGE_SIZE), p + 1)) }}
+                        aria-disabled={page === Math.ceil(totalSongs / PAGE_SIZE)}
+                        className={page === Math.ceil(totalSongs / PAGE_SIZE) ? 'pointer-events-none opacity-50' : ''}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+          </>
         )}
       </main>
 

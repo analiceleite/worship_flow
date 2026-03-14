@@ -51,6 +51,14 @@ import {
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+} from '@/components/ui/pagination'
+import {
   format,
   startOfWeek,
   endOfWeek,
@@ -211,12 +219,16 @@ function WeekDayCell({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 10;
+
 export default function RepertorioPage() {
   const [weekAnchor, setWeekAnchor] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null)
   const [dayInfoMap, setDayInfoMap] = useState<Record<string, DayInfo>>({})
 
   const [repertoire, setRepertoire] = useState<RepertoireItem[]>([])
+  const [totalRepertoire, setTotalRepertoire] = useState(0)
+  const [page, setPage] = useState(1)
   const [songs, setSongs] = useState<Song[]>([])
   const [ministers, setMinisters] = useState<Minister[]>([])
   const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([])
@@ -317,21 +329,28 @@ export default function RepertorioPage() {
     if (!selectedDay) return
     setLoading(true)
     const supabase = createClient()
-    const [songsRes, ministersRes, repRes] = await Promise.all([
+    const [songsRes, ministersRes, repRes, repCountRes] = await Promise.all([
       supabase.from('songs').select('*').order('title'),
       supabase.from('ministers').select('*').order('name'),
-      supabase.from('repertoire').select('*, song:songs(*), minister:ministers(*)')
+      supabase.from('repertoire')
+        .select('*, song:songs(*), minister:ministers(*)', { count: 'exact' })
         .eq('event_date', toDateStr(selectedDay.date))
         .eq('event_name', selectedDay.eventName)
-        .order('order_index'),
+        .order('order_index')
+        .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
+      supabase.from('repertoire')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_date', toDateStr(selectedDay.date))
+        .eq('event_name', selectedDay.eventName),
     ])
     if (songsRes.data) setSongs(songsRes.data)
     if (ministersRes.data) setMinisters(ministersRes.data)
     if (repRes.data) setRepertoire(repRes.data)
+    setTotalRepertoire(repCountRes.count || 0)
     setLoading(false)
-  }, [selectedDay])
+  }, [selectedDay, page])
 
-  useEffect(() => { if (selectedDay) fetchRepertoire() }, [fetchRepertoire, selectedDay])
+  useEffect(() => { if (selectedDay) fetchRepertoire() }, [fetchRepertoire, selectedDay, page])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -733,7 +752,7 @@ export default function RepertorioPage() {
               </Alert>
             )}
 
-            {/* ── List ── */}
+            {/* ── List + Pagination ── */}
             {loading ? (
               <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
             ) : repertoire.length === 0 ? (
@@ -756,69 +775,105 @@ export default function RepertorioPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-2">
-                {repertoire.map((item, index) => (
-                  <div
-                    key={item.id}
-                    data-reorder-index={index}
-                    draggable={reorderEnabled}
-                    onDragStart={() => handleDragStart(index)}
-                    onDragOver={e => handleDragOver(e, index)}
-                    onDrop={() => void handleDrop(index)}
-                    onDragEnd={handleDragEnd}
-                    className={[
-                      'flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-shadow hover:shadow-sm',
-                      reorderEnabled ? 'select-none' : '',
-                      draggingIndex === index ? 'opacity-60' : '',
-                      dragOverIndex === index && draggingIndex !== index ? 'border-primary bg-primary/5' : '',
-                    ].join(' ')}
-                  >
-                    {reorderEnabled && (
-                      <div className="flex flex-col items-center mr-2 space-y-0.5 sm:space-y-1">
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
-                          onClick={() => void moveRepertoireItem(index, index - 1)} disabled={index === 0}>
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
-                          onClick={() => void moveRepertoireItem(index, index + 1)} disabled={index === repertoire.length - 1}>
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
+              <>
+                <div className="space-y-2">
+                  {repertoire.map((item, index) => (
+                    <div
+                      key={item.id}
+                      data-reorder-index={index}
+                      draggable={reorderEnabled}
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={e => handleDragOver(e, index)}
+                      onDrop={() => void handleDrop(index)}
+                      onDragEnd={handleDragEnd}
+                      className={[
+                        'flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-shadow hover:shadow-sm',
+                        reorderEnabled ? 'select-none' : '',
+                        draggingIndex === index ? 'opacity-60' : '',
+                        dragOverIndex === index && draggingIndex !== index ? 'border-primary bg-primary/5' : '',
+                      ].join(' ')}
+                    >
+                      {reorderEnabled && (
+                        <div className="flex flex-col items-center mr-2 space-y-0.5 sm:space-y-1">
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
+                            onClick={() => void moveRepertoireItem(index, index - 1)} disabled={index === 0}>
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
+                            onClick={() => void moveRepertoireItem(index, index + 1)} disabled={index === repertoire.length - 1}>
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
+                          {((page - 1) * PAGE_SIZE) + index + 1}
+                        </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-foreground">{item.song?.title}</span>
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{item.song?.tone}</span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {item.song?.artist}
+                          {item.minister && <> · <span>{item.minister.name}</span></>}
+                        </p>
                       </div>
-                    )}
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
-                        {index + 1}
-                      </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-semibold text-foreground">{item.song?.title}</span>
-                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{item.song?.tone}</span>
+                      <div className="flex shrink-0 items-center">
+                        {item.song?.cipher_url && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                            <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer" title="Abrir cifra"><FileText className="h-3.5 w-3.5" /></a>
+                          </Button>
+                        )}
+                        {item.song?.youtube_url && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                            <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
+                          </Button>
+                        )}
+                        {(isAdmin || item.minister_id === currentMinister?.id) && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setDeletingItem(item)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {item.song?.artist}
-                        {item.minister && <> · <span>{item.minister.name}</span></>}
-                      </p>
                     </div>
-                    <div className="flex shrink-0 items-center">
-                      {item.song?.cipher_url && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                          <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer" title="Abrir cifra"><FileText className="h-3.5 w-3.5" /></a>
-                        </Button>
-                      )}
-                      {item.song?.youtube_url && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                          <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
-                        </Button>
-                      )}
-                      {(isAdmin || item.minister_id === currentMinister?.id) && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => setDeletingItem(item)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
+                  ))}
+                </div>
+                {/* Pagination */}
+                {totalRepertoire > PAGE_SIZE && (
+                  <div className="mt-4">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            onClick={e => { e.preventDefault(); setPage(p => Math.max(1, p - 1)) }}
+                            aria-disabled={page === 1}
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: Math.ceil(totalRepertoire / PAGE_SIZE) }).map((_, i) => (
+                          <PaginationItem key={i}>
+                            <PaginationLink
+                              href="#"
+                              isActive={page === i + 1}
+                              onClick={e => { e.preventDefault(); setPage(i + 1) }}
+                            >
+                              {i + 1}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ))}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            onClick={e => { e.preventDefault(); setPage(p => Math.min(Math.ceil(totalRepertoire / PAGE_SIZE), p + 1)) }}
+                            aria-disabled={page === Math.ceil(totalRepertoire / PAGE_SIZE)}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         )}
