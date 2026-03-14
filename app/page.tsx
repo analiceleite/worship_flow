@@ -190,7 +190,7 @@ export default function HomePage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os ministros</SelectItem>
-              {ministers.map((m) => (
+              {ministers.filter((m) => hasVoiceRole(m.instrument)).map((m) => (
                 <SelectItem key={m.id} value={m.id}>
                   {m.name}
                 </SelectItem>
