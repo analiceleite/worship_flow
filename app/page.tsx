@@ -199,6 +199,14 @@ export default function HomePage() {
           </Select>
         </div>
 
+          {selectedMinisterId !== 'all' && (
+            <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <span>
+                {songs.filter((s) => s.minister_id === selectedMinisterId).length} música(s) cadastrada(s) para o ministro selecionado.
+              </span>
+            </div>
+          )}
+
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Spinner className="h-8 w-8" />
