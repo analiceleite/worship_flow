@@ -74,6 +74,7 @@ export function MinisterForm({
   }, [open, minister])
 
   const toggleInstrument = (instrument: string) => {
+    if (formData.role === 'midia') return
     setFormData((prev) => {
       const exists = prev.instruments.includes(instrument)
       const next = exists
@@ -257,7 +258,7 @@ export function MinisterForm({
                   type="button"
                   variant={formData.role === r.id ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setFormData({ ...formData, role: r.id })}
+                  onClick={() => setFormData(prev => ({ ...prev, role: r.id, instruments: r.id === 'midia' ? [] : prev.instruments.length ? prev.instruments : ['Voz'] }))}
                 >
                   {r.label}
                 </Button>
@@ -278,6 +279,8 @@ export function MinisterForm({
                     variant={selected ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => toggleInstrument(instrument)}
+                    disabled={formData.role === 'midia'}
+                    title={formData.role === 'midia' ? 'Usuário de mídia não pode ter funções musicais.' : undefined}
                   >
                     {instrument}
                   </Button>

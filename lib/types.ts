@@ -46,9 +46,4 @@ export const INSTRUMENTS = [
   'Baixo',
   'Bateria',
   'Teclado',
-  'Piano',
-  'Saxofone',
-  'Flauta',
-  'Violino',
-  'Outro'
 ] as const
