@@ -17,16 +17,42 @@ export default function SetPasswordPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [userName, setUserName] = useState<string>('')
+  const [mode, setMode] = useState<'activation' | 'recovery'>('recovery')
   const [formData, setFormData] = useState({ password: '', confirmPassword: '' })
 
-  useEffect(() => { checkUserStatus() }, [])
+  useEffect(() => {
+    const supabase = createClient()
+
+    const bootstrap = async () => {
+      await checkUserStatus()
+    }
+
+    void bootstrap()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        void checkUserStatus()
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
 
   const checkUserStatus = async () => {
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-      if (!user) { router.push('/auth/login'); return }
+      if (!user) {
+        setError('Abra o link enviado por e-mail para redefinir sua senha.')
+        return
+      }
 
       const { data: minister, error: ministerError } = await supabase
         .from('ministers')
@@ -35,9 +61,9 @@ export default function SetPasswordPage() {
         .single()
 
       if (ministerError) throw new Error('Usuário não encontrado')
-      if (minister.is_active) { router.push('/'); return }
 
       setUserName(minister.name)
+      setMode(minister.is_active ? 'recovery' : 'activation')
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -68,14 +94,16 @@ export default function SetPasswordPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Usuário não encontrado')
 
-      const { error: activateError } = await supabase
-        .from('ministers')
-        .update({ is_active: true })
-        .eq('user_id', user.id)
-      if (activateError) throw activateError
+      if (mode === 'activation') {
+        const { error: activateError } = await supabase
+          .from('ministers')
+          .update({ is_active: true })
+          .eq('user_id', user.id)
+        if (activateError) throw activateError
+      }
 
       setSuccess(true)
-      setTimeout(() => { router.push('/'); router.refresh() }, 2000)
+      setTimeout(() => { router.push('/auth/login'); router.refresh() }, 2000)
     } catch (err: any) {
       setError(err.message || 'Erro ao definir senha. Tente novamente.')
     } finally {
@@ -100,7 +128,9 @@ export default function SetPasswordPage() {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
             <CheckCircle2 className="h-7 w-7 text-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Conta ativada!</h1>
+          <h1 className="text-xl font-bold text-foreground">
+            {mode === 'activation' ? 'Conta ativada!' : 'Senha redefinida!'}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Sua senha foi definida. Redirecionando...
           </p>
@@ -117,10 +147,12 @@ export default function SetPasswordPage() {
         {/* ── Header ── */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground">
-            Bem-vindo, {userName}!
+            {mode === 'activation' ? `Bem-vindo, ${userName}!` : `Redefina sua senha${userName ? `, ${userName}` : ''}`}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Defina sua senha para ativar sua conta no Worship Flow.
+            {mode === 'activation'
+              ? 'Defina sua senha para ativar sua conta no Worship Flow.'
+              : 'Defina uma nova senha para continuar usando o Worship Flow.'}
           </p>
         </div>
 
@@ -163,7 +195,7 @@ export default function SetPasswordPage() {
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Spinner className="mr-2 h-4 w-4" />}
-              Ativar conta
+              {mode === 'activation' ? 'Ativar conta' : 'Redefinir senha'}
             </Button>
           </form>
         </div>
