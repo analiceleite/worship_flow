@@ -88,6 +88,22 @@ pnpm build
 pnpm start
 ```
 
+## Automação de notificações
+
+O repositório já possui um workflow diário em [.github/workflows/schedule-email-reminders.yml](.github/workflows/schedule-email-reminders.yml) para:
+
+- verificar a escala trimestral publicada e reenfileirar notificações pendentes
+- enfileirar lembretes de 7 dias
+- enfileirar lembretes de 1 dia
+- processar a fila de e-mails
+
+Configure estes secrets no GitHub Actions:
+
+- `APP_BASE_URL`
+- `CRON_SECRET`
+
+O workflow roda diariamente às `11:00 UTC` e também pode ser disparado manualmente em `Actions`.
+
 ## PWA
 
 O projeto já está preparado como PWA.

@@ -8,24 +8,34 @@ on:
 jobs:
   enqueue-and-process:
     runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
+      - name: Enqueue published schedule notifications
+        run: |
+          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/enqueue-published" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -d '{}'
+
       - name: Enqueue D-7 reminders
         run: |
-          curl -sS -X POST "${{ secrets.APP_BASE_URL }}/api/notifications/schedule/enqueue-reminder-7days" \
+          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/enqueue-reminder-7days" \
             -H "Content-Type: application/json" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "x-cron-secret: $CRON_SECRET" \
             -d '{}'
 
       - name: Enqueue D-1 reminders
         run: |
-          curl -sS -X POST "${{ secrets.APP_BASE_URL }}/api/notifications/schedule/enqueue-reminder-1day" \
+          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/enqueue-reminder-1day" \
             -H "Content-Type: application/json" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "x-cron-secret: $CRON_SECRET" \
             -d '{}'
 
       - name: Process queue
         run: |
-          curl -sS -X POST "${{ secrets.APP_BASE_URL }}/api/notifications/schedule/process-queue" \
+          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/process-queue" \
             -H "Content-Type: application/json" \
-            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -H "x-cron-secret: $CRON_SECRET" \
             -d '{"batchSize": 100}'
