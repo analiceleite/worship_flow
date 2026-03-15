@@ -43,7 +43,9 @@ export function MinisterForm({
   const [formData, setFormData] = useState({
     name: minister?.name || '',
     email: minister?.email || '',
-    instruments: parseInstruments(minister?.instrument).length > 0 ? parseInstruments(minister?.instrument) : ['Voz'],
+    instruments: minister?.role === 'midia'
+      ? ['Midia']
+      : parseInstruments(minister?.instrument).length > 0 ? parseInstruments(minister?.instrument) : ['Voz'],
     role: minister?.role || 'minister',
   })
 
@@ -64,7 +66,7 @@ export function MinisterForm({
       setFormData({
         name: minister.name || '',
         email: minister.email || '',
-        instruments: parsedInstruments.length > 0 ? parsedInstruments : ['Voz'],
+        instruments: minister.role === 'midia' ? ['Midia'] : parsedInstruments.length > 0 ? parsedInstruments : ['Voz'],
         role: minister.role || 'minister',
       })
       return
@@ -89,7 +91,7 @@ export function MinisterForm({
     setLoading(true)
     setError(null)
 
-    if (formData.instruments.length === 0) {
+    if (formData.role !== 'midia' && formData.instruments.length === 0) {
       setError('Selecione ao menos uma função para o ministro.')
       setLoading(false)
       return
@@ -258,7 +260,7 @@ export function MinisterForm({
                   type="button"
                   variant={formData.role === r.id ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setFormData(prev => ({ ...prev, role: r.id, instruments: r.id === 'midia' ? [] : prev.instruments.length ? prev.instruments : ['Voz'] }))}
+                  onClick={() => setFormData(prev => ({ ...prev, role: r.id, instruments: r.id === 'midia' ? ['Midia'] : prev.instruments.length && prev.instruments[0] !== 'Midia' ? prev.instruments : ['Voz'] }))}
                 >
                   {r.label}
                 </Button>
@@ -288,7 +290,9 @@ export function MinisterForm({
               })}
             </div>
             <p className="text-xs text-muted-foreground">
-              Selecione uma ou mais funções. Exemplo: Voz, Violão, Teclado.
+              {formData.role === 'midia'
+                ? 'Usuários de mídia recebem automaticamente a função Midia.'
+                : 'Selecione uma ou mais funções. Exemplo: Voz, Violão, Teclado.'}
             </p>
           </div>
 

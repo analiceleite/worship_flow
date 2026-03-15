@@ -7,9 +7,16 @@ export async function POST(request: Request) {
     const { email, name, instrument, role } = await request.json()
 
     // Validate input
-    if (!email || !name || !instrument) {
+    if (!email || !name) {
       return NextResponse.json(
-        { error: 'Email, nome e instrumento são obrigatórios' },
+        { error: 'Email e nome são obrigatórios' },
+        { status: 400 }
+      )
+    }
+
+    if (role !== 'midia' && !instrument) {
+      return NextResponse.json(
+        { error: 'Instrumento é obrigatório para ministros e administradores' },
         { status: 400 }
       )
     }
@@ -109,7 +116,7 @@ export async function POST(request: Request) {
       .insert({
         name,
         email,
-        instrument,
+        instrument: ministerRole === 'midia' ? 'Midia' : instrument,
         user_id: authData.user.id,
         role: ministerRole,
         is_active: false,

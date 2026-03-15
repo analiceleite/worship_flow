@@ -66,12 +66,12 @@ export default function MinistrosPage() {
   const filteredMinisters = ministers.filter(
     (minister) =>
       minister.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      minister.instrument.toLowerCase().includes(searchQuery.toLowerCase())
+      (minister.role === 'midia' ? 'midia' : (minister.instrument || 'Outros')).toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const groupedMinisters = filteredMinisters.reduce(
     (acc, minister) => {
-      const instrument = minister.instrument || 'Outros'
+      const instrument = minister.role === 'midia' ? 'Midia' : (minister.instrument || 'Outros')
       if (!acc[instrument]) acc[instrument] = []
       acc[instrument].push(minister)
       return acc
@@ -169,7 +169,7 @@ export default function MinistrosPage() {
                           {minister.name}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {minister.instrument}
+                          {minister.role === 'midia' ? 'Midia' : minister.instrument}
                         </p>
                       </div>
 
