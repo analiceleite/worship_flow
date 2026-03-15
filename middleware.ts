@@ -97,6 +97,12 @@ export async function middleware(request: NextRequest) {
     if (isAdminRoute && minister.role !== 'admin') {
       return NextResponse.redirect(new URL('/', request.url))
     }
+
+    // 'midia' users: only allow viewing the repertório page
+    if (minister.role === 'midia') {
+      const allowed = request.nextUrl.pathname.startsWith('/repertorio') || isPublicRoute
+      if (!allowed) return NextResponse.redirect(new URL('/repertorio', request.url))
+    }
   }
 
   // If authenticated and trying to access auth pages, redirect to home

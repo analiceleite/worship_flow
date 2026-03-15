@@ -245,6 +245,7 @@ export default function RepertorioPage() {
       .includes('voz')
   const isSinger = hasVoiceRole(currentMinister?.instrument)
   const canAddSongsToRepertoire = isAdmin || isSinger
+  const isMedia = currentMinister?.role === 'midia'
 
   const [formOpen, setFormOpen] = useState(false)
   const [deletingItem, setDeletingItem] = useState<RepertoireItem | null>(null)
@@ -708,7 +709,10 @@ export default function RepertorioPage() {
                   type="button"
                   variant={reorderEnabled ? 'default' : 'outline'}
                   size="sm"
+                  disabled={!(isAdmin || isSinger)}
+                  title={!(isAdmin || isSinger) ? 'Apenas cantores e administradores podem ordenar o repertório.' : undefined}
                   onClick={() => {
+                    if (!(isAdmin || isSinger)) return
                     setReorderEnabled(prev => !prev)
                     setDraggingIndex(null)
                     setDragOverIndex(null)

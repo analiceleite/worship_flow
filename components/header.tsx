@@ -93,7 +93,10 @@ export function Header() {
   }
 
   const visibleNavigation = navigation.filter(item =>
-    !item.adminOnly || userRole === 'admin'
+    // Admin-only pages only visible to admin
+    (!item.adminOnly || userRole === 'admin')
+    // 'midia' users should only see the Repertório page
+    && (userRole !== 'midia' || item.href === '/repertorio')
   )
 
   return (
@@ -148,7 +151,7 @@ export function Header() {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none">{userName}</p>
                       <p className="text-xs leading-none text-muted-foreground">
-                        {userRole === 'admin' ? 'Administrador' : 'Ministro'}
+                        {userRole === 'admin' ? 'Administrador' : userRole === 'midia' ? 'Mídia' : 'Ministro'}
                       </p>
                     </div>
                   </DropdownMenuLabel>
@@ -244,7 +247,7 @@ export function Header() {
                       <div>
                         <p className="text-sm font-medium">{userName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {userRole === 'admin' ? 'Administrador' : 'Ministro'}
+                          {userRole === 'admin' ? 'Administrador' : userRole === 'midia' ? 'Mídia' : 'Ministro'}
                         </p>
                       </div>
                     </div>

@@ -44,7 +44,14 @@ export function MinisterForm({
     name: minister?.name || '',
     email: minister?.email || '',
     instruments: parseInstruments(minister?.instrument).length > 0 ? parseInstruments(minister?.instrument) : ['Voz'],
+    role: minister?.role || 'minister',
   })
+
+  const roles: Array<{ id: Minister['role']; label: string }> = [
+    { id: 'minister', label: 'Ministro' },
+    { id: 'midia', label: 'Mídia' },
+    { id: 'admin', label: 'Administrador' },
+  ]
 
   useEffect(() => {
     if (!open) return
@@ -58,11 +65,12 @@ export function MinisterForm({
         name: minister.name || '',
         email: minister.email || '',
         instruments: parsedInstruments.length > 0 ? parsedInstruments : ['Voz'],
+        role: minister.role || 'minister',
       })
       return
     }
 
-    setFormData({ name: '', email: '', instruments: ['Voz'] })
+    setFormData({ name: '', email: '', instruments: ['Voz'], role: 'minister' })
   }, [open, minister])
 
   const toggleInstrument = (instrument: string) => {
@@ -97,6 +105,7 @@ export function MinisterForm({
           .update({
             name: formData.name,
             email: formData.email || null,
+            role: formData.role,
             instrument: instrumentValue,
           })
           .eq('id', minister.id)
@@ -111,6 +120,7 @@ export function MinisterForm({
             email: formData.email,
             name: formData.name,
             instrument: instrumentValue,
+            role: formData.role,
           }),
         })
 
@@ -130,7 +140,7 @@ export function MinisterForm({
 
       onSuccess()
       onOpenChange(false)
-      setFormData({ name: '', email: '', instruments: ['Voz'] })
+      setFormData({ name: '', email: '', instruments: ['Voz'], role: 'minister' })
       setTemporaryPassword(null)
     } catch (error: any) {
       console.error('Erro ao salvar ministro:', error)
@@ -142,7 +152,7 @@ export function MinisterForm({
 
   const handleClose = () => {
     onOpenChange(false)
-    setFormData({ name: '', email: '', instruments: ['Voz'] })
+    setFormData({ name: '', email: '', instruments: ['Voz'], role: 'minister' })
     setTemporaryPassword(null)
     setError(null)
   }
@@ -236,6 +246,24 @@ export function MinisterForm({
                 Um convite será enviado para este email
               </p>
             )} */}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Papel</Label>
+            <div className="flex flex-wrap gap-2">
+              {roles.map((r) => (
+                <Button
+                  key={r.id}
+                  type="button"
+                  variant={formData.role === r.id ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setFormData({ ...formData, role: r.id })}
+                >
+                  {r.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">Escolha o papel do usuário.</p>
           </div>
 
           <div className="space-y-2">

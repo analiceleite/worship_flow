@@ -44,7 +44,7 @@ interface CurrentScheduleResponse {
   viewer: {
     id: string
     name: string
-    role: 'admin' | 'minister'
+    role: 'admin' | 'minister' | 'midia'
   } | null
 }
 

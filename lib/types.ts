@@ -3,7 +3,7 @@ export interface Minister {
   name: string
   email: string | null
   instrument: string
-  role: 'admin' | 'minister'
+  role: 'admin' | 'minister' | 'midia'
   user_id: string | null
   is_active: boolean
   avatar_url: string | null

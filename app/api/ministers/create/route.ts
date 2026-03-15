@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 
 export async function POST(request: Request) {
   try {
-    const { email, name, instrument } = await request.json()
+    const { email, name, instrument, role } = await request.json()
 
     // Validate input
     if (!email || !name || !instrument) {
@@ -102,6 +102,8 @@ export async function POST(request: Request) {
     }
 
     // Create minister record
+    const ministerRole = role === 'admin' ? 'admin' : role === 'midia' ? 'midia' : 'minister'
+
     const { data: ministerData, error: ministerError } = await supabase
       .from('ministers')
       .insert({
@@ -109,7 +111,7 @@ export async function POST(request: Request) {
         email,
         instrument,
         user_id: authData.user.id,
-        role: 'minister',
+        role: ministerRole,
         is_active: false,
       })
       .select()
