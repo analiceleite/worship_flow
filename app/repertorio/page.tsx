@@ -555,7 +555,13 @@ export default function RepertorioPage() {
             <h1 className="text-2xl font-bold text-foreground">Repertório</h1>
             <p className="text-sm text-muted-foreground">Selecione um dia abaixo</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { setNewEventDate(selectedDay ? toDateStr(selectedDay.date) : toDateStr(new Date())); setCreateEventOpen(true) }}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setNewEventDate(selectedDay ? toDateStr(selectedDay.date) : toDateStr(new Date())); setCreateEventOpen(true) }}
+            disabled={isMedia}
+            title={isMedia ? 'Usuários de mídia não podem criar eventos especiais.' : undefined}
+          >
             <Sparkles className="mr-1.5 h-3.5 w-3.5" />
             Evento especial
           </Button>
@@ -959,7 +965,7 @@ export default function RepertorioPage() {
             </DialogTitle>
             <DialogDescription>Crie um evento e adicione músicas a ele.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateEvent} className="space-y-4">
+          <form onSubmit={e => { if (isMedia) { e.preventDefault(); return; } handleCreateEvent(e); }} className="space-y-4">
             {newEventError && <Alert variant="destructive"><AlertDescription>{newEventError}</AlertDescription></Alert>}
             <div className="space-y-2">
               <Label>Nome do evento</Label>
