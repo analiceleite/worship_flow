@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,11 +41,11 @@ export default function LoginPage() {
       }
 
       if (!minister.is_active) {
-        router.push('/auth/set-password')
+        router.push(ROUTES.AUTH_SET_PASSWORD)
         return
       }
 
-      router.push(minister.role === 'admin' ? '/ministros' : '/')
+      router.push(minister.role === 'admin' ? ROUTES.USERS : ROUTES.HOME)
       router.refresh()
     } catch (err: any) {
       console.error('Login error:', err)
@@ -112,7 +113,7 @@ export default function LoginPage() {
             </Button>
             <div className="mt-2 text-center">
               <a
-                href="/auth/forgot-password"
+                href={ROUTES.AUTH_FORGOT_PASSWORD}
                 className="text-xs text-primary underline hover:text-primary/80"
               >
                 Esqueceu a senha?

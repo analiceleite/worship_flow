@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { ROUTES } from '@/lib/routes'
 
 type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped'
 type NotificationType = 'quarter_published' | 'reminder_7days' | 'reminder_1day'
@@ -227,7 +228,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const quarterName = String(input.payload.quarter_name ?? 'Escala')
   const items = Array.isArray(input.payload.items) ? input.payload.items : []
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
-  const scheduleUrl = baseUrl ? `${baseUrl}/escala` : '/escala'
+  const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
 
   const lines = items.map((item) => {
     const event = item as { event_date?: string; event_type?: 'thursday' | 'sunday'; role_name?: string }

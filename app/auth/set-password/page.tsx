@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -103,7 +104,7 @@ export default function SetPasswordPage() {
       }
 
       setSuccess(true)
-      setTimeout(() => { router.push('/auth/login'); router.refresh() }, 2000)
+      setTimeout(() => { router.push(ROUTES.AUTH_LOGIN); router.refresh() }, 2000)
     } catch (err: any) {
       setError(err.message || 'Erro ao definir senha. Tente novamente.')
     } finally {

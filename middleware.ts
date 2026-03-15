@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { ROUTES } from '@/lib/routes'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -59,14 +60,14 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Public routes that don't require authentication
-  const publicRoutes = ['/auth/login', '/auth/set-password', '/auth/forgot-password']
+  const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD]
   const isPublicRoute = publicRoutes.some(route => 
     request.nextUrl.pathname.startsWith(route)
   )
 
   // If not authenticated and trying to access protected route
   if (!user && !isPublicRoute) {
-    return NextResponse.redirect(new URL('/auth/login', request.url))
+    return NextResponse.redirect(new URL(ROUTES.AUTH_LOGIN, request.url))
   }
 
   // If authenticated, check minister record and role
@@ -80,16 +81,16 @@ export async function middleware(request: NextRequest) {
     // If minister record not found, redirect to login
     if (error || !minister) {
       await supabase.auth.signOut()
-      return NextResponse.redirect(new URL('/auth/login', request.url))
+      return NextResponse.redirect(new URL(ROUTES.AUTH_LOGIN, request.url))
     }
 
     // If account not activated, redirect to set password
-    if (!minister.is_active && request.nextUrl.pathname !== '/auth/set-password') {
-      return NextResponse.redirect(new URL('/auth/set-password', request.url))
+    if (!minister.is_active && request.nextUrl.pathname !== ROUTES.AUTH_SET_PASSWORD) {
+      return NextResponse.redirect(new URL(ROUTES.AUTH_SET_PASSWORD, request.url))
     }
 
     // Admin-only routes
-    const adminRoutes = ['/ministros', '/escala/admin']
+    const adminRoutes = [ROUTES.USERS, ROUTES.SCHEDULE_ADMIN]
     const isAdminRoute = adminRoutes.some(route => 
       request.nextUrl.pathname.startsWith(route)
     )
@@ -100,8 +101,8 @@ export async function middleware(request: NextRequest) {
 
     // 'midia' users: only allow viewing the repertório page
     if (minister.role === 'midia') {
-      const allowed = request.nextUrl.pathname.startsWith('/repertorio') || isPublicRoute
-      if (!allowed) return NextResponse.redirect(new URL('/repertorio', request.url))
+      const allowed = request.nextUrl.pathname.startsWith(ROUTES.REPERTOIRE) || isPublicRoute
+      if (!allowed) return NextResponse.redirect(new URL(ROUTES.REPERTOIRE, request.url))
     }
   }
 

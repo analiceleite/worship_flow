@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -29,26 +30,26 @@ const navigation = [
   {
     name: 'Músicas',
     description: 'Visualizar músicas disponíveis',
-    href: '/',
+    href: ROUTES.HOME,
     
     icon: Music,
   },
   {
     name: 'Repertório',
     description: 'Visualizar repertório de músicas',
-    href: '/repertorio',
+    href: ROUTES.REPERTOIRE,
     icon: ListMusic,
   },
   {
     name: 'Escala',
     description: 'Visualizar escala de ministros de louvor',
-    href: '/escala',
+    href: ROUTES.SCHEDULE,
     icon: FileSpreadsheet,
   },
   {
-    name: 'Ministros',
-    description: 'Administrar contas e permissões dos ministros',
-    href: '/ministros',
+    name: 'Usuários',
+    description: 'Administrar contas e permissões dos usuários',
+    href: ROUTES.USERS,
     icon: Users,
     adminOnly: true,
   },
@@ -88,7 +89,7 @@ export function Header() {
   const handleLogout = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/auth/login')
+    router.push(ROUTES.AUTH_LOGIN)
     router.refresh()
   }
 
@@ -96,7 +97,7 @@ export function Header() {
     // Admin-only pages only visible to admin
     (!item.adminOnly || userRole === 'admin')
     // 'midia' users should only see the Repertório page
-    && (userRole !== 'midia' || item.href === '/repertorio')
+    && (userRole !== 'midia' || item.href === ROUTES.REPERTOIRE)
   )
 
   return (

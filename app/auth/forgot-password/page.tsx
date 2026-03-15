@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { ROUTES } from "@/lib/routes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,7 +21,7 @@ export default function ForgotPasswordPage() {
     setSuccess(false);
     const supabase = createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/set-password`,
+      redirectTo: `${window.location.origin}${ROUTES.AUTH_SET_PASSWORD}`,
     });
     if (error) {
       setError(error.message);

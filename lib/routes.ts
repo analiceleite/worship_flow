@@ -1,0 +1,12 @@
+export const ROUTES = {
+  HOME: '/',
+  USERS: '/users',
+  REPERTOIRE: '/repertoire',
+  SCHEDULE: '/schedule',
+  SCHEDULE_ADMIN: '/schedule/admin',
+  SCHEDULE_ADMIN_BUILDER: '/schedule/admin/builder',
+  SCHEDULE_ADMIN_QUARTERS: '/schedule/admin/quarters',
+  AUTH_LOGIN: '/auth/login',
+  AUTH_SET_PASSWORD: '/auth/set-password',
+  AUTH_FORGOT_PASSWORD: '/auth/forgot-password',
+} as const
