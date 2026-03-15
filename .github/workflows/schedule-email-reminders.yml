@@ -12,30 +12,56 @@ jobs:
       APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
-      - name: Enqueue published schedule notifications
+      - name: Trigger notification pipeline
+        shell: bash
         run: |
-          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/enqueue-published" \
-            -H "Content-Type: application/json" \
-            -H "x-cron-secret: $CRON_SECRET" \
-            -d '{}'
+          set -euo pipefail
 
-      - name: Enqueue D-7 reminders
-        run: |
-          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/enqueue-reminder-7days" \
-            -H "Content-Type: application/json" \
-            -H "x-cron-secret: $CRON_SECRET" \
-            -d '{}'
+          if [ -z "${APP_BASE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "APP_BASE_URL or CRON_SECRET is missing in GitHub Actions secrets."
+            exit 1
+          fi
 
-      - name: Enqueue D-1 reminders
-        run: |
-          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/enqueue-reminder-1day" \
-            -H "Content-Type: application/json" \
-            -H "x-cron-secret: $CRON_SECRET" \
-            -d '{}'
+          BASE_URL="${APP_BASE_URL%/}"
 
-      - name: Process queue
-        run: |
-          curl --fail-with-body -sS -X POST "$APP_BASE_URL/api/notifications/schedule/process-queue" \
-            -H "Content-Type: application/json" \
-            -H "x-cron-secret: $CRON_SECRET" \
-            -d '{"batchSize": 100}'
+          call_endpoint() {
+            local path="$1"
+            local body="$2"
+
+            local tmp_headers tmp_body status location
+            tmp_headers="$(mktemp)"
+            tmp_body="$(mktemp)"
+
+            status=$(curl -sS -o "$tmp_body" -D "$tmp_headers" -w "%{http_code}" \
+              -X POST "$BASE_URL$path" \
+              -H "Content-Type: application/json" \
+              -H "x-cron-secret: $CRON_SECRET" \
+              -d "$body")
+
+            if [ "${status:0:1}" = "3" ]; then
+              location=$(grep -i '^location:' "$tmp_headers" | tail -n 1 | sed 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')
+              echo "Unexpected redirect on $path (HTTP $status) -> ${location:-unknown}"
+              echo "Response body:"
+              cat "$tmp_body"
+              rm -f "$tmp_headers" "$tmp_body"
+              exit 1
+            fi
+
+            if [ "${status:0:1}" != "2" ]; then
+              echo "Request failed on $path (HTTP $status)"
+              echo "Response body:"
+              cat "$tmp_body"
+              rm -f "$tmp_headers" "$tmp_body"
+              exit 1
+            fi
+
+            echo "$path -> HTTP $status"
+            cat "$tmp_body"
+
+            rm -f "$tmp_headers" "$tmp_body"
+          }
+
+          call_endpoint "/api/notifications/schedule/enqueue-published" '{}'
+          call_endpoint "/api/notifications/schedule/enqueue-reminder-7days" '{}'
+          call_endpoint "/api/notifications/schedule/enqueue-reminder-1day" '{}'
+          call_endpoint "/api/notifications/schedule/process-queue" '{"batchSize": 100}'
