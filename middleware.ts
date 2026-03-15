@@ -126,11 +126,12 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except:
+     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
      */
-    '/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|map|txt|xml|webmanifest)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|.*\.(?:svg|png|jpg|jpeg|gif|webp|js|css|map|txt|xml|webmanifest)$).*)',
   ],
 }

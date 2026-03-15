@@ -415,6 +415,16 @@ async function sendEmailWithRetry(params: { to: string; subject: string; text: s
   }
 }
 
+function resolveNotificationRecipient(email: string) {
+  const testRecipient = (process.env.SCHEDULE_EMAIL_TEST_RECIPIENT ?? '').trim()
+
+  if (!testRecipient) {
+    return email
+  }
+
+  return testRecipient
+}
+
 async function markQueueStatus(input: {
   id: string
   status: NotificationStatus
@@ -457,6 +467,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   for (const row of rows ?? []) {
     const payload = (row.payload_json ?? {}) as Record<string, unknown>
     const email = String(payload.minister_email ?? '').trim()
+    const recipient = resolveNotificationRecipient(email)
     const attempts = Number(row.attempts ?? 0) + 1
 
     if (!email) {
@@ -483,7 +494,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
       }
 
       await sendEmailWithRetry({
-        to: email,
+        to: recipient,
         subject: template.subject,
         text: template.text,
         html: template.html,
