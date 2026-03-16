@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/select'
 import {
     AlertCircle,
-    ArrowLeft,
     BarChart3,
     CalendarClock,
     RefreshCcw,
@@ -163,9 +162,7 @@ function CoverageBar({ filled, total, label }: { filled: number; total: number; 
         <div className="flex flex-col gap-1.5">
             <div className="flex justify-between items-center">
                 <span className="text-sm text-foreground truncate pr-2">{label}</span>
-                <span className="text-xs text-muted-foreground shrink-0">
-                    {filled}/{total}
-                </span>
+                <span className="text-xs text-muted-foreground shrink-0">{filled}/{total}</span>
             </div>
             <div className="flex h-2 rounded-full overflow-hidden bg-muted">
                 <div
@@ -215,16 +212,14 @@ function MinisterBar({
                     })}
                     style={{ width: `${pct}%` }}
                 />
-                {/* avg marker */}
                 <div
                     className="absolute top-[-3px] w-0.5 h-[14px] bg-amber-500 rounded-sm z-10"
                     style={{ left: `${avgPct}%` }}
                 />
-                {/* threshold marker (+60%) */}
                 {thresholdPct < 100 && (
                     <div
                         className="absolute top-[-3px] w-0.5 h-[14px] bg-destructive rounded-sm z-10 opacity-70"
-                        style={{ left: `${thresholdPct}%`, borderStyle: 'dashed' }}
+                        style={{ left: `${thresholdPct}%` }}
                     />
                 )}
             </div>
@@ -235,52 +230,68 @@ function MinisterBar({
 // ─── Event severity dot ───────────────────────────────────────────────────────
 
 function SeverityDot({ empty }: { empty: number }) {
-    if (empty === 0) return <span className="w-2 h-2 rounded-full bg-green-500 shrink-0 inline-block" />
-    if (empty >= 3) return <span className="w-2 h-2 rounded-full bg-destructive shrink-0 inline-block" />
-    return <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 inline-block" />
+    if (empty === 0) return <span className="w-2 h-2 rounded-full bg-green-500 shrink-0 inline-block mt-1" />
+    if (empty >= 3) return <span className="w-2 h-2 rounded-full bg-destructive shrink-0 inline-block mt-1" />
+    return <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 inline-block mt-1" />
 }
 
 // ─── Event row ────────────────────────────────────────────────────────────────
+// Layout em 3 linhas empilhadas para evitar compressão no mobile:
+//   1. Data + badge de status (não competem com a barra)
+//   2. Barra de progresso + porcentagem com largura total
+//   3. Funções faltando (linha própria, nunca espremida)
 
 function EventRow({ event }: { event: AnalyticsEvent }) {
     const empty = event.empty_slots
     const pct = event.total_slots > 0 ? Math.round((event.filled_slots / event.total_slots) * 100) : 0
     const barColor =
-        empty === 0
-            ? 'bg-green-500'
-            : empty >= 3
-                ? 'bg-destructive'
-                : 'bg-amber-500'
+        empty === 0 ? 'bg-green-500' : empty >= 3 ? 'bg-destructive' : 'bg-amber-500'
 
     return (
-        <div className="flex items-center gap-3 py-2 border-b border-border last:border-0 last:pb-0">
+        <div className="flex items-start gap-3 py-3 border-b border-border last:border-0 last:pb-0">
             <SeverityDot empty={empty} />
-            <div className="min-w-[130px] shrink-0">
-                <p className="text-sm font-medium text-foreground">
-                    {formatDateBr(event.event_date)} · {formatEventLabel(event.event_type)}
-                </p>
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs text-muted-foreground">{pct}%</span>
+
+            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                {/* Linha 1: data/tipo + badge — sem competição de espaço */}
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground leading-none">
+                        {formatDateBr(event.event_date)} · {formatEventLabel(event.event_type)}
+                    </p>
                     {empty === 0 ? (
-                        <Badge variant="outline" className="text-green-700 dark:text-green-400 border-green-300 text-[10px] py-0 h-5">
+                        <Badge
+                            variant="outline"
+                            className="text-green-700 dark:text-green-400 border-green-300 text-[10px] py-0 h-5 shrink-0"
+                        >
                             Completo
                         </Badge>
                     ) : (
                         <Badge
                             variant={empty >= 3 ? 'destructive' : 'outline'}
-                            className={cn('text-[10px] py-0 h-5', {
+                            className={cn('text-[10px] py-0 h-5 shrink-0', {
                                 'text-amber-700 dark:text-amber-400 border-amber-300': empty < 3,
                             })}
                         >
-                            {empty} lacunas
+                            {empty} {empty === 1 ? 'lacuna' : 'lacunas'}
                         </Badge>
                     )}
                 </div>
-                <div className="h-1 bg-muted rounded-full overflow-hidden">
-                    <div className={cn('h-full rounded-full', barColor)} style={{ width: `${pct}%` }} />
+
+                {/* Linha 2: barra ocupa toda a largura disponível + % alinhada à direita */}
+                <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className={cn('h-full rounded-full', barColor)} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0 tabular-nums w-8 text-right">
+                        {pct}%
+                    </span>
                 </div>
+
+                {/* Linha 3: funções faltando — linha própria, nunca espremida */}
+                {event.missing_roles.length > 0 && (
+                    <p className="text-xs text-muted-foreground truncate">
+                        {event.missing_roles.join(' · ')}
+                    </p>
+                )}
             </div>
         </div>
     )
@@ -476,7 +487,6 @@ export default function ScheduleAdminDashboardPage() {
                         {/* ── Charts row ── */}
                         <div className="grid gap-4 lg:grid-cols-2">
 
-                            {/* Role coverage */}
                             <Card className='py-4'>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -507,7 +517,6 @@ export default function ScheduleAdminDashboardPage() {
                                 </CardContent>
                             </Card>
 
-                            {/* Minister load */}
                             <Card className='py-4'>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -515,7 +524,7 @@ export default function ScheduleAdminDashboardPage() {
                                         Carga por Ministro
                                     </CardTitle>
                                     <CardDescription className="text-xs">Top 10 · linha laranja = média do trimestre</CardDescription>
-                                    <div className="flex items-center gap-4 pt-1">
+                                    <div className="flex items-center gap-4 pt-1 flex-wrap">
                                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                             <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 dark:bg-blue-400 inline-block" />
                                             Normal
@@ -552,7 +561,9 @@ export default function ScheduleAdminDashboardPage() {
                         {/* ── Alerts row ── */}
                         <div className="grid gap-4 lg:grid-cols-2">
 
-                            {/* Overload alerts */}
+                            {/* Overload alerts
+                                Fix mobile: flex-1 no texto + self-start no badge evita
+                                que o badge empurre o nome para fora da tela */}
                             <Card className='py-4'>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -569,13 +580,17 @@ export default function ScheduleAdminDashboardPage() {
                                             {overloadedMinisters.map((item) => (
                                                 <div
                                                     key={item.minister_id}
-                                                    className="flex items-center justify-between gap-3 py-2.5 border-b border-border last:border-0 last:pb-0"
+                                                    className="flex items-start justify-between gap-3 py-2.5 border-b border-border last:border-0 last:pb-0"
                                                 >
-                                                    <div className="min-w-0">
-                                                        <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                                                        <p className="text-xs text-muted-foreground">{item.total_assignments} alocações</p>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-foreground">{item.name}</p>
+                                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                                            {item.total_assignments} alocações no trimestre
+                                                        </p>
                                                     </div>
-                                                    <Badge variant="destructive" className="shrink-0">+{item.overload_delta_percent}%</Badge>
+                                                    <Badge variant="destructive" className="shrink-0 self-start mt-0.5">
+                                                        +{item.overload_delta_percent}%
+                                                    </Badge>
                                                 </div>
                                             ))}
                                         </div>
@@ -583,7 +598,9 @@ export default function ScheduleAdminDashboardPage() {
                                 </CardContent>
                             </Card>
 
-                            {/* Gap alerts */}
+                            {/* Gap alerts
+                                Fix mobile: conteúdo empilhado em flex-col dentro do flex-1,
+                                badge fica em justify-between na primeira linha */}
                             <Card className='py-4'>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -600,20 +617,24 @@ export default function ScheduleAdminDashboardPage() {
                                             {highRiskEvents.map((event) => (
                                                 <div
                                                     key={`${event.event_date}_${event.event_type}`}
-                                                    className="flex items-start justify-between gap-3 py-2.5 border-b border-border last:border-0 last:pb-0"
+                                                    className="flex items-start gap-3 py-2.5 border-b border-border last:border-0 last:pb-0"
                                                 >
-                                                    <div className="flex items-start gap-2.5 min-w-0">
-                                                        <SeverityDot empty={event.empty_slots} />
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-medium text-foreground">
+                                                    <SeverityDot empty={event.empty_slots} />
+                                                    <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <p className="text-sm font-medium text-foreground leading-snug">
                                                                 {formatDateBr(event.event_date)} · {formatEventLabel(event.event_type)}
                                                             </p>
-                                                            <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                                            <Badge variant="destructive" className="shrink-0 self-start text-[10px] py-0 h-5">
+                                                                {event.empty_slots} {event.empty_slots === 1 ? 'vaga' : 'vagas'}
+                                                            </Badge>
+                                                        </div>
+                                                        {event.missing_roles.length > 0 && (
+                                                            <p className="text-xs text-muted-foreground truncate">
                                                                 {event.missing_roles.join(' · ')}
                                                             </p>
-                                                        </div>
+                                                        )}
                                                     </div>
-                                                    <Badge variant="destructive" className="shrink-0">{event.empty_slots} vagas</Badge>
                                                 </div>
                                             ))}
                                         </div>
@@ -631,7 +652,6 @@ export default function ScheduleAdminDashboardPage() {
                                 </CardTitle>
                                 <CardDescription className="text-xs">Visão operacional de preenchimento por culto</CardDescription>
 
-                                {/* Filter tabs */}
                                 <div className="flex gap-0 border-b border-border mt-3 -mb-1">
                                     {(['all', 'sunday', 'thursday'] as const).map((tab) => (
                                         <button
@@ -696,8 +716,13 @@ export default function ScheduleAdminDashboardPage() {
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
                                                 <Badge variant="outline" className="text-xs">{minister.total_assignments} escalas</Badge>
-                                                {minister.is_overloaded && <Badge variant="destructive" className="text-xs">Sobrecarregado</Badge>}
-                                                {minister.is_underutilized && <Badge variant="secondary" className="text-xs">Subutilizado</Badge>}
+                                                {/* Badges de status visíveis apenas em sm+ para não cortar no mobile */}
+                                                {minister.is_overloaded && (
+                                                    <Badge variant="destructive" className="text-xs hidden sm:inline-flex">Sobrecarregado</Badge>
+                                                )}
+                                                {minister.is_underutilized && (
+                                                    <Badge variant="secondary" className="text-xs hidden sm:inline-flex">Subutilizado</Badge>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
