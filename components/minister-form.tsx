@@ -244,11 +244,6 @@ export function MinisterForm({
               required={!minister}
               disabled={!!minister}
             />
-            {/* {!minister && (
-              <p className="text-xs text-muted-foreground">
-                Um convite será enviado para este email
-              </p>
-            )} */}
           </div>
 
           <div className="space-y-2">

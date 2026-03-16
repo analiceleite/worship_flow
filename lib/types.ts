@@ -41,6 +41,7 @@ export const TONES = [
 
 export const INSTRUMENTS = [
   'Voz',
+  'Backing Vocal',
   'Violão',
   'Guitarra',
   'Baixo',

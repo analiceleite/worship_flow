@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Song, Minister } from '@/lib/types'
+import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/header'
 import { SongCard } from '@/components/song-card'
@@ -60,14 +61,7 @@ export default function HomePage() {
   const [page, setPage] = useState(1)
   const [appliedSearch, setAppliedSearch] = useState('')
 
-  const hasVoiceRole = (value: string | null | undefined) =>
-    (value ?? '')
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean)
-      .includes('voz')
-
-  const isSinger = hasVoiceRole(currentMinister?.instrument)
+  const isSinger = hasLeadVoiceRole(currentMinister?.instrument)
   const canManageSongs = isAdmin || isSinger
 
   useEffect(() => {
@@ -203,7 +197,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <Button onClick={() => setFormOpen(true)} disabled={!canManageSongs} title={!canManageSongs ? 'Somente cantores e admins podem cadastrar músicas.' : undefined}>
+          <Button onClick={() => setFormOpen(true)} disabled={!canManageSongs} title={!canManageSongs ? 'Somente administradores e usuários com a função Voz podem cadastrar músicas.' : undefined}>
             <Plus className="mr-2 h-4 w-4" />
             Nova Música
           </Button>
@@ -211,7 +205,7 @@ export default function HomePage() {
 
         {!canManageSongs && (
           <div className="mb-4 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Você está em modo visualização: músicos podem ver todo o repertório, mas apenas cantores (criadores) e admins podem criar, editar ou excluir músicas.
+            Você está em modo visualização: músicos e backing vocals podem ver toda a lista, mas apenas administradores e usuários com a função Voz podem criar, editar ou excluir músicas.
           </div>
         )}
 
@@ -231,7 +225,7 @@ export default function HomePage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os ministros</SelectItem>
-              {ministers.filter((m) => hasVoiceRole(m.instrument)).map((m) => (
+              {ministers.filter((m) => hasLeadVoiceRole(m.instrument)).map((m) => (
                 <SelectItem key={m.id} value={m.id}>
                   {m.name}
                 </SelectItem>
@@ -266,7 +260,7 @@ export default function HomePage() {
                 : 'Comece adicionando sua primeira música.'}
             </p>
             {!searchQuery && (
-              <Button onClick={() => setFormOpen(true)} disabled={!canManageSongs} title={!canManageSongs ? 'Somente cantores e admins podem cadastrar músicas.' : undefined}>
+              <Button onClick={() => setFormOpen(true)} disabled={!canManageSongs} title={!canManageSongs ? 'Somente administradores e usuários com a função Voz podem cadastrar músicas.' : undefined}>
                 <Plus className="mr-2 h-4 w-4" />
                 Adicionar Música
               </Button>

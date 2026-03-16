@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Song, Minister, RepertoireItem } from '@/lib/types'
+import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -237,13 +238,7 @@ export default function RepertorioPage() {
 
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
     const [isAdmin, setIsAdmin] = useState(false)
-    const hasVoiceRole = (value: string | null | undefined) =>
-        (value ?? '')
-            .split(',')
-            .map((item) => item.trim().toLowerCase())
-            .filter(Boolean)
-            .includes('voz')
-    const isSinger = hasVoiceRole(currentMinister?.instrument)
+    const isSinger = hasLeadVoiceRole(currentMinister?.instrument)
     const canAddSongsToRepertoire = isAdmin || isSinger
     const isMedia = currentMinister?.role === 'midia'
 
@@ -363,7 +358,7 @@ export default function RepertorioPage() {
         setFormError(null)
         if (!selectedDay) return
         if (!canAddSongsToRepertoire) {
-            setFormError('Apenas cantores e administradores podem adicionar músicas ao repertório.')
+            setFormError('Apenas administradores e usuários com a função Voz podem adicionar músicas ao repertório.')
             return
         }
         if (isAdmin && !formData.minister_id) {
@@ -388,6 +383,10 @@ export default function RepertorioPage() {
 
     const handleDeleteItem = async () => {
         if (!deletingItem) return
+        if (!(isAdmin || isSinger)) {
+            setDeletingItem(null)
+            return
+        }
         await createClient().from('repertoire').delete().eq('id', deletingItem.id)
         setDeletingItem(null)
         fetchRepertoire()
@@ -716,7 +715,7 @@ export default function RepertorioPage() {
                                     variant={reorderEnabled ? 'default' : 'outline'}
                                     size="sm"
                                     disabled={!(isAdmin || isSinger)}
-                                    title={!(isAdmin || isSinger) ? 'Apenas cantores e administradores podem ordenar o repertório.' : undefined}
+                                    title={!(isAdmin || isSinger) ? 'Apenas administradores e usuários com a função Voz podem ordenar o repertório.' : undefined}
                                     onClick={() => {
                                         if (!(isAdmin || isSinger)) return
                                         setReorderEnabled(prev => !prev)
@@ -732,7 +731,7 @@ export default function RepertorioPage() {
                                     size="sm"
                                     onClick={handleOpenAddForm}
                                     disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
-                                    title={!canAddSongsToRepertoire ? 'Apenas cantores e administradores podem adicionar músicas ao repertório.' : undefined}
+                                    title={!canAddSongsToRepertoire ? 'Apenas administradores e usuários com a função Voz podem adicionar músicas ao repertório.' : undefined}
                                 >
                                     <Plus className="mr-1.5 h-3.5 w-3.5" />
                                     Adicionar
@@ -743,7 +742,7 @@ export default function RepertorioPage() {
                         {!canAddSongsToRepertoire && (
                             <Alert>
                                 <AlertDescription>
-                                    Modo visualização: músicos podem consultar o repertório, mas somente cantores e admins podem adicionar músicas.
+                                    Modo visualização: músicos e backing vocals podem consultar o repertório, mas somente administradores e usuários com a função Voz podem adicionar músicas.
                                 </AlertDescription>
                             </Alert>
                         )}
@@ -778,7 +777,7 @@ export default function RepertorioPage() {
                                     size="sm"
                                     onClick={handleOpenAddForm}
                                     disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
-                                    title={!canAddSongsToRepertoire ? 'Apenas cantores e administradores podem adicionar músicas ao repertório.' : undefined}
+                                    title={!canAddSongsToRepertoire ? 'Apenas administradores e usuários com a função Voz podem adicionar músicas ao repertório.' : undefined}
                                 >
                                     <Plus className="mr-1.5 h-3.5 w-3.5" />
                                     Adicionar música
@@ -839,7 +838,7 @@ export default function RepertorioPage() {
                                                         <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
                                                     </Button>
                                                 )}
-                                                {(isAdmin || item.minister_id === currentMinister?.id) && (
+                                                {(isAdmin || isSinger) && (
                                                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                                         onClick={() => setDeletingItem(item)}>
                                                         <Trash2 className="h-3.5 w-3.5" />
@@ -912,7 +911,7 @@ export default function RepertorioPage() {
                                     <SelectTrigger className="w-full"><SelectValue placeholder="Selecione um ministro" /></SelectTrigger>
                                     <SelectContent>
                                         {ministers
-                                            .filter((m) => hasVoiceRole(m.instrument))
+                                            .filter((m) => hasLeadVoiceRole(m.instrument))
                                             .map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.instrument})</SelectItem>)}
                                     </SelectContent>
                                 </Select>
