@@ -231,7 +231,7 @@ export async function GET(request: Request) {
         thursday_assignments: ministerAssignments.filter((item) => item.event_type === 'thursday').length,
         trainee_assignments: ministerAssignments.filter((item) => item.is_trainee).length,
         overload_delta_percent: overloadDeltaPercent,
-        is_overloaded: totalAssignments > averageAssignmentsPerMinister * 1.6,
+        is_overloaded: totalAssignments > averageAssignmentsPerMinister * 1.3,
         is_underutilized: totalAssignments < averageAssignmentsPerMinister * 0.7,
       }
     })

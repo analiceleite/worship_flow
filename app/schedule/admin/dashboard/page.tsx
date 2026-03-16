@@ -474,7 +474,7 @@ export default function ScheduleAdminDashboardPage() {
                             <KpiCard
                                 label="Sobrecarregados"
                                 value={analytics.summary.overloaded_ministers}
-                                sub="Acima de 60% da média"
+                                sub="Acima de 30% da média"
                                 variant={analytics.summary.overloaded_ministers > 0 ? 'danger' : 'success'}
                             />
                             <KpiCard
@@ -539,7 +539,7 @@ export default function ScheduleAdminDashboardPage() {
                                         </span>
                                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                             <span className="w-0.5 h-3 bg-destructive opacity-70 inline-block" />
-                                            Limite (+60%)
+                                            Limite (+30%)
                                         </span>
                                     </div>
                                 </CardHeader>
@@ -570,7 +570,7 @@ export default function ScheduleAdminDashboardPage() {
                                         <ShieldAlert className="h-4 w-4 text-muted-foreground" />
                                         Alertas de Sobrecarga
                                     </CardTitle>
-                                    <CardDescription className="text-xs">Ministros acima do limite de +60% da média</CardDescription>
+                                    <CardDescription className="text-xs">Ministros acima do limite de +30% da média</CardDescription>
                                 </CardHeader>
                                 <CardContent>
                                     {overloadedMinisters.length === 0 ? (

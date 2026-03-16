@@ -26,9 +26,9 @@ No topo da tela há um `<Select>` com todos os trimestres cadastrados. Por padr�
 
 | Card | O que mede | Verde quando | Vermelho quando |
 |---|---|---|---|
-| **Cobertura geral** | % de posições preenchidas no trimestre | ≥ 80% | < 60% |
+| **Cobertura geral** | % de posições preenchidas no trimestre | ≥ 80% | < 30% |
 | **Vagas em aberto** | Posições sem nenhum ministro definido | 0 vagas | > 0 vagas |
-| **Sobrecarregados** | Ministros com carga > 60% acima da média | Nenhum | ≥ 1 ministro |
+| **Sobrecarregados** | Ministros com carga > 30% acima da média | Nenhum | ≥ 1 ministro |
 | **Aprendizes** | Total de alocações marcadas como trainee | — | — |
 
 ---
@@ -50,7 +50,7 @@ Exibe os 10 ministros mais escalados comparados entre si, usando barras horizont
 | Marcador | Cor | O que representa |
 |---|---|---|
 | Linha laranja | Âmbar | Média de escalas por ministro no trimestre |
-| Linha vermelha | Vermelho (70% opacidade) | Limite de sobrecarga (+60% acima da média) |
+| Linha vermelha | Vermelho (70% opacidade) | Limite de sobrecarga (+30% acima da média) |
 
 A barra muda de azul para **vermelho** quando o ministro ultrapassa o limite de sobrecarga.
 
@@ -58,7 +58,7 @@ A barra muda de azul para **vermelho** quando o ministro ultrapassa o limite de 
 
 ### 5. Alertas de Sobrecarga
 
-Lista os ministros cujo número de alocações ultrapassa **60% acima da média do trimestre**.
+Lista os ministros cujo número de alocações ultrapassa **30% acima da média do trimestre**.
 
 Exemplo: se a média do trimestre é 10 escalas por ministro, qualquer um com mais de 16 aparece aqui, com um badge mostrando o quanto está acima (ex: `+73%`).
 
@@ -91,7 +91,7 @@ Lista os 20 primeiros ministros em ordem decrescente de escalas, com:
 - Nome e instrumento
 - Total de escalas no trimestre
 - Badges de status:
-  - **Sobrecarregado** (vermelho) — acima de 160% da média
+  - **Sobrecarregado** (vermelho) — acima de 130% da média
   - **Subutilizado** (cinza) — abaixo de 70% da média
 
 ---
@@ -103,11 +103,11 @@ Lista os 20 primeiros ministros em ordem decrescente de escalas, com:
 | Ministro **sobrecarregado** | `total_assignments > média × 1.6` | `app/api/schedule/admin/analytics/route.ts` linha ~234 |
 | Ministro **subutilizado** | `total_assignments < média × 0.7` | `app/api/schedule/admin/analytics/route.ts` linha ~235 |
 | Card de cobertura **verde** | ≥ 80% | `app/schedule/admin/dashboard/page.tsx` (KpiCard) |
-| Card de cobertura **vermelho** | < 60% | `app/schedule/admin/dashboard/page.tsx` (KpiCard) |
+| Card de cobertura **vermelho** | < 30% | `app/schedule/admin/dashboard/page.tsx` (KpiCard) |
 
-Para alterar o threshold de sobrecarga de 60% para outro valor, edite:
+Para alterar o threshold de sobrecarga de 30% para outro valor, edite:
 1. O multiplicador `* 1.6` no backend (regra de cálculo)
-2. Os textos "60%" no dashboard (exibição para o usuário)
+2. Os textos "30%" no dashboard (exibição para o usuário)
 
 ---
 
