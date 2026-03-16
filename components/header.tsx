@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet } from 'lucide-react'
+import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/lib/routes'
@@ -28,10 +28,17 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
 const navigation = [
   {
+    name: 'Dashboard',
+    description: 'Acompanhar indicadores da alocação da escala',
+    href: ROUTES.SCHEDULE_ADMIN_DASHBOARD,
+    icon: BarChart3,
+    adminOnly: true,
+  },
+  {
     name: 'Músicas',
     description: 'Visualizar músicas disponíveis',
-    href: ROUTES.HOME,
-    
+    href: ROUTES.SONGS,
+
     icon: Music,
   },
   {

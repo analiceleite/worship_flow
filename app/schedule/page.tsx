@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScheduleGrid, type ScheduleAssignment, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
-import { AlertCircle, Music2, Settings2, UserCircle2 } from 'lucide-react'
+import { AlertCircle, BarChart3, Music2, Settings2, UserCircle2 } from 'lucide-react'
 
 function formatWeekTag(dateStr: string) {
 	return `S${getISOWeek(new Date(`${dateStr}T12:00:00`))}`
@@ -182,6 +182,12 @@ export default function EscalaPage() {
 								Crie trimestres, preencha o builder e publique para liberar esta visualização.
 							</CardDescription>
 							<div className="flex flex-wrap gap-2 pt-2">
+								<Button asChild size="sm" variant="outline">
+									<Link href={ROUTES.SCHEDULE_ADMIN_DASHBOARD}>
+										<BarChart3 className="mr-2 h-3.5 w-3.5" />
+										Dashboard
+									</Link>
+								</Button>
 								<Button asChild size="sm" variant="outline">
 									<Link href={ROUTES.SCHEDULE_ADMIN_QUARTERS}>
 										<Settings2 className="mr-2 h-3.5 w-3.5" />

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { QuarterForm, type QuarterSummary } from '@/components/schedule/QuarterForm'
-import { Plus, AlertCircle, ExternalLink, ArrowLeft } from 'lucide-react'
+import { Plus, AlertCircle, ExternalLink, ArrowLeft, BarChart3 } from 'lucide-react'
 
 function formatRange(startDate: string, endDate: string) {
 	const start = new Date(`${startDate}T12:00:00`)
@@ -74,10 +74,18 @@ export default function EscalaQuartersPage() {
 						</p>
 					</div>
 
-					<Button onClick={() => setFormOpen(true)}>
-						<Plus className="mr-2 h-4 w-4" />
-						Novo trimestre
-					</Button>
+					<div className="flex flex-wrap gap-2">
+						<Button asChild variant="outline">
+							<Link href={ROUTES.SCHEDULE_ADMIN_DASHBOARD}>
+								<BarChart3 className="mr-2 h-4 w-4" />
+								Dashboard
+							</Link>
+						</Button>
+						<Button onClick={() => setFormOpen(true)}>
+							<Plus className="mr-2 h-4 w-4" />
+							Novo trimestre
+						</Button>
+					</div>
 				</div>
 
 				{error && (

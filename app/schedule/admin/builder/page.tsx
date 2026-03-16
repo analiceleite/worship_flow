@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast'
 import {
 	AlertCircle,
 	ArrowLeft,
+	BarChart3,
 	CheckCircle2,
 	ListFilter,
 	Megaphone,
@@ -278,6 +279,12 @@ function EscalaBuilderContent() {
 					</div>
 
 					<div className="flex flex-wrap gap-2">
+						<Button asChild variant="outline">
+							<Link href={ROUTES.SCHEDULE_ADMIN_DASHBOARD}>
+								<BarChart3 className="mr-2 h-4 w-4" />
+								Dashboard
+							</Link>
+						</Button>
 						<Button asChild variant="outline">
 							<Link href={ROUTES.SCHEDULE_ADMIN_QUARTERS}>
 								<ListFilter className="mr-2 h-4 w-4" />

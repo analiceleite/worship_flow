@@ -99,6 +99,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/', request.url))
     }
 
+    if (request.nextUrl.pathname === ROUTES.HOME && minister.role === 'admin') {
+      return NextResponse.redirect(new URL(ROUTES.SCHEDULE_ADMIN_DASHBOARD, request.url))
+    }
+
     // 'midia' users: only allow viewing the repertório page
     if (minister.role === 'midia') {
       const allowed = request.nextUrl.pathname.startsWith(ROUTES.REPERTOIRE) || isPublicRoute
@@ -115,7 +119,8 @@ export async function middleware(request: NextRequest) {
       .single()
 
     if (minister?.is_active) {
-      return NextResponse.redirect(new URL('/', request.url))
+      const target = minister.role === 'admin' ? ROUTES.SCHEDULE_ADMIN_DASHBOARD : ROUTES.HOME
+      return NextResponse.redirect(new URL(target, request.url))
     }
   }
 
