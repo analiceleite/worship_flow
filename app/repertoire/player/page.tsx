@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -180,7 +180,7 @@ function YouTubePlayer({
     return <div ref={containerRef} className="h-full w-full" />
 }
 
-export default function RepertoirePlayerPage() {
+function RepertoirePlayerContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const audioContextRef = useRef<AudioContext | null>(null)
@@ -663,5 +663,24 @@ export default function RepertoirePlayerPage() {
                 )}
             </main>
         </div>
+    )
+}
+
+export default function RepertoirePlayerPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen bg-background">
+                    <Header />
+                    <main className="container mx-auto p-4 sm:p-6">
+                        <div className="rounded-xl border bg-muted/10 p-6 text-sm text-muted-foreground">
+                            Carregando playlist...
+                        </div>
+                    </main>
+                </div>
+            }
+        >
+            <RepertoirePlayerContent />
+        </Suspense>
     )
 }
