@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Song, Minister, RepertoireItem } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
@@ -25,6 +26,12 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
     AlertDialog,
     AlertDialogAction,
     AlertDialogCancel,
@@ -44,6 +51,8 @@ import {
     Unlock,
     ArrowUp,
     ArrowDown,
+    Play,
+    EllipsisVertical,
     Youtube,
     FileText,
     ListMusic,
@@ -223,6 +232,7 @@ function WeekDayCell({
 const PAGE_SIZE = 10;
 
 export default function RepertorioPage() {
+    const router = useRouter()
     const [weekAnchor, setWeekAnchor] = useState(new Date())
     const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null)
     const [dayInfoMap, setDayInfoMap] = useState<Record<string, DayInfo>>({})
@@ -443,6 +453,17 @@ export default function RepertorioPage() {
         setFormData({ song_id: '', minister_id: (!isAdmin && currentMinister) ? currentMinister.id : '' })
         setFormError(null)
         setFormOpen(true)
+    }
+
+    const handleOpenPlaylist = async () => {
+        if (!selectedDay) return
+
+        const params = new URLSearchParams({
+            date: toDateStr(selectedDay.date),
+            eventName: selectedDay.eventName,
+        })
+
+        router.push(`/repertoire/player?${params.toString()}`)
     }
 
     const saveRepertoireOrder = async (items: RepertoireItem[]) => {
@@ -710,6 +731,51 @@ export default function RepertorioPage() {
                                 </p>
                             )}
                             <div className="flex items-center gap-2">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button type="button" variant="outline" size="sm" className="sm:hidden">
+                                            <EllipsisVertical className="mr-1.5 h-3.5 w-3.5" />
+                                            Ações
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onSelect={() => void handleOpenPlaylist()}>
+                                            <Play className="mr-2 h-3.5 w-3.5" />
+                                            Playlist
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            disabled={!(isAdmin || isSinger)}
+                                            onSelect={() => {
+                                                if (!(isAdmin || isSinger)) return
+                                                setReorderEnabled((prev) => !prev)
+                                                setDraggingIndex(null)
+                                                setDragOverIndex(null)
+                                                setReorderError(null)
+                                            }}
+                                        >
+                                            {reorderEnabled ? <Unlock className="mr-2 h-3.5 w-3.5" /> : <Lock className="mr-2 h-3.5 w-3.5" />}
+                                            {reorderEnabled ? 'Parar ordenação' : 'Ordenar'}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
+                                            onSelect={handleOpenAddForm}
+                                        >
+                                            <Plus className="mr-2 h-3.5 w-3.5" />
+                                            Adicionar
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+
+                                <div className="hidden items-center gap-2 sm:flex">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void handleOpenPlaylist()}
+                                >
+                                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                                    Playlist
+                                </Button>
                                 <Button
                                     type="button"
                                     variant={reorderEnabled ? 'default' : 'outline'}
@@ -736,6 +802,7 @@ export default function RepertorioPage() {
                                     <Plus className="mr-1.5 h-3.5 w-3.5" />
                                     Adicionar
                                 </Button>
+                                </div>
                             </div>
                         </div>
 
@@ -1037,6 +1104,7 @@ export default function RepertorioPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
         </div>
     )
 }
