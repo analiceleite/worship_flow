@@ -199,6 +199,7 @@ function RepertoirePlayerContent() {
     const [metronomeEnabled, setMetronomeEnabled] = useState(false)
     const [bpm, setBpm] = useState(72)
     const [bpmInput, setBpmInput] = useState('72')
+    const [metronomeVolume, setMetronomeVolume] = useState(150)
     const [timeSignature, setTimeSignature] = useState<TimeSignature>('4/4')
     const [metronomeOpen, setMetronomeOpen] = useState(false)
     const [beatFlash, setBeatFlash] = useState<{ active: boolean; accented: boolean; beat: number }>({
@@ -266,20 +267,26 @@ function RepertoirePlayerContent() {
         const oscillator = context.createOscillator()
         const gainNode = context.createGain()
         const now = context.currentTime
+        const volumeFactor = metronomeVolume / 100
+        const peakGain = (accented ? 0.18 : 0.12) * volumeFactor
 
         oscillator.type = 'square'
         oscillator.frequency.setValueAtTime(accented ? 1760 : 1320, now)
 
-        gainNode.gain.setValueAtTime(0.0001, now)
-        gainNode.gain.exponentialRampToValueAtTime(accented ? 0.18 : 0.12, now + 0.005)
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.07)
+        if (peakGain > 0.0001) {
+            gainNode.gain.setValueAtTime(0.0001, now)
+            gainNode.gain.exponentialRampToValueAtTime(peakGain, now + 0.005)
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.07)
+        } else {
+            gainNode.gain.setValueAtTime(0, now)
+        }
 
         oscillator.connect(gainNode)
         gainNode.connect(context.destination)
 
         oscillator.start(now)
         oscillator.stop(now + 0.08)
-    }, [flashBeat])
+    }, [flashBeat, metronomeVolume])
 
     useEffect(() => {
         const fetchCurrentMinister = async () => {
@@ -386,12 +393,25 @@ function RepertoirePlayerContent() {
     }, [bpm])
 
     useEffect(() => {
+        const savedVolume = window.localStorage.getItem('repertoire-player-metronome-volume')
+        if (!savedVolume) return
+
+        const parsed = Number(savedVolume)
+        if (Number.isNaN(parsed)) return
+        setMetronomeVolume(Math.min(500, Math.max(0, parsed)))
+    }, [])
+
+    useEffect(() => {
         setBpmInput(String(bpm))
     }, [bpm])
 
     useEffect(() => {
         window.localStorage.setItem('repertoire-player-time-signature', timeSignature)
     }, [timeSignature])
+
+    useEffect(() => {
+        window.localStorage.setItem('repertoire-player-metronome-volume', String(metronomeVolume))
+    }, [metronomeVolume])
 
     useEffect(() => {
         if (!metronomeEnabled) {
@@ -552,6 +572,24 @@ function RepertoirePlayerContent() {
                                                                     +
                                                                 </Button>
                                                                 <span className="text-xs text-muted-foreground">BPM</span>
+                                                            </div>
+
+                                                            <div className="flex w-full items-center gap-2 sm:w-64">
+                                                                <span className="text-xs text-muted-foreground">Vol.</span>
+                                                                <Input
+                                                                    type="range"
+                                                                    min={0}
+                                                                    max={500}
+                                                                    step={1}
+                                                                    value={metronomeVolume}
+                                                                    onChange={(event) => {
+                                                                        const nextValue = Number(event.target.value)
+                                                                        if (Number.isNaN(nextValue)) return
+                                                                        setMetronomeVolume(Math.min(500, Math.max(0, nextValue)))
+                                                                    }}
+                                                                    className="h-2 w-full cursor-pointer"
+                                                                />
+                                                                <span className="w-10 text-right text-xs text-muted-foreground">{metronomeVolume}%</span>
                                                             </div>
 
                                                             <div className="flex items-center gap-2">
