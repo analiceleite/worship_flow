@@ -77,7 +77,8 @@ function YouTubePlayer({
     onEnded: () => void
 }) {
     const containerRef = useRef<HTMLDivElement | null>(null)
-    const playerRef = useRef<{ destroy: () => void; loadVideoById: (videoId: string) => void } | null>(null)
+    const playerRef = useRef<{ destroy: () => void } | null>(null)
+    const playerIdRef = useRef(`yt-player-${Math.random().toString(36).slice(2, 9)}`)
     const [apiReady, setApiReady] = useState(false)
 
     useEffect(() => {
@@ -110,29 +111,29 @@ function YouTubePlayer({
     useEffect(() => {
         if (!apiReady || !containerRef.current || !window.YT?.Player) return
 
-        if (!playerRef.current) {
-            const playerId = `yt-player-${Math.random().toString(36).slice(2, 9)}`
-            containerRef.current.id = playerId
+        containerRef.current.id = playerIdRef.current
+        playerRef.current?.destroy()
 
-            playerRef.current = new window.YT.Player(playerId, {
-                videoId,
-                playerVars: {
-                    autoplay: 1,
-                    modestbranding: 1,
-                    rel: 0,
+        playerRef.current = new window.YT.Player(playerIdRef.current, {
+            videoId,
+            playerVars: {
+                autoplay: 1,
+                modestbranding: 1,
+                rel: 0,
+            },
+            events: {
+                onStateChange: (event) => {
+                    if (window.YT && event.data === window.YT.PlayerState.ENDED) {
+                        onEnded()
+                    }
                 },
-                events: {
-                    onStateChange: (event) => {
-                        if (window.YT && event.data === window.YT.PlayerState.ENDED) {
-                            onEnded()
-                        }
-                    },
-                },
-            })
-            return
+            },
+        })
+
+        return () => {
+            playerRef.current?.destroy()
+            playerRef.current = null
         }
-
-        playerRef.current.loadVideoById(videoId)
     }, [apiReady, videoId, onEnded])
 
     useEffect(() => {
