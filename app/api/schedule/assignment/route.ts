@@ -9,6 +9,7 @@ interface AssignmentPayload {
   event_date?: string
   event_type?: 'thursday' | 'sunday'
   minister_id?: string | null
+  is_trainee?: boolean
 }
 
 export async function PATCH(request: Request) {
@@ -55,6 +56,7 @@ export async function PATCH(request: Request) {
 
   const writePayload = {
     minister_id: payload.minister_id ?? null,
+    is_trainee: payload.minister_id ? Boolean(payload.is_trainee) : false,
   }
 
   let writeError: string | null = null
@@ -86,7 +88,7 @@ export async function PATCH(request: Request) {
 
   const query = adminSupabase
     .from('schedule_assignments')
-    .select('id, quarter_id, role_id, minister_id, event_date, event_type, minister:ministers(id, name)')
+    .select('id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)')
 
   const { data: assignment, error: assignmentError } = assignmentId
     ? await query.eq('id', assignmentId).single()

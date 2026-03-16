@@ -49,6 +49,7 @@ interface SavePayload {
 	event_type: 'thursday' | 'sunday'
 	minister_id: string | null
 	minister_name: string | null
+	is_trainee: boolean
 }
 
 function EscalaBuilderContent() {
@@ -150,6 +151,7 @@ function EscalaBuilderContent() {
 			event_date: payload.event_date,
 			event_type: payload.event_type,
 			minister_id: payload.minister_id,
+			is_trainee: payload.is_trainee,
 			minister: payload.minister_id && payload.minister_name
 				? { id: payload.minister_id, name: payload.minister_name }
 				: null,
@@ -176,6 +178,7 @@ function EscalaBuilderContent() {
 					event_date: payload.event_date,
 					event_type: payload.event_type,
 					minister_id: payload.minister_id,
+					is_trainee: payload.is_trainee,
 				}),
 			})
 

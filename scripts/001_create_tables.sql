@@ -30,6 +30,7 @@ CREATE TABLE public.schedule_assignments (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   quarter_id uuid,
   minister_id uuid,
+  is_trainee boolean NOT NULL DEFAULT false,
   role_id uuid,
   event_date date NOT NULL,
   event_type text NOT NULL CHECK (event_type = ANY (ARRAY['thursday'::text, 'sunday'::text])),

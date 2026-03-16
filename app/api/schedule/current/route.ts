@@ -14,6 +14,7 @@ interface AssignmentRow {
   quarter_id: string
   role_id: string
   minister_id: string | null
+  is_trainee: boolean
   event_date: string
   event_type: 'thursday' | 'sunday'
   minister: { id: string; name: string } | null
@@ -65,7 +66,7 @@ export async function GET() {
     adminSupabase
       .from('schedule_assignments')
       .select(
-        'id, quarter_id, role_id, minister_id, event_date, event_type, minister:ministers(id, name)'
+        'id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)'
       )
       .eq('quarter_id', publishedQuarter.id),
   ])

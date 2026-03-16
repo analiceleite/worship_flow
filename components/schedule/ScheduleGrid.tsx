@@ -34,6 +34,7 @@ export interface ScheduleAssignment {
     quarter_id: string
     role_id: string
     minister_id: string | null
+    is_trainee: boolean
     event_date: string
     event_type: 'thursday' | 'sunday'
     minister: AssignmentMinister | null
@@ -53,6 +54,7 @@ interface SavePayload {
     event_type: 'thursday' | 'sunday'
     minister_id: string | null
     minister_name: string | null
+    is_trainee: boolean
 }
 
 interface ScheduleGridProps {
@@ -133,7 +135,8 @@ function CellEditor({
             event_date: assignment.event_date,
             event_type: assignment.event_type,
             minister_id: minister?.id ?? null,
-            minister_name: minister?.name ?? null
+            minister_name: minister?.name ?? null,
+            is_trainee: minister ? assignment.is_trainee : false,
         })
         setOpen(false)
     }
@@ -148,7 +151,8 @@ function CellEditor({
             event_date: assignment.event_date,
             event_type: assignment.event_type,
             minister_id: assignment.minister_id,
-            minister_name: assignment.minister?.name ?? null
+            minister_name: assignment.minister?.name ?? null,
+            is_trainee: checked,
         })
     }
 
@@ -169,6 +173,11 @@ function CellEditor({
                     <span className="truncate">
                         {assignment.minister?.name ?? 'Selecionar ministro'}
                     </span>
+                    {assignment.minister_id && assignment.is_trainee && (
+                        <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                            Aprendiz
+                        </span>
+                    )}
                     <span className="ml-2 shrink-0">
                         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
                     </span>
@@ -214,6 +223,7 @@ function CellEditor({
                     <label className="flex cursor-pointer items-center justify-between gap-3 text-xs text-muted-foreground">
                         <span>Em treinamento</span>
                         <Checkbox
+                            checked={assignment.is_trainee}
                             onCheckedChange={(checked) => handleTraineeChange(Boolean(checked))}
                             disabled={!assignment.minister_id || saving}
                         />
@@ -265,6 +275,11 @@ export function ScheduleGrid({
                     ].join(' ')}
                 >
                     <span className="truncate">{assignment.minister?.name ?? 'Vazio'}</span>
+                    {assignment.minister_id && assignment.is_trainee && (
+                        <span className="ml-1.5 shrink-0 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
+                            aprendiz
+                        </span>
+                    )}
                     {assignment.minister_id === highlightedMinisterId && highlightedMinisterId && (
                         <span className="ml-auto shrink-0 pl-1 text-[10px] text-primary">você</span>
                     )}
@@ -346,6 +361,11 @@ export function ScheduleGrid({
                                                     ].join(' ')}
                                                 >
                                                     <span className="truncate">{assignment.minister?.name ?? 'Vazio'}</span>
+                                                    {assignment.minister_id && assignment.is_trainee && (
+                                                        <span className="ml-1.5 shrink-0 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
+                                                            aprendiz
+                                                        </span>
+                                                    )}
                                                     {assignment.minister_id === highlightedMinisterId && highlightedMinisterId && (
                                                         <span className="ml-auto shrink-0 pl-1 text-[10px] text-primary">você</span>
                                                     )}

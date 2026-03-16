@@ -119,13 +119,13 @@ export default function EscalaPage() {
 			weekMap.get(week)!.sunday = date
 		}
 
-		const myRolesBySlot = new Map<string, ScheduleRole[]>()
+		const myRolesBySlot = new Map<string, Array<{ role: ScheduleRole; isTrainee: boolean }>>()
 		for (const a of schedule.assignments) {
 			if (a.minister_id !== viewer.id) continue
 			const slotKey = `${a.event_date}_${a.event_type}`
 			if (!myRolesBySlot.has(slotKey)) myRolesBySlot.set(slotKey, [])
 			const role = schedule.roles.find((r) => r.id === a.role_id)
-			if (role) myRolesBySlot.get(slotKey)!.push(role)
+			if (role) myRolesBySlot.get(slotKey)!.push({ role, isTrainee: a.is_trainee })
 		}
 
 		const today = new Date()
@@ -299,10 +299,13 @@ export default function EscalaPage() {
 																</p>
 																{thursdayRoles && thursdayRoles.length > 0 ? (
 																	<div className="space-y-1">
-																		{thursdayRoles.map((role) => (
+																		{thursdayRoles.map(({ role, isTrainee }) => (
 																			<div key={role.id} className="flex items-center gap-1.5">
 																				<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-																				<span className="text-xs font-medium text-foreground">{role.name}</span>
+																				<span className="text-xs font-medium text-foreground">
+																					{role.name}
+																					{isTrainee ? ' (Aprendiz)' : ''}
+																				</span>
 																			</div>
 																		))}
 																	</div>
@@ -332,10 +335,13 @@ export default function EscalaPage() {
 																</p>
 																{sundayRoles && sundayRoles.length > 0 ? (
 																	<div className="space-y-1">
-																		{sundayRoles.map((role) => (
+																		{sundayRoles.map(({ role, isTrainee }) => (
 																			<div key={role.id} className="flex items-center gap-1.5">
 																				<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-																				<span className="text-xs font-medium text-foreground">{role.name}</span>
+																				<span className="text-xs font-medium text-foreground">
+																					{role.name}
+																					{isTrainee ? ' (Aprendiz)' : ''}
+																				</span>
 																			</div>
 																		))}
 																	</div>
