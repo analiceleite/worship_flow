@@ -587,7 +587,7 @@ function RepertoirePlayerContent() {
                                                                         if (Number.isNaN(nextValue)) return
                                                                         setMetronomeVolume(Math.min(500, Math.max(0, nextValue)))
                                                                     }}
-                                                                    className="h-2 w-full cursor-pointer"
+                                                                    className="h-2 w-full cursor-pointer accent-emerald-500"
                                                                 />
                                                                 <span className="w-10 text-right text-xs text-muted-foreground">{metronomeVolume}%</span>
                                                             </div>
