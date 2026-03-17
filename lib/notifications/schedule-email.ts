@@ -241,7 +241,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const itemCards = lines
     .map(
       (line) =>
-        `<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#ffffff;margin-bottom:10px;font-size:14px;line-height:1.5;color:#111827;">${line}</div>`
+        `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;">${line}</div>`
     )
     .join('')
 
@@ -253,20 +253,21 @@ function buildEmailTemplate(input: EmailTemplateInput) {
     accentSoft: string
     ctaLabel: string
   }) => `
-    <div style="margin:0;padding:32px 16px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-      <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:20px;overflow:hidden;box-shadow:0 10px 30px rgba(17,24,39,0.08);">
-        <div style="padding:28px 28px 20px;background:${content.accentSoft};border-bottom:1px solid #e5e7eb;">
-          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#ffffff;color:${content.accentColor};font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">
+    <div style="margin:0;padding:32px 16px;background:#f6f6f7;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,Helvetica,sans-serif;color:#1f2937;">
+      <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:20px;overflow:hidden;box-shadow:0 10px 26px rgba(15,23,42,0.07);">
+        <div style="height:4px;background:#ff3b30;"></div>
+        <div style="padding:28px 28px 20px;background:${content.accentSoft};border-bottom:1px solid #e4e4e7;">
+          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#ffffff;color:${content.accentColor};border:1px solid #e4e4e7;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">
             ${content.eyebrow}
           </div>
-          <h1 style="margin:16px 0 8px;font-size:26px;line-height:1.2;color:#111827;">${content.title}</h1>
-          <p style="margin:0;font-size:15px;line-height:1.7;color:#4b5563;">${content.message}</p>
+          <h1 style="margin:16px 0 8px;font-size:26px;line-height:1.2;color:#1f2937;">${content.title}</h1>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#6b7280;">${content.message}</p>
         </div>
 
         <div style="padding:24px 28px;">
-          <div style="margin-bottom:16px;padding:14px 16px;border-radius:14px;background:#f9fafb;border:1px solid #e5e7eb;">
-            <p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">
-              <strong style="color:#111827;">Ministro:</strong> ${ministerName}
+          <div style="margin-bottom:16px;padding:14px 16px;border-radius:12px;background:#f6f6f7;border:1px solid #e4e4e7;">
+            <p style="margin:0;font-size:14px;line-height:1.6;color:#4b5563;">
+              <strong style="color:#1f2937;">Ministro:</strong> ${ministerName}
             </p>
           </div>
 
@@ -275,11 +276,11 @@ function buildEmailTemplate(input: EmailTemplateInput) {
           </div>
 
           <div style="margin-bottom:24px;">
-            ${itemCards || '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#ffffff;font-size:14px;color:#6b7280;">Nenhuma escala encontrada.</div>'}
+            ${itemCards || '<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#ffffff;font-size:14px;color:#6b7280;">Nenhuma escala encontrada.</div>'}
           </div>
 
           <div style="text-align:center;margin-bottom:10px;">
-            <a href="${scheduleUrl}" style="display:inline-block;padding:12px 18px;border-radius:12px;background:${content.accentColor};color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
+            <a href="${scheduleUrl}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:${content.accentColor};color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
               ${content.ctaLabel}
             </a>
           </div>
@@ -308,8 +309,8 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         eyebrow: 'Nova escala',
         title: `Sua escala do trimestre foi publicada`,
         message: `Olá, ${ministerName}. A escala trimestral "${quarterName}" já está disponível com todas as suas datas e funções.`,
-        accentColor: '#2563eb',
-        accentSoft: '#eff6ff',
+        accentColor: '#ff3b30',
+        accentSoft: '#fff1f0',
         ctaLabel: 'Ver minha escala',
       }),
     }
@@ -342,8 +343,8 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       message: isOneDayReminder
         ? `Olá, ${ministerName}. Sua escala acontece amanhã, ${toPtDate(targetDate)}. Confira os detalhes e deixe tudo preparado para servir com tranquilidade.`
         : `Olá, ${ministerName}. Sua próxima escala acontece em breve, no dia ${toPtDate(targetDate)}. Reserve um tempo para ensaiar e se preparar com tranquilidade.`,
-      accentColor: isOneDayReminder ? '#dc2626' : '#d97706',
-      accentSoft: isOneDayReminder ? '#fef2f2' : '#fff7ed',
+      accentColor: '#ff3b30',
+      accentSoft: '#fff1f0',
       ctaLabel: 'Abrir escala',
     }),
   }
