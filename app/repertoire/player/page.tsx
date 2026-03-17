@@ -4,9 +4,11 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ChevronLeft, SkipBack, SkipForward, Youtube } from 'lucide-react'
+import { ChevronLeft, ExternalLink, FileText, SkipBack, SkipForward, Youtube } from 'lucide-react'
+import { CifraPanel, CifraViewer } from '@/components/cifra-viewer'
 import { Header } from '@/components/header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -202,6 +204,7 @@ function RepertoirePlayerContent() {
     const [metronomeVolume, setMetronomeVolume] = useState(150)
     const [timeSignature, setTimeSignature] = useState<TimeSignature>('4/4')
     const [metronomeOpen, setMetronomeOpen] = useState(false)
+    const [cifraViewerOpen, setCifraViewerOpen] = useState(false)
     const [beatFlash, setBeatFlash] = useState<{ active: boolean; accented: boolean; beat: number }>({
         active: false,
         accented: true,
@@ -481,9 +484,44 @@ function RepertoirePlayerContent() {
                     <div className="grid gap-4 lg:grid-cols-[1.8fr_1fr]">
                         <section className="rounded-xl border bg-muted/20 p-3 sm:p-4">
                             <div className="mb-3 rounded-lg border bg-background px-3 py-2">
-                                <p className="text-xs uppercase tracking-wider text-muted-foreground">Tocando agora</p>
-                                <p className="truncate text-sm font-semibold text-foreground">{currentItem?.song?.title}</p>
-                                <p className="truncate text-xs text-muted-foreground">{currentItem?.song?.artist}</p>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="text-xs uppercase tracking-wider text-muted-foreground">Tocando agora</p>
+                                        <p className="truncate text-sm font-semibold text-foreground">{currentItem?.song?.title}</p>
+                                        <p className="truncate text-xs text-muted-foreground">{currentItem?.song?.artist}</p>
+                                    </div>
+                                    {currentItem?.song?.tone ? (
+                                        <Badge variant="secondary" className="shrink-0 font-mono text-xs">
+                                            {currentItem.song.tone}
+                                        </Badge>
+                                    ) : null}
+                                </div>
+
+                                {currentItem?.song?.cifra_content && currentItem.song.cifra_content.length > 0 ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <Button type="button" variant="outline" size="sm" onClick={() => setCifraViewerOpen(true)}>
+                                            <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                            Abrir cifra
+                                        </Button>
+                                        {currentItem.song.cipher_url ? (
+                                            <Button type="button" variant="ghost" size="sm" asChild>
+                                                <a href={currentItem.song.cipher_url} target="_blank" rel="noopener noreferrer">
+                                                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                                                    CifraClub
+                                                </a>
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                ) : currentItem?.song?.cipher_url ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <Button type="button" variant="outline" size="sm" asChild>
+                                            <a href={currentItem.song.cipher_url} target="_blank" rel="noopener noreferrer">
+                                                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                                                Abrir cifra externa
+                                            </a>
+                                        </Button>
+                                    </div>
+                                ) : null}
                             </div>
 
                             {showMetronome ? (
@@ -665,41 +703,78 @@ function RepertoirePlayerContent() {
                             </div>
                         </section>
 
-                        <section className="rounded-xl border bg-muted/20 p-3 sm:p-4">
-                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fila</p>
-                            <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-                                {items.map((item, idx) => (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        onClick={() => setCurrentIndex(idx)}
-                                        className={[
-                                            'flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
-                                            idx === currentIndex
-                                                ? 'border-primary bg-primary/10'
-                                                : 'border-border hover:bg-muted/40',
-                                        ].join(' ')}
-                                    >
-                                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-semibold text-muted-foreground">
-                                            {idx + 1}
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-medium text-foreground">{item.song?.title}</p>
-                                            <p className="truncate text-xs text-muted-foreground">{item.song?.artist}</p>
+                        <div className="space-y-4">
+                            <section className="rounded-xl border bg-muted/20 p-3 sm:p-4">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Referência da cifra</p>
+                                        <p className="text-xs text-muted-foreground">Acompanhe a música real com a cifra local e use o metrônomo se quiser.</p>
+                                    </div>
+                                    {currentItem?.song?.cifra_content && currentItem.song.cifra_content.length > 0 ? (
+                                        <Button type="button" variant="outline" size="sm" onClick={() => setCifraViewerOpen(true)}>
+                                            <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                            Expandir
+                                        </Button>
+                                    ) : null}
+                                </div>
+
+                                {currentItem?.song ? (
+                                    currentItem.song.cifra_content && currentItem.song.cifra_content.length > 0 ? (
+                                        <CifraPanel
+                                            song={currentItem.song}
+                                            heightClassName="h-[26rem] rounded-lg border bg-background"
+                                            contentClassName="px-3 py-3 font-mono text-[12px] leading-5 text-foreground sm:text-[13px] sm:leading-6"
+                                        />
+                                    ) : (
+                                        <div className="rounded-lg border bg-background px-3 py-6 text-sm text-muted-foreground">
+                                            Cifra local não disponível para esta música.
                                         </div>
-                                        {!extractYouTubeVideoId(item.song?.youtube_url) ? (
-                                            <Youtube className="h-4 w-4 text-muted-foreground" />
-                                        ) : null}
-                                        {idx === currentIndex && (
-                                            <span className="text-xs font-medium text-primary">agora</span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        </section>
+                                    )
+                                ) : null}
+                            </section>
+
+                            <section className="rounded-xl border bg-muted/20 p-3 sm:p-4">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fila</p>
+                                <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+                                    {items.map((item, idx) => (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => setCurrentIndex(idx)}
+                                            className={[
+                                                'flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+                                                idx === currentIndex
+                                                    ? 'border-primary bg-primary/10'
+                                                    : 'border-border hover:bg-muted/40',
+                                            ].join(' ')}
+                                        >
+                                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-semibold text-muted-foreground">
+                                                {idx + 1}
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium text-foreground">{item.song?.title}</p>
+                                                <p className="truncate text-xs text-muted-foreground">{item.song?.artist}</p>
+                                            </div>
+                                            {!extractYouTubeVideoId(item.song?.youtube_url) ? (
+                                                <Youtube className="h-4 w-4 text-muted-foreground" />
+                                            ) : null}
+                                            {idx === currentIndex && (
+                                                <span className="text-xs font-medium text-primary">agora</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+                        </div>
                     </div>
                 )}
             </main>
+
+            <CifraViewer
+                song={currentItem?.song ?? null}
+                open={cifraViewerOpen}
+                onOpenChange={setCifraViewerOpen}
+            />
         </div>
     )
 }

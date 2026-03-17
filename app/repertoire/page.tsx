@@ -6,6 +6,7 @@ import { Song, Minister, RepertoireItem } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/header'
+import { CifraViewer } from '@/components/cifra-viewer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -236,6 +237,7 @@ export default function RepertorioPage() {
     const [weekAnchor, setWeekAnchor] = useState(new Date())
     const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null)
     const [dayInfoMap, setDayInfoMap] = useState<Record<string, DayInfo>>({})
+    const [selectedCifraSong, setSelectedCifraSong] = useState<Song | null>(null)
 
     const [repertoire, setRepertoire] = useState<RepertoireItem[]>([])
     const [totalRepertoire, setTotalRepertoire] = useState(0)
@@ -895,11 +897,22 @@ export default function RepertorioPage() {
                                                 </p>
                                             </div>
                                             <div className="flex shrink-0 items-center">
-                                                {item.song?.cipher_url && (
+                                                {item.song?.cifra_content && item.song.cifra_content.length > 0 ? (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7"
+                                                        onClick={() => setSelectedCifraSong(item.song ?? null)}
+                                                        title="Ver cifra no app"
+                                                        aria-label="Ver cifra no app"
+                                                    >
+                                                        <FileText className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                ) : item.song?.cipher_url ? (
                                                     <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                                                         <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer" title="Abrir cifra"><FileText className="h-3.5 w-3.5" /></a>
                                                     </Button>
-                                                )}
+                                                ) : null}
                                                 {item.song?.youtube_url && (
                                                     <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                                                         <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
@@ -1104,6 +1117,14 @@ export default function RepertorioPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <CifraViewer
+                song={selectedCifraSong}
+                open={Boolean(selectedCifraSong)}
+                onOpenChange={(open) => {
+                    if (!open) setSelectedCifraSong(null)
+                }}
+            />
 
         </div>
     )

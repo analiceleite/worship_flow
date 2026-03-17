@@ -1,10 +1,12 @@
 'use client'
 
+import { useState } from 'react'
 import { Song } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Music, Youtube, FileText, Pencil, Trash2, Copy } from 'lucide-react'
+import { CifraViewer } from '@/components/cifra-viewer'
 
 interface SongCardProps {
   song: Song
@@ -16,6 +18,9 @@ interface SongCardProps {
 }
 
 export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister = false, duplicateCount = 1 }: SongCardProps) {
+  const [cifraOpen, setCifraOpen] = useState(false)
+  const hasLocalCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
+
   const getYoutubeId = (url: string) => {
     const match = url.match(/(?:youtu\.be\/|youtube\.com(?:\/embed\/|\/v\/|\/watch\?v=|\/watch\?.+&v=))([\w-]{11})/)
     return match ? match[1] : null
@@ -146,7 +151,19 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
           )}
 
           <div className="flex items-center gap-2">
-            {song.cipher_url ? (
+            {hasLocalCifra ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onClick={() => setCifraOpen(true)}
+                title="Ver cifra no app"
+                aria-label="Ver cifra no app"
+              >
+                <FileText className="mr-1.5 h-4 w-4" />
+                Cifra
+              </Button>
+            ) : song.cipher_url ? (
               <Button variant="secondary" size="sm" className="flex-1" asChild>
                 <a
                   href={song.cipher_url}
@@ -160,7 +177,7 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
                 </a>
               </Button>
             ) : (
-              <Button variant="secondary" size="sm" className="flex-1" disabled title="Sem link de cifra">
+              <Button variant="secondary" size="sm" className="flex-1" disabled title="Sem cifra disponível">
                 <FileText className="mr-1.5 h-4 w-4" />
                 Cifra
               </Button>
@@ -188,6 +205,8 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
           </div>
         </div>
       </CardContent>
+
+      <CifraViewer song={song} open={cifraOpen} onOpenChange={setCifraOpen} />
     </Card>
   )
 }
