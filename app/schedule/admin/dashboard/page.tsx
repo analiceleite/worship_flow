@@ -374,7 +374,7 @@ export default function ScheduleAdminDashboardPage() {
         <div className="min-h-screen bg-background">
             <Header />
 
-            <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8 w-full">
+            <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8 w-full max-w-full overflow-x-hidden">
 
                 {/* ── Top bar ── */}
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
@@ -561,36 +561,48 @@ export default function ScheduleAdminDashboardPage() {
                         {/* ── Alerts row ── */}
                         <div className="grid gap-4 lg:grid-cols-2">
 
-                            {/* Overload alerts
-                                Fix mobile: flex-1 no texto + self-start no badge evita
-                                que o badge empurre o nome para fora da tela */}
-                            <Card className='py-4'>
+                            <Card className="py-4">
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                                         <ShieldAlert className="h-4 w-4 text-muted-foreground" />
                                         Alertas de Sobrecarga
                                     </CardTitle>
-                                    <CardDescription className="text-xs">Ministros acima do limite de +30% da média</CardDescription>
+                                    <CardDescription className="text-xs">
+                                        Ministros acima do limite de +30% da média
+                                    </CardDescription>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="px-4 overflow-hidden">
                                     {overloadedMinisters.length === 0 ? (
                                         <p className="text-sm text-muted-foreground py-2">Nenhum alerta de sobrecarga.</p>
                                     ) : (
-                                        <div>
+                                        <div className="flex flex-col gap-2">
                                             {overloadedMinisters.map((item) => (
                                                 <div
                                                     key={item.minister_id}
-                                                    className="flex items-start justify-between gap-3 py-2.5 border-b border-border last:border-0 last:pb-0"
+                                                    className="rounded-lg bg-destructive/8 border border-destructive/20 px-3 py-2.5"
                                                 >
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium text-foreground">{item.name}</p>
-                                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                                            {item.total_assignments} alocações no trimestre
+                                                    {/* Linha 1: nome + badge na mesma linha com truncate seguro */}
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <p className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
+                                                            {item.name}
                                                         </p>
+                                                        <span className="text-xs font-semibold text-destructive shrink-0 tabular-nums">
+                                                            +{item.overload_delta_percent}%
+                                                        </span>
                                                     </div>
-                                                    <Badge variant="destructive" className="shrink-0 self-start mt-0.5">
-                                                        +{item.overload_delta_percent}%
-                                                    </Badge>
+                                                    {/* Linha 2: subtexto */}
+                                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                                        {item.total_assignments} alocações no trimestre
+                                                    </p>
+                                                    {/* Linha 3: barra de sobrecarga visual */}
+                                                    <div className="mt-2 h-1 rounded-full bg-destructive/20 overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full bg-destructive transition-all duration-500"
+                                                            style={{
+                                                                width: `${Math.min(100, Math.round((item.overload_delta_percent / 150) * 100))}%`,
+                                                            }}
+                                                        />
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -598,45 +610,66 @@ export default function ScheduleAdminDashboardPage() {
                                 </CardContent>
                             </Card>
 
-                            {/* Gap alerts
-                                Fix mobile: conteúdo empilhado em flex-col dentro do flex-1,
-                                badge fica em justify-between na primeira linha */}
-                            <Card className='py-4'>
+
+                            <Card className="py-4">
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                                         <CalendarClock className="h-4 w-4 text-muted-foreground" />
                                         Eventos com Lacunas
                                     </CardTitle>
-                                    <CardDescription className="text-xs">Próximos cultos com vagas em aberto</CardDescription>
+                                    <CardDescription className="text-xs">
+                                        Próximos cultos com vagas em aberto
+                                    </CardDescription>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="px-4 overflow-hidden">
                                     {highRiskEvents.length === 0 ? (
                                         <p className="text-sm text-muted-foreground py-2">Nenhum evento com lacuna.</p>
                                     ) : (
-                                        <div>
-                                            {highRiskEvents.map((event) => (
-                                                <div
-                                                    key={`${event.event_date}_${event.event_type}`}
-                                                    className="flex items-start gap-3 py-2.5 border-b border-border last:border-0 last:pb-0"
-                                                >
-                                                    <SeverityDot empty={event.empty_slots} />
-                                                    <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <p className="text-sm font-medium text-foreground leading-snug">
+                                        <div className="flex flex-col gap-2">
+                                            {highRiskEvents.map((event) => {
+                                                const isCritical = event.empty_slots >= 3
+                                                return (
+                                                    <div
+                                                        key={`${event.event_date}_${event.event_type}`}
+                                                        className={cn(
+                                                            'rounded-lg border px-3 py-2.5',
+                                                            isCritical
+                                                                ? 'bg-destructive/8 border-destructive/20'
+                                                                : 'bg-amber-500/8 border-amber-500/20',
+                                                        )}
+                                                    >
+                                                        {/* Linha 1: data/tipo + contagem de vagas */}
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <SeverityDot empty={event.empty_slots} />
+                                                            <p className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
                                                                 {formatDateBr(event.event_date)} · {formatEventLabel(event.event_type)}
                                                             </p>
-                                                            <Badge variant="destructive" className="shrink-0 self-start text-[10px] py-0 h-5">
+                                                            <span
+                                                                className={cn(
+                                                                    'text-xs font-semibold shrink-0 tabular-nums',
+                                                                    isCritical ? 'text-destructive' : 'text-amber-600 dark:text-amber-400',
+                                                                )}
+                                                            >
                                                                 {event.empty_slots} {event.empty_slots === 1 ? 'vaga' : 'vagas'}
-                                                            </Badge>
+                                                            </span>
                                                         </div>
+
+                                                        {/* Linha 2: roles faltando em chips — quebram linha, nunca estourame */}
                                                         {event.missing_roles.length > 0 && (
-                                                            <p className="text-xs text-muted-foreground truncate">
-                                                                {event.missing_roles.join(' · ')}
-                                                            </p>
+                                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                                {event.missing_roles.map((role) => (
+                                                                    <span
+                                                                        key={role}
+                                                                        className="inline-flex items-center rounded-md bg-background/60 border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground leading-none"
+                                                                    >
+                                                                        {role}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                </div>
-                                            ))}
+                                                )
+                                            })}
                                         </div>
                                     )}
                                 </CardContent>
