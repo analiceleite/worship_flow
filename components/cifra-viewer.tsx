@@ -28,7 +28,7 @@ interface CifraPanelProps {
 const AUTOSCROLL_SECONDS_KEY = 'cifra-autoscroll-seconds-per-screen'
 const DEFAULT_SECONDS_PER_SCREEN = 30
 
-const chordRe = /([A-G](?:#|b)?(?:m|maj|min|sus|add|dim|aug)?(?:\d+[A-Za-z]*)?(?:\([^)]*\))?(?:\/[A-G](?:#|b)?)?)(?=[\s\)\]\}]|$)/g
+const chordRe = /([A-G](?:#{1,2}|b{1,2})?(?:m|maj|min|sus|add|dim|aug)?(?:\d+[A-Za-z+#-]*)?(?:\([^)]*\))?(?:\/[A-G](?:#{1,2}|b{1,2})?)?)(?=[\s,.;:!?\)\]\}]|$)/g
 
 function isLikelyChordLine(line: string) {
     const regex = new RegExp(chordRe)
