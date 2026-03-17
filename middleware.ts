@@ -99,8 +99,9 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/', request.url))
     }
 
-    if (request.nextUrl.pathname === ROUTES.HOME && minister.role === 'admin') {
-      return NextResponse.redirect(new URL(ROUTES.SCHEDULE_ADMIN_DASHBOARD, request.url))
+    if (request.nextUrl.pathname === ROUTES.HOME) {
+      const target = minister.role === 'admin' ? ROUTES.SCHEDULE_ADMIN_DASHBOARD : ROUTES.SONGS
+      return NextResponse.redirect(new URL(target, request.url))
     }
 
     // 'midia' users: only allow viewing the repertório page
@@ -114,12 +115,12 @@ export async function middleware(request: NextRequest) {
   if (user && isPublicRoute) {
     const { data: minister } = await supabase
       .from('ministers')
-      .select('is_active')
+      .select('is_active, role')
       .eq('user_id', user.id)
       .single()
 
     if (minister?.is_active) {
-      const target = minister.role === 'admin' ? ROUTES.SCHEDULE_ADMIN_DASHBOARD : ROUTES.HOME
+      const target = minister.role === 'admin' ? ROUTES.SCHEDULE_ADMIN_DASHBOARD : ROUTES.SONGS
       return NextResponse.redirect(new URL(target, request.url))
     }
   }
