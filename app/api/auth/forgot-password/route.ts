@@ -15,7 +15,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'E-mail é obrigatório.' }, { status: 400 })
     }
 
-    const baseUrl = (process.env.APP_BASE_URL ?? '').trim().replace(/\/$/, '')
+    const configuredBaseUrl = (process.env.APP_BASE_URL ?? '').trim().replace(/\/$/, '')
+    const requestBaseUrl = new URL(request.url).origin.replace(/\/$/, '')
+    const baseUrl = configuredBaseUrl || requestBaseUrl
 
     if (!baseUrl) {
       return NextResponse.json(
@@ -30,6 +32,27 @@ export async function POST(request: Request) {
     })
 
     if (error) {
+      const rawMessage = (error.message ?? '').toLowerCase()
+      const isRateLimited =
+        rawMessage.includes('rate limit') ||
+        rawMessage.includes('too many requests') ||
+        rawMessage.includes('email rate limit exceeded')
+
+      if (isRateLimited) {
+        return NextResponse.json(
+          {
+            error:
+              'Novo e-mail de recuperação temporariamente bloqueado. Aguarde cerca de 60 segundos e tente novamente.',
+          },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': '60',
+            },
+          },
+        )
+      }
+
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
