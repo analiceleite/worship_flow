@@ -21,11 +21,60 @@ export default function SetPasswordPage() {
   const [mode, setMode] = useState<'activation' | 'recovery'>('recovery')
   const [formData, setFormData] = useState({ password: '', confirmPassword: '' })
 
+  const establishRecoverySession = async () => {
+    const supabase = createClient()
+
+    const currentUrl = new URL(window.location.href)
+    const authCode = currentUrl.searchParams.get('code')
+
+    if (authCode) {
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(authCode)
+      if (exchangeError) throw exchangeError
+
+      currentUrl.searchParams.delete('code')
+      currentUrl.searchParams.delete('type')
+      const cleanedSearch = currentUrl.searchParams.toString()
+      window.history.replaceState(
+        {},
+        document.title,
+        `${currentUrl.pathname}${cleanedSearch ? `?${cleanedSearch}` : ''}`,
+      )
+      return
+    }
+
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash
+
+    if (!hash) return
+
+    const hashParams = new URLSearchParams(hash)
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
+    const type = hashParams.get('type')
+
+    if (accessToken && refreshToken && (type === 'recovery' || type === 'invite')) {
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      })
+      if (sessionError) throw sessionError
+
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`)
+    }
+  }
+
   useEffect(() => {
     const supabase = createClient()
 
     const bootstrap = async () => {
-      await checkUserStatus()
+      try {
+        await establishRecoverySession()
+        await checkUserStatus()
+      } catch {
+        setError('Link de redefinição inválido ou expirado. Solicite um novo e-mail.')
+        setChecking(false)
+      }
     }
 
     void bootstrap()
@@ -106,7 +155,12 @@ export default function SetPasswordPage() {
       setSuccess(true)
       setTimeout(() => { router.push(ROUTES.AUTH_LOGIN); router.refresh() }, 2000)
     } catch (err: any) {
-      setError(err.message || 'Erro ao definir senha. Tente novamente.')
+      const message = String(err?.message || '').toLowerCase()
+      if (message.includes('auth session missing')) {
+        setError('Sessão de recuperação expirada. Solicite um novo link de redefinição.')
+      } else {
+        setError(err.message || 'Erro ao definir senha. Tente novamente.')
+      }
     } finally {
       setLoading(false)
     }
