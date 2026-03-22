@@ -42,11 +42,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const isProduction = process.env.NODE_ENV === 'production'
+
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <PwaRegister />
+          {isProduction ? <PwaRegister /> : null}
           {children}
           <Analytics />
         </ThemeProvider>

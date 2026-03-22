@@ -46,18 +46,38 @@ npm install
 
 ### 2) Configurar variáveis de ambiente
 
-Crie o arquivo `.env.local` na raiz com:
+Use arquivos separados por ambiente:
+
+```env
+# Desenvolvimento
+.env.development.local
+
+# Produção local (quando rodar "npm run prod")
+.env.production.local
+```
+
+Modelos prontos no repositório:
+
+- `.env.development.local.example`
+- `.env.production.local.example`
+
+Campos obrigatórios em ambos:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-APP_BASE_URL=http://localhost:3000
+APP_BASE_URL=...
 CRON_SECRET=...
 RESEND_API_KEY=...
 RESEND_FROM_EMAIL=...
 SCHEDULE_EMAIL_TEST_RECIPIENT=...
 ```
+
+Defina `APP_BASE_URL` assim:
+
+- dev: `http://localhost:3000`
+- prod: `https://seu-dominio.vercel.app`
 
 > `SUPABASE_SERVICE_ROLE_KEY` é usada em rotas administrativas server-side.
 > `SCHEDULE_EMAIL_TEST_RECIPIENT` é opcional e redireciona todos os e-mails de escala para um único endereço durante testes.
@@ -78,14 +98,13 @@ Execute os scripts em ordem no SQL Editor do Supabase:
 Desenvolvimento:
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
-Build de produção:
+Produção local (build + start):
 
 ```bash
-pnpm build
-pnpm start
+npm run prod
 ```
 
 ## Automação de notificações
