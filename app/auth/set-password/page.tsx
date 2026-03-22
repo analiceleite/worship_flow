@@ -152,6 +152,8 @@ export default function SetPasswordPage() {
         if (activateError) throw activateError
       }
 
+      await supabase.auth.signOut()
+
       setSuccess(true)
       setTimeout(() => { router.push(ROUTES.AUTH_LOGIN); router.refresh() }, 2000)
     } catch (err: any) {
@@ -216,7 +218,18 @@ export default function SetPasswordPage() {
           <form onSubmit={handleSetPassword} className="space-y-4">
             {error && (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>
+                  {error}
+                  {(error.toLowerCase().includes('expirad') ||
+                    error.toLowerCase().includes('inválido') ||
+                    error.toLowerCase().includes('sessão')) && (
+                    <span className="mt-2 block">
+                      <a href={ROUTES.AUTH_FORGOT_PASSWORD} className="underline">
+                        Solicitar novo link de redefinição
+                      </a>
+                    </span>
+                  )}
+                </AlertDescription>
               </Alert>
             )}
 
