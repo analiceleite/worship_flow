@@ -59,6 +59,7 @@ import {
     ListMusic,
     Sparkles,
     CalendarDays,
+    Share,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import {
@@ -468,6 +469,27 @@ export default function RepertorioPage() {
         router.push(`/repertoire/player?${params.toString()}`)
     }
 
+    const handleExportWhatsapp = () => {
+        if (!selectedDay) return
+        if (!repertoire || repertoire.length === 0) {
+            window.alert('Nenhuma música no repertório para exportar.')
+            return
+        }
+
+        const dateLabel = format(selectedDay.date, 'dd/MM/yyyy')
+        const header = `Repertório - ${selectedDay.eventName} (${dateLabel})`
+        const lines = repertoire.map((item, idx) => {
+            const title = item.song?.title ?? 'Sem título'
+            const artist = item.song?.artist ?? 'Artista desconhecido'
+            const tone = item.song?.tone ? ` (Tom ${item.song.tone}${item.song?.capo_frets && item.song.capo_frets > 0 ? ` · Capo ${item.song.capo_frets}ª` : ''})` : ''
+            return `${idx + 1}. ${title} — ${artist}${tone}`
+        })
+
+        const message = [header, '', ...lines].join('\n')
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
+        window.open(waUrl, '_blank', 'noopener,noreferrer')
+    }
+
     const saveRepertoireOrder = async (items: RepertoireItem[]) => {
         setReorderError(null)
         const supabase = createClient()
@@ -765,6 +787,13 @@ export default function RepertorioPage() {
                                             <Plus className="mr-2 h-3.5 w-3.5" />
                                             Adicionar
                                         </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            disabled={repertoire.length === 0}
+                                            onSelect={() => void handleExportWhatsapp()}
+                                        >
+                                            <Share className="mr-2 h-3.5 w-3.5" />
+                                            Exportar p/ WhatsApp
+                                        </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
 
@@ -777,6 +806,16 @@ export default function RepertorioPage() {
                                 >
                                     <Play className="mr-1.5 h-3.5 w-3.5" />
                                     Playlist
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={repertoire.length === 0}
+                                    onClick={() => void handleExportWhatsapp()}
+                                >
+                                    <Share className="mr-1.5 h-3.5 w-3.5" />
+                                    Exportar p/ WhatsApp
                                 </Button>
                                 <Button
                                     type="button"
