@@ -94,6 +94,7 @@ CREATE TABLE public.songs (
   youtube_url text,
   cipher_url text,
   created_at timestamp with time zone DEFAULT now(),
+  capo_frets integer DEFAULT 0,
   minister_id uuid,
   CONSTRAINT songs_pkey PRIMARY KEY (id),
   CONSTRAINT songs_minister_id_fkey FOREIGN KEY (minister_id) REFERENCES public.ministers(id)

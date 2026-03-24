@@ -18,6 +18,7 @@ export interface Song {
   cipher_url: string | null
   youtube_url: string | null
   cifra_content: string[] | null
+  capo_frets?: number | null
   minister_id: string
   created_at: string
   minister?: Minister

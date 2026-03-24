@@ -398,18 +398,28 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         cipher_url: cipherUrl || null,
         youtube_url: ensureHttps(formData.youtube_url) || null,
         cifra_content: cifraToSave,
+        capo_frets: typeof capoFrets === 'number' ? capoFrets : 0,
       }
 
-      if (song) {
-        const { error } = await supabase.from('songs').update(payload).eq('id', song.id)
-        if (error) throw error
-      } else {
-        const { error } = await supabase.from('songs').insert({
-          ...payload,
+      const performSave = async (body: Record<string, unknown>) => {
+        if (song) {
+          return supabase.from('songs').update(body).eq('id', song.id)
+        }
+        return supabase.from('songs').insert({
+          ...body,
           minister_id: currentMinister?.id,
         })
-        if (error) throw error
       }
+
+      let { error } = await performSave(payload)
+      // Fallback if the column doesn't exist or is rejected by the DB schema
+      if (error && /capo_frets/i.test(error.message ?? '')) {
+        const { capo_frets, ...rest } = payload
+        console.warn('Retrying save without capo_frets column:', error.message)
+        ;({ error } = await performSave(rest))
+      }
+
+      if (error) throw error
 
       onSuccess()
       onOpenChange(false)

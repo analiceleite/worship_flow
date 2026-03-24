@@ -291,6 +291,13 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
 export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
     if (!song) return null
 
+    // Some older rows may store the capo value under a legacy `capo` column.
+    const capoFrets = typeof song.capo_frets === 'number'
+        ? song.capo_frets
+        : typeof (song as any)?.capo === 'number'
+            ? (song as any).capo
+            : null
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="flex h-[92dvh] max-h-[92dvh] w-[96vw] max-w-4xl flex-col p-3 sm:p-5">
@@ -300,9 +307,16 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
                             <DialogTitle className="truncate text-lg">{song.title}</DialogTitle>
                             <p className="mt-0.5 truncate text-sm text-muted-foreground">{song.artist}</p>
                         </div>
-                        <Badge variant="secondary" className="mt-0.5 shrink-0 font-mono text-xs">
-                            {song.tone}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="secondary" className="mt-0.5 shrink-0 font-mono text-xs">
+                                {song.tone}
+                            </Badge>
+                            {capoFrets && capoFrets > 0 ? (
+                                <Badge variant="outline" className="mt-0.5 shrink-0 text-xs">
+                                    Capo: {capoFrets}ª casa
+                                </Badge>
+                            ) : null}
+                        </div>
                     </div>
                     {song.cipher_url && (
                         <div className="mt-2">
