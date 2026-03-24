@@ -449,10 +449,10 @@ function RepertoirePlayerContent() {
     }, [stopMetronome])
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen w-full bg-background">
             <Header />
 
-            <main className="container mx-auto p-4 sm:p-6">
+            <main className="w-full p-4 sm:px-6">
                 <div className="mb-4 flex items-center justify-between gap-3">
                     <Button type="button" variant="outline" size="sm" onClick={handleBack}>
                         <ChevronLeft className="mr-1.5 h-4 w-4" />
@@ -785,7 +785,7 @@ export default function RepertoirePlayerPage() {
             fallback={
                 <div className="min-h-screen bg-background">
                     <Header />
-                    <main className="container mx-auto p-4 sm:p-6">
+                    <main className="w-full px-4 sm:px-6">
                         <div className="rounded-xl border bg-muted/10 p-6 text-sm text-muted-foreground">
                             Carregando playlist...
                         </div>
