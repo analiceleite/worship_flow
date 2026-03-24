@@ -41,7 +41,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/_next/') || url.pathname === '/sw.js') {
-    event.respondWith(fetch(event.request))
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request) || caches.match('/') || new Response('Network error', { status: 503 }))
+    )
     return
   }
 
@@ -62,7 +64,9 @@ self.addEventListener('fetch', (event) => {
     url.pathname.endsWith('.svg')
 
   if (!shouldCacheAsset) {
-    event.respondWith(fetch(event.request))
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request) || caches.match('/') || new Response('Network error', { status: 503 }))
+    )
     return
   }
 
