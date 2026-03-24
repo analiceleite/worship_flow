@@ -164,18 +164,16 @@ export default function HomePage() {
         await fetchSongs()
     }
 
-    // Build a map of normalized title → number of versions (used only in admin view).
+    // Build a map of normalized title → number of versions
     // Groups by title only (ignoring artist) so that small differences in artist name
     // between ministers don't prevent duplicates from being detected.
     const normalizeTitle = (t: string) => t.toLowerCase().trim().replace(/\s+/g, ' ')
 
-    const versionCountMap = isAdmin
-        ? songs.reduce<Record<string, number>>((acc, s) => {
-            const key = normalizeTitle(s.title)
-            acc[key] = (acc[key] ?? 0) + 1
-            return acc
-        }, {})
-        : {}
+    const versionCountMap = songs.reduce<Record<string, number>>((acc, s) => {
+        const key = normalizeTitle(s.title)
+        acc[key] = (acc[key] ?? 0) + 1
+        return acc
+    }, {})
 
     const getVersionCount = (song: Song) => versionCountMap[normalizeTitle(song.title)] ?? 1
 

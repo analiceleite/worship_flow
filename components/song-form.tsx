@@ -40,7 +40,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const [lookupLoading, setLookupLoading] = useState(false)
   const [lookupUrl, setLookupUrl] = useState('')
   const [lookupError, setLookupError] = useState<string | null>(null)
-  const [sourceTone, setSourceTone] = useState<string | null>(null)
+  const [lookupSourceTone, setLookupSourceTone] = useState<string | null>(null)
+  const hasExplicitKeyInCipherUrl = /#.*(?:^|&)key=\d+/i.test(song?.cipher_url || '')
+  // Se a URL tem #key explícito, o tom-base é o tom resolvido do CifraClub para evitar falso alerta.
+  const sourceTone = hasExplicitKeyInCipherUrl && lookupSourceTone
+    ? lookupSourceTone
+    : (song?.tone ?? lookupSourceTone ?? null)
+  
   const [availableTones, setAvailableTones] = useState<string[]>(['C'])
   const [formData, setFormData] = useState({
     title: '',
@@ -56,22 +62,24 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
     setLookupUrl('')
     setLookupError(null)
+    setLookupSourceTone(null)
 
     if (song) {
-      setSourceTone(song.tone || null)
-      setAvailableTones(song.tone ? [song.tone] : ['C'])
+      const songTone = song.tone || 'C'
       setFormData({
         title: song.title || '',
         artist: song.artist || '',
-        tone: song.tone || 'C',
+        tone: songTone,
         cipher_url: song.cipher_url || '',
         youtube_url: song.youtube_url || '',
         cifra_content: song.cifra_content ?? null,
       })
+
+      // Estado inicial até carregar os tons oficiais do CifraClub.
+      setAvailableTones([songTone])
       return
     }
 
-    setSourceTone(null)
     setAvailableTones(['C'])
     setFormData({
       title: '',
@@ -94,20 +102,33 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     const loadAvailableTones = async () => {
       try {
         const versionParam = parsed.version ? `&version=${encodeURIComponent(parsed.version)}` : ''
-        const res = await fetch(`/api/cifraclub?artist=${encodeURIComponent(parsed.artist)}&song=${encodeURIComponent(parsed.song)}${versionParam}`)
+        const keyParam = parsed.key != null ? `&key=${parsed.key}` : ''
+        const res = await fetch(`/api/cifraclub?artist=${encodeURIComponent(parsed.artist)}&song=${encodeURIComponent(parsed.song)}${versionParam}${keyParam}`)
         if (!res.ok) return
         const data: CifraClubSong = await res.json()
         if (cancelled) return
 
         const scraperTones = data.available_tones?.filter((t) => /^[A-G](?:#|b)?m?$/.test(t)) ?? []
-        const originalTone = data.tone || song.tone || 'C'
-        const base = scraperTones.length > 0 ? scraperTones : [originalTone]
-        const merged = song.tone && !base.includes(song.tone) ? [song.tone, ...base] : base
-        setAvailableTones(merged)
+        if (scraperTones.length > 0) {
+          setAvailableTones(scraperTones)
+
+          const officialTone = (data.tone ?? '').trim()
+          if (parsed.key != null && officialTone && scraperTones.includes(officialTone)) {
+            setLookupSourceTone(officialTone)
+          }
+
+          // Garante que o tom selecionado fique sempre dentro da lista oficial do CifraClub.
+          setFormData(prev => {
+            if (scraperTones.includes(prev.tone)) return prev
+            const nextTone = officialTone && scraperTones.includes(officialTone)
+              ? officialTone
+              : scraperTones[0]
+            return nextTone ? { ...prev, tone: nextTone } : prev
+          })
+        }
 
         // If the song has no saved cifra, populate it now from the scraper
         if (!song.cifra_content && data.cifra && data.cifra.length > 0) {
-          setSourceTone(originalTone)
           setFormData(prev => ({
             ...prev,
             tone: prev.tone,           // keep whatever tone the user has selected
@@ -126,23 +147,6 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     }
   }, [open, song])
 
-  // Keep tone select stable: when options are loaded, ensure current value exists.
-  useEffect(() => {
-    if (!availableTones.length) return
-
-    setFormData(prev => {
-      if (availableTones.includes(prev.tone)) return prev
-
-      // Prefer original tone when available, otherwise first valid option.
-      const nextTone = sourceTone && availableTones.includes(sourceTone)
-        ? sourceTone
-        : availableTones[0]
-
-      if (!nextTone || prev.tone === nextTone) return prev
-      return { ...prev, tone: nextTone }
-    })
-  }, [availableTones, sourceTone])
-
   const toTitleCase = (value: string) =>
     value
       .trim()
@@ -156,18 +160,23 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   }
 
   /**
-   * Parse a CifraClub URL and return { artist, song, version? }.
+   * Parse a CifraClub URL and return { artist, song, version?, key? }.
    * Accepts:
    * - https://www.cifraclub.com.br/artist-slug/song-slug/
    * - https://www.cifraclub.com.br/artist-slug/song-slug/simplificada.html
    */
-  const parseCifraClubUrl = (input: string): { artist: string; song: string; version?: string } | null => {
+  const parseCifraClubUrl = (input: string): { artist: string; song: string; version?: string; key?: number } | null => {
     try {
       const url = new URL(input.trim())
       const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/')
       if (parts.length >= 2) {
         const version = parts[2]?.toLowerCase().endsWith('.html') ? parts[2] : undefined
-        return { artist: parts[0], song: parts[1], version }
+        const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash
+        const hashParams = new URLSearchParams(hash)
+        const rawKey = hashParams.get('key')
+        const parsedKey = rawKey == null ? undefined : Number(rawKey)
+        const key = parsedKey != null && Number.isInteger(parsedKey) && parsedKey >= 0 ? parsedKey : undefined
+        return { artist: parts[0], song: parts[1], version, key }
       }
     } catch {
       // Input might be "artist/song" shorthand without protocol
@@ -191,7 +200,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     setLookupLoading(true)
     try {
       const versionParam = parsed.version ? `&version=${encodeURIComponent(parsed.version)}` : ''
-      const res = await fetch(`/api/cifraclub?artist=${encodeURIComponent(parsed.artist)}&song=${encodeURIComponent(parsed.song)}${versionParam}`)
+      const keyParam = parsed.key != null ? `&key=${parsed.key}` : ''
+      const res = await fetch(`/api/cifraclub?artist=${encodeURIComponent(parsed.artist)}&song=${encodeURIComponent(parsed.song)}${versionParam}${keyParam}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         setLookupError((err as { error?: string }).error ?? `Erro ao buscar (${res.status})`)
@@ -207,10 +217,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         return
       }
 
-      const tonesForForm = scraperTones
-      setAvailableTones(tonesForForm)
-
-      setSourceTone(finalTone)
+      setAvailableTones(scraperTones)
+      setLookupSourceTone(finalTone)
 
       setFormData(prev => ({
         ...prev,
@@ -274,20 +282,59 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (fromIdx == null || toIdx == null) return lines
 
     const semitones = toIdx - fromIdx
-    const chordRe = /\b([A-G](?:#|b)?(?:m|maj|min|sus|add|dim|aug)?\d*(?:\([^)]*\))?(?:\/[A-G](?:#|b)?)?)\b/g
+    // Regex mais robusto: captura acordes com extensões (7, 9, 11, 13, etc), diminutos, aumentados, etc
+    const chordRe = /([A-G](?:#{1,2}|b{1,2})?(?:m|maj|min|sus|add|dim|aug|\+|°)?(?:\d+[A-Za-z+#-]*)?(?:\([^)]*\))?(?:\/[A-G](?:#{1,2}|b{1,2})?)?)(?=[\s,.;:!?\)\]\}]|$)/g
 
-    return lines.map(line =>
-      line.replace(chordRe, (token) => transposeChordSymbol(token, semitones))
-    )
+    const isLikelyChordLine = (line: string) => {
+      const regex = new RegExp(chordRe)
+      const matches = [...line.matchAll(regex)]
+      if (matches.length >= 2) return true
+      if (matches.length === 1 && line.trim() === matches[0][0]) return true
+      return false
+    }
+
+    return lines.map(line => {
+      if (!isLikelyChordLine(line)) return line
+      return line.replace(chordRe, (token) => transposeChordSymbol(token, semitones))
+    })
   }
 
   /**
-   * Extract unique chord roots from cifra_content and return available tones.
-   * Only tones whose root note appears in the chords are available.
+   * Extract unique chord roots from a list of lines and return all possible tones.
+   * Builds both major and minor versions for each unique root note.
+   */
+  const extractAvailableTones = (lines: string[], fallbackTone?: string): string[] => {
+    const roots = new Set<string>()
+    // Regex robusto que captura todos os tipos de acordes
+    const chordRe = /([A-G](?:#{1,2}|b{1,2})?(?:m|maj|min|sus|add|dim|aug|\+|°)?(?:\d+[A-Za-z+#-]*)?(?:\([^)]*\))?(?:\/[A-G](?:#{1,2}|b{1,2})?)?)(?=[\s,.;:!?\)\]\}]|$)/g
+    
+    lines.forEach(line => {
+      let match
+      while ((match = chordRe.exec(line)) !== null) {
+        const chord = match[1]
+        const root = parseToneRoot(chord)
+        if (root) roots.add(root)
+      }
+    })
+
+    if (roots.size === 0) return [fallbackTone || 'C']
+
+    const allTones: string[] = []
+    roots.forEach(root => {
+      allTones.push(root)
+      allTones.push(`${root}m`)
+    })
+
+    return allTones
+      .filter(tone => TONES.includes(tone as any))
+      .sort((a, b) => TONES.indexOf(a as any) - TONES.indexOf(b as any))
+  }
+
+  /**
+   * Get currently available tones for display in select.
    */
   const getAvailableTones = (): string[] => {
-    if (availableTones.length > 0) return availableTones
-    return formData.tone ? [formData.tone] : ['C']
+    return availableTones.length > 0 ? availableTones : ['C']
   }
 
   // youtube_url is optional — do not block save if scraper couldn't find it
@@ -299,10 +346,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     formData.cifra_content.length > 0
   )
 
+  const selectedTone = (formData.tone || sourceTone || 'C').trim()
+
   const willTranspose = Boolean(
     sourceTone &&
+    selectedTone &&
     formData.cifra_content &&
-    sourceTone !== formData.tone
+    sourceTone !== selectedTone
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -318,10 +368,32 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     const normalizedArtist = toTitleCase(formData.artist)
     const normalizedCipherUrl = ensureHttps(formData.cipher_url)
     const normalizedYoutubeUrl = ensureHttps(formData.youtube_url)
-    const normalizedCifraContent =
-      formData.cifra_content && sourceTone && sourceTone !== formData.tone
-        ? transposeCifra(formData.cifra_content, sourceTone, formData.tone)
+    const shouldTranspose = Boolean(formData.cifra_content && sourceTone && sourceTone !== selectedTone)
+    const sourceToneForTranspose = sourceTone ?? selectedTone
+    
+    let normalizedCifraContent =
+      shouldTranspose && formData.cifra_content
+        ? transposeCifra(formData.cifra_content, sourceToneForTranspose, selectedTone)
         : formData.cifra_content
+
+    // Prefer API-transposed content when we have a CifraClub URL.
+    const parsedFromCipherUrl = parseCifraClubUrl(normalizedCipherUrl)
+    if (parsedFromCipherUrl) {
+      try {
+        const versionParam = parsedFromCipherUrl.version ? `&version=${encodeURIComponent(parsedFromCipherUrl.version)}` : ''
+        const keyParam = parsedFromCipherUrl.key != null ? `&key=${parsedFromCipherUrl.key}` : ''
+        const targetToneParam = `&target_tone=${encodeURIComponent(selectedTone)}`
+        const res = await fetch(`/api/cifraclub?artist=${encodeURIComponent(parsedFromCipherUrl.artist)}&song=${encodeURIComponent(parsedFromCipherUrl.song)}${versionParam}${keyParam}${targetToneParam}`)
+        if (res.ok) {
+          const data: CifraClubSong = await res.json()
+          if (data.cifra && data.cifra.length > 0) {
+            normalizedCifraContent = data.cifra
+          }
+        }
+      } catch {
+        // Fallback to local transposition if API call fails.
+      }
+    }
 
     try {
       if (song) {
@@ -330,7 +402,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           .update({
             title: normalizedTitle,
             artist: normalizedArtist,
-            tone: formData.tone,
+            tone: selectedTone,
             cipher_url: normalizedCipherUrl || null,
             youtube_url: normalizedYoutubeUrl || null,
             cifra_content: normalizedCifraContent ?? null,
@@ -342,7 +414,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         const { error } = await supabase.from('songs').insert({
           title: normalizedTitle,
           artist: normalizedArtist,
-          tone: formData.tone,
+          tone: selectedTone,
           cipher_url: normalizedCipherUrl || null,
           youtube_url: normalizedYoutubeUrl || null,
           cifra_content: normalizedCifraContent ?? null,
@@ -473,7 +545,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           <div className="space-y-2">
             <Label htmlFor="tone">Tom</Label>
             <Select
-              value={formData.tone}
+              value={selectedTone}
               onValueChange={(value) =>
                 setFormData({ ...formData, tone: value })
               }
@@ -489,11 +561,6 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                 ))}
               </SelectContent>
             </Select>
-            {formData.cifra_content && getAvailableTones().length < TONES.length && (
-              <p className="text-xs text-muted-foreground">
-                Apenas tons disponíveis nos acordes da cifra são mostrados
-              </p>
-            )}
           </div>
 
           {song && (
@@ -533,9 +600,9 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           )}
 
           {willTranspose && sourceTone && (
-            <Alert className="py-2">
-              <AlertDescription className="text-xs">
-                A cifra será transposta de {sourceTone} para {formData.tone} ao salvar.
+            <Alert className="py-2 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+              <AlertDescription className="text-xs text-blue-900 dark:text-blue-100">
+                ✓ Cifra será transposta de <strong>{sourceTone}</strong> para <strong>{selectedTone}</strong> ao salvar.
               </AlertDescription>
             </Alert>
           )}

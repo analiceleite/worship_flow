@@ -57,11 +57,78 @@ const extractAvailableTonesFromDOM = ($: cheerio.CheerioAPI): string[] => {
     return tones
 }
 
+const NOTE_INDEX: Record<string, number> = {
+    C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4,
+    F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9,
+    'A#': 10, Bb: 10, B: 11,
+}
+
+const NOTES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+const NOTES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+
+const parseToneRoot = (tone: string): string | null => {
+    const m = tone.trim().match(/^([A-G](?:#|b)?)/)
+    return m ? m[1] : null
+}
+
+const transposeRoot = (root: string, semitones: number) => {
+    const idx = NOTE_INDEX[root]
+    if (idx == null) return root
+    const next = (idx + semitones + 120) % 12
+    const prefersFlat = root.includes('b')
+    return prefersFlat ? NOTES_FLAT[next] : NOTES_SHARP[next]
+}
+
+const transposeChordSymbol = (symbol: string, semitones: number) => {
+    const [main, bass] = symbol.split('/')
+
+    const transposePart = (part: string) => {
+        const m = part.match(/^([A-G](?:#|b)?)(.*)$/)
+        if (!m) return part
+        return `${transposeRoot(m[1], semitones)}${m[2]}`
+    }
+
+    const nextMain = transposePart(main)
+    if (!bass) return nextMain
+    return `${nextMain}/${transposePart(bass)}`
+}
+
+const transposeCifra = (lines: string[], fromTone: string, toTone: string): string[] => {
+    const fromRoot = parseToneRoot(fromTone)
+    const toRoot = parseToneRoot(toTone)
+    if (!fromRoot || !toRoot) return lines
+    if (fromRoot === toRoot) return lines
+
+    const fromIdx = NOTE_INDEX[fromRoot]
+    const toIdx = NOTE_INDEX[toRoot]
+    if (fromIdx == null || toIdx == null) return lines
+
+    const semitones = toIdx - fromIdx
+    const chordRe = /([A-G](?:#{1,2}|b{1,2})?(?:m|maj|min|sus|add|dim|aug|\+|°)?(?:\d+[A-Za-z+#-]*)?(?:\([^)]*\))?(?:\/[A-G](?:#{1,2}|b{1,2})?)?)(?=[\s,.;:!?\)\]\}]|$)/g
+
+    const isLikelyChordLine = (line: string) => {
+        const regex = new RegExp(chordRe)
+        const matches = [...line.matchAll(regex)]
+        if (matches.length >= 2) return true
+        if (matches.length === 1 && line.trim() === matches[0][0]) return true
+        return false
+    }
+
+    return lines.map((line) => {
+        if (!isLikelyChordLine(line)) return line
+        return line.replace(chordRe, (token) => transposeChordSymbol(token, semitones))
+    })
+}
+
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const artist = searchParams.get('artist')?.trim()
     const song = searchParams.get('song')?.trim()
     const version = searchParams.get('version')?.trim()
+    const targetToneParam = searchParams.get('target_tone')?.trim()
+    const keyParam = searchParams.get('key')
+    const keyIndex = keyParam == null ? null : Number(keyParam)
+    const targetTone = targetToneParam ? normalizeTone(targetToneParam) : null
 
     if (!artist || !song) {
         return NextResponse.json(
@@ -82,6 +149,20 @@ export async function GET(request: NextRequest) {
     if (version && !validVersion.test(version)) {
         return NextResponse.json(
             { error: 'A versão da cifra é inválida.' },
+            { status: 400 }
+        )
+    }
+
+    if (keyIndex != null && (!Number.isInteger(keyIndex) || keyIndex < 0)) {
+        return NextResponse.json(
+            { error: 'O parâmetro "key" é inválido.' },
+            { status: 400 }
+        )
+    }
+
+    if (targetToneParam && !targetTone) {
+        return NextResponse.json(
+            { error: 'O parâmetro "target_tone" é inválido.' },
             { status: 400 }
         )
     }
@@ -177,13 +258,30 @@ export async function GET(request: NextRequest) {
         youtubeUrl = `https://www.youtube.com/watch?v=${id}`
     }
 
+    let resolvedTone = tone
+    let resolvedCifra = cifraLines
+
+    // Optional: apply CifraClub hash key selection (e.g. #key=7) server-side.
+    if (targetTone && availableTones.includes(targetTone)) {
+        resolvedTone = targetTone
+        resolvedCifra = transposeCifra(cifraLines, tone, targetTone)
+    } else if (keyIndex != null && keyIndex < availableTones.length) {
+        const targetToneFromKey = availableTones[keyIndex]
+        if (targetToneFromKey) {
+            resolvedTone = targetToneFromKey
+            resolvedCifra = transposeCifra(cifraLines, tone, targetToneFromKey)
+        }
+    }
+
+    const cifraclubUrl = keyIndex != null ? `${pageUrl}#key=${keyIndex}` : pageUrl
+
     return NextResponse.json({
         artist: artistName,
         name,
-        tone,
+        tone: resolvedTone,
         available_tones: availableTones,
         youtube_url: youtubeUrl,
-        cifraclub_url: pageUrl,
-        cifra: cifraLines,
+        cifraclub_url: cifraclubUrl,
+        cifra: resolvedCifra,
     } satisfies CifraClubSong)
 }

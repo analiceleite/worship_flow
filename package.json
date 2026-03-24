@@ -9,7 +9,10 @@
     "start": "next start",
     "lint": "eslint .",
     "backfill:cifras": "node scripts/backfill-cifras.mjs",
-    "backfill:cifras:dry": "node scripts/backfill-cifras.mjs --dry-run"
+    "backfill:cifras:dry": "node scripts/backfill-cifras.mjs --dry-run",
+    "audit:tones": "node scripts/audit-song-tones.mjs",
+    "audit:tones:fix": "node scripts/audit-song-tones.mjs --fix-tone",
+    "audit:tones:rewrite": "node scripts/audit-song-tones.mjs --rewrite-cifra"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
