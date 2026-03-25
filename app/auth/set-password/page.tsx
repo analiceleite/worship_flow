@@ -171,12 +171,13 @@ export default function SetPasswordPage() {
         const params = pendingLink.value as URLSearchParams
         const tokenHash = params.get('token_hash')
         const token = params.get('token') || params.get('code')
+        const email = (params.get('email') || '').trim().toLowerCase()
 
         if (!tokenHash && !token) throw new Error('Link inválido')
 
         const verifyPayload = tokenHash
-          ? { type: 'recovery' as const, token_hash: tokenHash }
-          : { type: 'recovery' as const, token }
+          ? { type: 'recovery' as const, token_hash: tokenHash, ...(email ? { email } : {}) }
+          : { type: 'recovery' as const, token: token!, ...(email ? { email } : {}) }
 
         const { error: verifyError } = await supabase.auth.verifyOtp(verifyPayload)
         if (verifyError) throw verifyError

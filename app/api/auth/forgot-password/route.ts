@@ -27,8 +27,10 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
+    const redirectTo = `${baseUrl}${ROUTES.AUTH_SET_PASSWORD}?email=${encodeURIComponent(email)}`
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${baseUrl}${ROUTES.AUTH_SET_PASSWORD}`,
+      redirectTo,
     })
 
     if (error) {
