@@ -6,7 +6,7 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {
-        flowType: 'implicit', // evita erro de PKCE em webviews que não guardam o code_verifier
+        flowType: 'pkce', // use PKCE so client detects and exchanges ?code
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,

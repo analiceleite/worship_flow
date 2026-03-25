@@ -15,22 +15,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'E-mail é obrigatório.' }, { status: 400 })
     }
 
-    // Pega a base URL (sem trailing slash)
-    const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
+    // Use the current request origin as redirect target (must be app origin)
+    // Ex: https://app.example.com/auth/set-password
+    const origin = (request as any).nextUrl?.origin || process.env.NEXT_PUBLIC_APP_URL || ''
 
-    if (!baseUrl) {
+    if (!origin) {
       return NextResponse.json(
-        { error: 'NEXT_PUBLIC_SUPABASE_URL não configurada.' },
+        { error: 'App origin desconhecida. Configure NEXT_PUBLIC_APP_URL.' },
         { status: 500 },
       )
     }
 
     const supabase = await createClient()
 
+    const redirectTo = `${origin}${ROUTES.AUTH_SET_PASSWORD}`
+    console.log('[api/forgot-password] redirectTo=', redirectTo)
+
     // Envia o link com PKCE (padrão moderno, funciona em mobile)
-    // O Supabase automáticamente gera ?code=... em vez de #hash
+    // O Supabase automaticamente gera ?code=... em vez de #hash
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${baseUrl}${ROUTES.AUTH_SET_PASSWORD}`,
+      redirectTo,
     })
 
     if (error) {

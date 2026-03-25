@@ -9,72 +9,100 @@ export async function middleware(request: NextRequest) {
     },
   })
 
+  const isAuthFlow = request.nextUrl.searchParams.has('code')
+
+  console.log('[middleware] incoming:', request.nextUrl.href)
+  console.log('[middleware] isAuthFlow:', isAuthFlow)
+
+  if (isAuthFlow) {
+    console.log('[middleware] auth flow detected, will process PKCE and set cookies')
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+      // cast to any to satisfy differing cookie method typings in @supabase/ssr
+      cookies: ({
+        // read cookie value from incoming request
+        get: (name: any) => {
+          const v = request.cookies.get(name)?.value
+          console.log('[middleware] cookie.get', name, v ? 'FOUND' : 'MISS')
+          return v
         },
-        set(name: string, value: string, options: any) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+        // return all cookies as expected by @supabase/ssr
+        getAll: () => {
+          try {
+            // NextRequest.cookies has a .getAll when running in middleware
+            // fallback to building an array if not available
+            // each item shape: { name, value }
+            // @ts-ignore
+            const all = request.cookies.getAll ? request.cookies.getAll() : []
+            const mapped = all.map((c: any) => ({ name: c.name, value: c.value }))
+            console.log('[middleware] cookie.getAll count=', mapped.length)
+            return mapped
+          } catch {
+            return []
+          }
         },
-        remove(name: string, options: any) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+        // apply all cookies set by Supabase to the NextResponse
+        setAll: (cookiesToSet: Array<{ name: string; value: string; options?: any }>) => {
+          try {
+            console.log('[middleware] setting cookies count=', cookiesToSet.length)
+            cookiesToSet.forEach(({ name, value, options }) => {
+              console.log('[middleware] set cookie', name)
+              // response.cookies.set has the signature (name, value, options)
+              // @ts-ignore
+              response.cookies.set(name, value, options || {})
+            })
+          } catch {
+            // best-effort: ignore failures
+          }
         },
-      },
+        // convenience single-set/remove (not always used)
+        set: (name: string, value: string, options?: any) => {
+          try {
+            console.log('[middleware] set single cookie', name)
+            // @ts-ignore
+            response.cookies.set(name, value, options || {})
+          } catch {
+            // ignore
+          }
+        },
+        remove: (name: string) => {
+          try {
+            console.log('[middleware] remove cookie', name)
+            // @ts-ignore
+            response.cookies.delete ? response.cookies.delete(name) : response.cookies.set(name, '', { maxAge: 0 })
+          } catch {
+            // ignore
+          }
+        },
+      } as any)
     }
   )
 
-  // 🔑 CRÍTICO: Processa automaticamente o ?code=... do PKCE
-  // Isto faz o exchange do código por sessão válida
+  console.log('[middleware] supabase client created')
+
+  // 🔑 CRÍTICO: Processa o ?code=... do PKCE
   await supabase.auth.getSession()
 
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Public routes that don't require authentication
+  // Public routes - podem ser acessadas sem autenticação
   const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD]
   const isPublicRoute = publicRoutes.some(route =>
     request.nextUrl.pathname.startsWith(route)
   )
 
-  // If not authenticated and trying to access protected route
-  if (!user && !isPublicRoute) {
+  // Se não está autenticado e tenta acessar rota protegida
+  if (!user && !isPublicRoute && !isAuthFlow) {
     return NextResponse.redirect(new URL(ROUTES.AUTH_LOGIN, request.url))
   }
 
-  // If authenticated, check minister record and role
+  // Se está autenticado
   if (user && !isPublicRoute) {
     const { data: minister, error } = await supabase
       .from('ministers')
@@ -82,16 +110,14 @@ export async function middleware(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
 
-    // If minister record not found, redirect to login
+    // Se não encontrou registro do ministro
     if (error || !minister) {
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL(ROUTES.AUTH_LOGIN, request.url))
     }
 
-    // If account not activated, redirect to set password
-    if (!minister.is_active && request.nextUrl.pathname !== ROUTES.AUTH_SET_PASSWORD) {
-      return NextResponse.redirect(new URL(ROUTES.AUTH_SET_PASSWORD, request.url))
-    }
+    // Se a conta não está ativa, deixa ir para SET_PASSWORD
+    // (não redireciona aqui, deixa a página handle)
 
     // Admin-only routes
     const adminRoutes = [ROUTES.USERS, ROUTES.SCHEDULE_ADMIN]
@@ -108,15 +134,15 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL(target, request.url))
     }
 
-    // 'midia' users: only allow viewing the repertório page
+    // 'midia' users: só permitem acessar repertório
     if (minister.role === 'midia') {
       const allowed = request.nextUrl.pathname.startsWith(ROUTES.REPERTOIRE) || isPublicRoute
       if (!allowed) return NextResponse.redirect(new URL(ROUTES.REPERTOIRE, request.url))
     }
   }
 
-  // If authenticated and trying to access auth pages, redirect to home
-  if (user && isPublicRoute) {
+  // Se está autenticado e tenta acessar login/forgot-password, redireciona para home
+  if (user && isPublicRoute && request.nextUrl.pathname !== ROUTES.AUTH_SET_PASSWORD && !isAuthFlow) {
     const { data: minister } = await supabase
       .from('ministers')
       .select('is_active, role')
@@ -134,14 +160,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     '/((?!api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|.*\.(?:svg|png|jpg|jpeg|gif|webp|js|css|map|txt|xml|webmanifest)$).*)',
   ],
 }
