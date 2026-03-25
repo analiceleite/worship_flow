@@ -55,7 +55,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Erro ao gerar link de redefinição.' }, { status: 500 })
     }
 
-    const resetUrl = `${origin}${ROUTES.AUTH_RESET}?token=${token}`
+    // Use path-based token to improve compatibility with mobile/webviews
+    const resetUrl = `${origin}${ROUTES.AUTH_RESET}/${token}`
     console.log('[api/forgot-password] resetUrl=', resetUrl)
     // Envia e-mail via Resend se configurado
     const resendApiKey = process.env.RESEND_API_KEY
