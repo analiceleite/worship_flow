@@ -59,7 +59,10 @@ export async function POST(request: Request) {
     console.log('[api/forgot-password] resetUrl=', resetUrl)
     // Envia e-mail via Resend se configurado
     const resendApiKey = process.env.RESEND_API_KEY
-    const resendFrom = process.env.RESEND_FROM || `no-reply@${new URL(origin).hostname}`
+    // Prefer full `Name <email>` in `RESEND_FROM`. Fall back to `RESEND_FROM_EMAIL` if present.
+    const resendFromEnv = process.env.RESEND_FROM
+    const resendFromEmailEnv = process.env.RESEND_FROM_EMAIL
+    const resendFrom = resendFromEnv || (resendFromEmailEnv ? `Worship Flow <${resendFromEmailEnv}>` : `no-reply@${new URL(origin).hostname}`)
 
     if (resendApiKey) {
       try {
