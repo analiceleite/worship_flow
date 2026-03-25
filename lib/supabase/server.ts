@@ -9,8 +9,8 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {
-        // Use PKCE flow so Supabase issues `?code=...` and PKCE exchange works
-        flowType: 'pkce',
+        // Use implicit flow for better compatibility with mobile/webviews
+        flowType: 'implicit',
       },
       cookies: {
         getAll() {
