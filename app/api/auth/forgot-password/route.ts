@@ -31,6 +31,7 @@ export async function POST(request: Request) {
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
+      flowType: 'implicit', // força o link vir com access_token/refresh_token no hash (melhor para mobile/webview)
     })
 
     if (error) {
