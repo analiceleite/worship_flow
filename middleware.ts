@@ -99,8 +99,12 @@ export async function middleware(request: NextRequest) {
 
   console.log('[middleware] getUser user=', !!user)
 
-  // Public routes - podem ser acessadas sem autenticação
-  const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD]
+  const publicRoutes = [
+    ROUTES.AUTH_LOGIN,
+    ROUTES.AUTH_SET_PASSWORD,
+    ROUTES.AUTH_FORGOT_PASSWORD,
+    ROUTES.AUTH_RESET,
+  ]
   const isPublicRoute = publicRoutes.some(route =>
     request.nextUrl.pathname.startsWith(route)
   )

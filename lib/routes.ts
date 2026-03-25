@@ -11,4 +11,5 @@ export const ROUTES = {
   AUTH_LOGIN: '/auth/login',
   AUTH_SET_PASSWORD: '/auth/set-password',
   AUTH_FORGOT_PASSWORD: '/auth/forgot-password',
+  AUTH_RESET: '/auth/reset',
 } as const
