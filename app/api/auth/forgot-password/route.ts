@@ -15,44 +15,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'E-mail é obrigatório.' }, { status: 400 })
     }
 
-    const configuredBaseUrl = (process.env.APP_BASE_URL ?? '').trim().replace(/\/$/, '')
-    const requestBaseUrl = new URL(request.url).origin.replace(/\/$/, '')
-    const baseUrl = configuredBaseUrl || requestBaseUrl
+    // Pega a base URL (sem trailing slash)
+    const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
 
     if (!baseUrl) {
       return NextResponse.json(
-        { error: 'APP_BASE_URL não configurada no ambiente.' },
+        { error: 'NEXT_PUBLIC_SUPABASE_URL não configurada.' },
         { status: 500 },
       )
     }
 
     const supabase = await createClient()
-    const redirectTo = `${baseUrl}${ROUTES.AUTH_SET_PASSWORD}?email=${encodeURIComponent(email)}`
 
+    // Envia o link com PKCE (padrão moderno, funciona em mobile)
+    // O Supabase automáticamente gera ?code=... em vez de #hash
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-      flowType: 'implicit', // força o link vir com access_token/refresh_token no hash (melhor para mobile/webview)
+      redirectTo: `${baseUrl}${ROUTES.AUTH_SET_PASSWORD}`,
     })
 
     if (error) {
-      const rawMessage = (error.message ?? '').toLowerCase()
-      const isRateLimited =
-        rawMessage.includes('rate limit') ||
-        rawMessage.includes('too many requests') ||
-        rawMessage.includes('email rate limit exceeded')
+      const message = (error.message ?? '').toLowerCase()
 
-      if (isRateLimited) {
+      if (message.includes('rate limit') || message.includes('too many requests')) {
         return NextResponse.json(
-          {
-            error:
-              'Novo e-mail de recuperação temporariamente bloqueado. Aguarde cerca de 60 segundos e tente novamente.',
-          },
-          {
-            status: 429,
-            headers: {
-              'Retry-After': '60',
-            },
-          },
+          { error: 'Aguarde 60 segundos antes de solicitar novo e-mail.' },
+          { status: 429, headers: { 'Retry-After': '60' } }
         )
       }
 
@@ -61,6 +48,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true })
   } catch {
-    return NextResponse.json({ error: 'Não foi possível processar a solicitação.' }, { status: 500 })
+    return NextResponse.json({ error: 'Erro ao processar solicitação.' }, { status: 500 })
   }
 }

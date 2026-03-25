@@ -55,13 +55,17 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // 🔑 CRÍTICO: Processa automaticamente o ?code=... do PKCE
+  // Isto faz o exchange do código por sessão válida
+  await supabase.auth.getSession()
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   // Public routes that don't require authentication
   const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD]
-  const isPublicRoute = publicRoutes.some(route => 
+  const isPublicRoute = publicRoutes.some(route =>
     request.nextUrl.pathname.startsWith(route)
   )
 
@@ -91,7 +95,7 @@ export async function middleware(request: NextRequest) {
 
     // Admin-only routes
     const adminRoutes = [ROUTES.USERS, ROUTES.SCHEDULE_ADMIN]
-    const isAdminRoute = adminRoutes.some(route => 
+    const isAdminRoute = adminRoutes.some(route =>
       request.nextUrl.pathname.startsWith(route)
     )
 
