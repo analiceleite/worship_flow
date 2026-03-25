@@ -169,19 +169,17 @@ export default function SetPasswordPage() {
 
       if (pendingLink.kind === 'code') {
         const params = pendingLink.value as URLSearchParams
-        const authCode =
-          params.get('code') ||
-          params.get('token') ||
-          params.get('token_hash')
+        const tokenHash = params.get('token_hash')
+        const token = params.get('token') || params.get('code')
 
-        if (!authCode) throw new Error('Link inválido')
+        if (!tokenHash && !token) throw new Error('Link inválido')
 
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(authCode)
+        const verifyPayload = tokenHash
+          ? { type: 'recovery' as const, token_hash: tokenHash }
+          : { type: 'recovery' as const, token }
 
-        if (exchangeError) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (!session) throw exchangeError
-        }
+        const { error: verifyError } = await supabase.auth.verifyOtp(verifyPayload)
+        if (verifyError) throw verifyError
 
         const currentUrl = new URL(window.location.href)
         ;['code', 'token', 'token_hash', 'type'].forEach(param => currentUrl.searchParams.delete(param))
