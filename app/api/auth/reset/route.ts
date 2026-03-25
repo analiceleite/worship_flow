@@ -9,6 +9,7 @@ type ResetPayload = {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ResetPayload
+    console.log('[api/reset] received body=', body)
     const { token, password } = body
 
     if (!token || !password) {

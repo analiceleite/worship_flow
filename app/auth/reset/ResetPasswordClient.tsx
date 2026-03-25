@@ -19,6 +19,7 @@ export default function ResetPasswordClient({ token }: { token?: string | null }
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
+    console.log('[client /auth/reset] token prop=', token)
     if (!token) {
       setError('Link inválido. Solicite novo e-mail.')
       setChecking(false)
