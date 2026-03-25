@@ -36,12 +36,7 @@ export default function ResetPasswordClient({ token }: { token?: string | null }
       }
     }
 
-    if (!effectiveToken) {
-      setError('Link inválido. Solicite novo e-mail.')
-      setChecking(false)
-      return
-    }
-
+    // Don't treat a missing token as a fatal error immediately — wait for extraction.
     setChecking(false)
   }, [token, effectiveToken])
 
@@ -119,6 +114,9 @@ export default function ResetPasswordClient({ token }: { token?: string | null }
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+            {!effectiveToken && !error && (
+              <div className="text-sm text-muted-foreground">Aguardando token do link — verifique se abriu o link recebido por e-mail.</div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="password">Nova senha</Label>
@@ -130,7 +128,7 @@ export default function ResetPasswordClient({ token }: { token?: string | null }
               <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={loading} minLength={6} />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || !effectiveToken}>
               {loading ? (
                 <>
                   <Spinner className="mr-2 h-4 w-4" />
