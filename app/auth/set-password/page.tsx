@@ -25,9 +25,21 @@ export default function SetPasswordPage() {
       try {
         const supabase = createClient()
 
-        // O middleware/auth.ts do Supabase já processou o ?code=... automaticamente
-        // Aqui só precisamos verificar se existe uma sessão
-        const { data: { session } } = await supabase.auth.getSession()
+        // Tenta obter sessão. Em mobile/webview pode demorar ou falhar
+        // se o code/PKCE não foi trocado — fazemos algumas tentativas
+        const maxRetries = 3
+        let attempt = 0
+        let session: any = null
+
+        while (attempt < maxRetries) {
+          const res = await supabase.auth.getSession()
+          session = res?.data?.session
+          console.log('[set-password] attempt', attempt + 1, 'session=', !!session)
+          if (session) break
+          attempt += 1
+          // espera um pouco antes de tentar novamente
+          await new Promise((r) => setTimeout(r, 500))
+        }
 
         if (!session) {
           setError('Link inválido ou expirado. Solicite um novo e-mail.')

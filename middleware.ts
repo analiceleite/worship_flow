@@ -85,11 +85,19 @@ export async function middleware(request: NextRequest) {
   console.log('[middleware] supabase client created')
 
   // 🔑 CRÍTICO: Processa o ?code=... do PKCE
-  await supabase.auth.getSession()
+  try {
+    const { data: sessionData, error: getSessionError } = await supabase.auth.getSession()
+    console.log('[middleware] getSession error=', getSessionError ? getSessionError.message : null)
+    console.log('[middleware] getSession session=', !!sessionData?.session)
+  } catch (e) {
+    console.log('[middleware] getSession threw', e)
+  }
 
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
+  console.log('[middleware] getUser user=', !!user)
 
   // Public routes - podem ser acessadas sem autenticação
   const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD]
