@@ -18,16 +18,32 @@ export default function ResetPasswordClient({ token }: { token?: string | null }
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
+  const [effectiveToken, setEffectiveToken] = useState<string | null>(token ?? null)
+
   useEffect(() => {
     console.log('[client /auth/reset] token prop=', token)
-    if (!token) {
+    // If token prop missing (some webviews strip params), try read from pathname
+    if (!effectiveToken) {
+      try {
+        const p = typeof window !== 'undefined' ? window.location.pathname : ''
+        const parts = p.split('/').filter(Boolean)
+        const maybe = parts[parts.length - 1]
+        if (maybe && maybe.length > 10) {
+          setEffectiveToken(maybe)
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!effectiveToken) {
       setError('Link inválido. Solicite novo e-mail.')
       setChecking(false)
       return
     }
 
     setChecking(false)
-  }, [token])
+  }, [token, effectiveToken])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,7 +70,7 @@ export default function ResetPasswordClient({ token }: { token?: string | null }
       const res = await fetch('/api/auth/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ token: effectiveToken, password }),
       })
 
       const data = await res.json()
