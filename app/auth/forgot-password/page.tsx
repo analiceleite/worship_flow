@@ -37,6 +37,9 @@ export default function ForgotPasswordPage() {
 
   const handleDialogChange = (isOpen: boolean) => {
     setOpen(isOpen);
+    if (!isOpen) {
+      router.push(ROUTES.AUTH_LOGIN);
+    }
   };
 
   const handleCancelReset = () => {

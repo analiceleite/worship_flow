@@ -21,18 +21,40 @@ export default function SetPasswordPage() {
   const [mode, setMode] = useState<'activation' | 'recovery'>('recovery')
   const [formData, setFormData] = useState({ password: '', confirmPassword: '' })
 
+  const handleBackgroundClick = () => {
+    router.push(ROUTES.AUTH_LOGIN)
+  }
+
   const establishRecoverySession = async () => {
     const supabase = createClient()
 
+    // If middleware or Supabase auto-handled the URL already, nothing to do.
+    const {
+      data: { session: existingSession },
+    } = await supabase.auth.getSession()
+    if (existingSession) return
+
     const currentUrl = new URL(window.location.href)
-    const authCode = currentUrl.searchParams.get('code')
+
+    // New PKCE-style links arrive with ?code=...&type=recovery
+    const authCode =
+      currentUrl.searchParams.get('code') ||
+      currentUrl.searchParams.get('token') ||
+      currentUrl.searchParams.get('token_hash')
 
     if (authCode) {
       const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(authCode)
-      if (exchangeError) throw exchangeError
 
-      currentUrl.searchParams.delete('code')
-      currentUrl.searchParams.delete('type')
+      if (exchangeError) {
+        // The code may have been consumed server-side (middleware) but the session is valid.
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session) throw exchangeError
+      }
+
+      ;['code', 'token', 'token_hash', 'type'].forEach(param => currentUrl.searchParams.delete(param))
       const cleanedSearch = currentUrl.searchParams.toString()
       window.history.replaceState(
         {},
@@ -42,6 +64,7 @@ export default function SetPasswordPage() {
       return
     }
 
+    // Legacy implicit flow links arrive as hash fragments with access_token / refresh_token
     const hash = window.location.hash.startsWith('#')
       ? window.location.hash.slice(1)
       : window.location.hash
@@ -58,9 +81,15 @@ export default function SetPasswordPage() {
         access_token: accessToken,
         refresh_token: refreshToken,
       })
-      if (sessionError) throw sessionError
 
-      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`)
+      if (sessionError) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) throw sessionError
+      }
+
+      window.history.replaceState({}, document.title, `${currentUrl.pathname}${currentUrl.search}`)
     }
   }
 
@@ -171,7 +200,7 @@ export default function SetPasswordPage() {
   // ── Loading check ──
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-background" onClick={handleBackgroundClick}>
         <Spinner className="h-8 w-8" />
       </div>
     )
@@ -180,8 +209,8 @@ export default function SetPasswordPage() {
   // ── Success state ──
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="w-full max-w-sm text-center">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4" onClick={handleBackgroundClick}>
+        <div className="w-full max-w-sm text-center" onClick={(e) => e.stopPropagation()}>
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
             <CheckCircle2 className="h-7 w-7 text-foreground" />
           </div>
@@ -198,8 +227,8 @@ export default function SetPasswordPage() {
 
   // ── Form ──
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-sm">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4" onClick={handleBackgroundClick}>
+      <div className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
 
         {/* ── Header ── */}
         <div className="mb-8">
