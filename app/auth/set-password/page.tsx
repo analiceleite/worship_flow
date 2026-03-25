@@ -20,7 +20,6 @@ export default function SetPasswordPage() {
   const [userName, setUserName] = useState<string>('')
   const [mode, setMode] = useState<'activation' | 'recovery'>('recovery')
   const [formData, setFormData] = useState({ password: '', confirmPassword: '' })
-  const [pendingLink, setPendingLink] = useState<null | { kind: 'code' | 'hash'; value: string | URLSearchParams }>(null)
 
   const handleBackgroundClick = () => {
     router.push(ROUTES.AUTH_LOGIN)
@@ -109,35 +108,54 @@ export default function SetPasswordPage() {
         }
 
         const currentUrl = new URL(window.location.href)
-        const codeOrToken =
-          currentUrl.searchParams.get('code') ||
-          currentUrl.searchParams.get('token') ||
-          currentUrl.searchParams.get('token_hash')
-
-        if (codeOrToken) {
-          setPendingLink({ kind: 'code', value: new URLSearchParams(currentUrl.searchParams) })
-          setChecking(false)
-          return
-        }
-
+        const params = new URLSearchParams(currentUrl.searchParams)
         const hash = window.location.hash.startsWith('#')
           ? window.location.hash.slice(1)
           : window.location.hash
 
-        if (hash) {
+        const tryHashSession = async () => {
+          if (!hash) return false
           const hashParams = new URLSearchParams(hash)
           const accessToken = hashParams.get('access_token')
           const refreshToken = hashParams.get('refresh_token')
           const type = hashParams.get('type')
-
           if (accessToken && refreshToken && (type === 'recovery' || type === 'invite')) {
-            setPendingLink({ kind: 'hash', value: hashParams.toString() })
-            setChecking(false)
-            return
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            })
+            if (sessionError) throw sessionError
+            window.history.replaceState({}, document.title, `${currentUrl.pathname}${currentUrl.search}`)
+            return true
           }
+          return false
         }
 
+        const tryQuerySession = async () => {
+          const tokenHash = params.get('token_hash')
+          const token = params.get('token') || params.get('code')
+          const email = (params.get('email') || '').trim().toLowerCase()
+          if (!tokenHash && !token) return false
+
+          const verifyPayload = tokenHash
+            ? { type: 'recovery' as const, token_hash: tokenHash, ...(email ? { email } : {}) }
+            : { type: 'recovery' as const, token: token!, ...(email ? { email } : {}) }
+
+          const { error: verifyError } = await supabase.auth.verifyOtp(verifyPayload)
+          if (verifyError) throw verifyError
+
+          ;['code', 'token', 'token_hash', 'type', 'email'].forEach(param => params.delete(param))
+          const cleaned = params.toString()
+          window.history.replaceState({}, document.title, `${currentUrl.pathname}${cleaned ? `?${cleaned}` : ''}`)
+          return true
+        }
+
+        const matched =
+          (await tryHashSession()) ||
+          (await tryQuerySession())
+
         await checkUserStatus()
+        if (!matched) setChecking(false)
       } catch {
         setError('Link de redefinição inválido ou expirado. Solicite um novo e-mail.')
         setChecking(false)
@@ -158,68 +176,6 @@ export default function SetPasswordPage() {
       subscription.unsubscribe()
     }
   }, [])
-
-  const handleUseLink = async () => {
-    if (!pendingLink) return
-    setError(null)
-    setLoading(true)
-
-    try {
-      const supabase = createClient()
-
-      if (pendingLink.kind === 'code') {
-        const params = pendingLink.value as URLSearchParams
-        const tokenHash = params.get('token_hash')
-        const token = params.get('token') || params.get('code')
-        const email = (params.get('email') || '').trim().toLowerCase()
-
-        if (!tokenHash && !token) throw new Error('Link inválido')
-
-        const verifyPayload = tokenHash
-          ? { type: 'recovery' as const, token_hash: tokenHash, ...(email ? { email } : {}) }
-          : { type: 'recovery' as const, token: token!, ...(email ? { email } : {}) }
-
-        const { error: verifyError } = await supabase.auth.verifyOtp(verifyPayload)
-        if (verifyError) throw verifyError
-
-        const currentUrl = new URL(window.location.href)
-        ;['code', 'token', 'token_hash', 'type'].forEach(param => currentUrl.searchParams.delete(param))
-        const cleanedSearch = currentUrl.searchParams.toString()
-        window.history.replaceState(
-          {},
-          document.title,
-          `${currentUrl.pathname}${cleanedSearch ? `?${cleanedSearch}` : ''}`,
-        )
-      } else {
-        const hashParams = new URLSearchParams(pendingLink.value as string)
-        const accessToken = hashParams.get('access_token')
-        const refreshToken = hashParams.get('refresh_token')
-
-        if (!accessToken || !refreshToken) throw new Error('Link inválido')
-
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        })
-
-        if (sessionError) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (!session) throw sessionError
-        }
-
-        const currentUrl = new URL(window.location.href)
-        window.history.replaceState({}, document.title, `${currentUrl.pathname}${currentUrl.search}`)
-      }
-
-      setPendingLink(null)
-      await checkUserStatus()
-    } catch (err: any) {
-      setError(err.message || 'Erro ao validar link. Solicite um novo e-mail.')
-    } finally {
-      setLoading(false)
-      setChecking(false)
-    }
-  }
 
   const checkUserStatus = async () => {
     try {
@@ -319,34 +275,6 @@ export default function SetPasswordPage() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Sua senha foi definida. Redirecionando...
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Pending link confirmation ──
-  if (pendingLink) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4" onClick={handleBackgroundClick}>
-        <div className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-foreground">Confirmar link</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Toque em continuar para validar o link de redefinição recebido por e-mail.
-            </p>
-          </div>
-          <Button className="w-full" onClick={handleUseLink} disabled={loading}>
-            {loading && <Spinner className="mr-2 h-4 w-4" />}
-            Continuar
-          </Button>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Se você não solicitou, feche esta página para voltar ao login.
           </p>
         </div>
       </div>
