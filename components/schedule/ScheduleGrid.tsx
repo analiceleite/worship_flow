@@ -172,10 +172,11 @@ function RehearsalEditor({
     const hasRehearsal = rehearsal && (rehearsal.rehearsal_date || rehearsal.rehearsal_time || rehearsal.rehearsal_place)
 
     const formContent = (
-        <div className="space-y-4">
-            <div className="space-y-1.5">
+        <div className="min-w-0 space-y-4">
+            <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-date">Data do ensaio</Label>
                 <Input
+                    className="w-full min-w-0"
                     id="rehearsal-date"
                     type="date"
                     value={rehearsalDate}
@@ -183,9 +184,10 @@ function RehearsalEditor({
                     disabled={saving}
                 />
             </div>
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-time">Horário</Label>
                 <Input
+                    className="w-full min-w-0"
                     id="rehearsal-time"
                     type="time"
                     value={rehearsalTime}
@@ -193,9 +195,10 @@ function RehearsalEditor({
                     disabled={saving}
                 />
             </div>
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-place">Local</Label>
                 <Input
+                    className="w-full min-w-0"
                     id="rehearsal-place"
                     type="text"
                     placeholder="Ex: Igreja…"
@@ -238,7 +241,7 @@ function RehearsalEditor({
                                 {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
                             </Button>
                             <Dialog open={open} onOpenChange={setOpen}>
-                                <DialogContent className="w-[calc(100vw-1rem)] max-w-[22rem] max-h-[85vh] overflow-y-auto p-4 sm:w-full sm:max-w-sm sm:p-6">
+                                <DialogContent className="w-[calc(100vw-1rem)] max-w-[22rem] max-h-[85vh] overflow-x-hidden overflow-y-auto p-4 sm:w-full sm:max-w-sm sm:p-6">
                                     <DialogHeader>
                                         <DialogTitle>Ensaio — {formatDate(eventDate)}</DialogTitle>
                                     </DialogHeader>
