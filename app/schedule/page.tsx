@@ -6,6 +6,7 @@ import { format, getISOWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Header } from '@/components/header'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useToast } from '@/hooks/use-toast'
 import { ROUTES } from '@/lib/routes'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ScheduleGrid, type ScheduleAssignment, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
+import { ScheduleGrid, type ScheduleAssignment, type ScheduleRehearsal, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
 import { AlertCircle, BarChart3, Music2, Settings2, UserCircle2 } from 'lucide-react'
 
 function formatWeekTag(dateStr: string) {
@@ -69,11 +70,33 @@ function formatRange(startDate: string, endDate: string) {
 	return `${startText} a ${endText}`
 }
 
+function formatRehearsalSummary(rehearsal?: ScheduleRehearsal) {
+	if (!rehearsal) return null
+
+	const parts: string[] = []
+
+	if (rehearsal.rehearsal_date) {
+		parts.push(format(new Date(`${rehearsal.rehearsal_date}T12:00:00`), 'dd/MM', { locale: ptBR }))
+	}
+
+	if (rehearsal.rehearsal_time) {
+		parts.push(rehearsal.rehearsal_time.slice(0, 5))
+	}
+
+	if (rehearsal.rehearsal_place) {
+		parts.push(rehearsal.rehearsal_place)
+	}
+
+	return parts.length ? parts.join(' • ') : null
+}
+
 export default function EscalaPage() {
+	const { toast } = useToast()
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [schedule, setSchedule] = useState<CurrentScheduleResponse['schedule']>(null)
 	const [viewer, setViewer] = useState<CurrentScheduleResponse['viewer']>(null)
+	const [rehearsalByDate, setRehearsalByDate] = useState<Record<string, ScheduleRehearsal>>({})
 	const isMobile = useIsMobile()
 
 	const loadSchedule = useCallback(async () => {
@@ -99,7 +122,37 @@ export default function EscalaPage() {
 		loadSchedule()
 	}, [loadSchedule])
 
+	useEffect(() => {
+		const loadRehearsals = async () => {
+			if (!schedule?.quarter.id) {
+				setRehearsalByDate({})
+				return
+			}
+
+			try {
+				const response = await fetch(`/api/schedule/rehearsal?quarter_id=${schedule.quarter.id}`, {
+					cache: 'no-store',
+				})
+				const body = (await response.json()) as { rehearsals?: ScheduleRehearsal[]; error?: string }
+
+				if (!response.ok) {
+					throw new Error(body.error || 'Erro ao carregar ensaios')
+				}
+
+				const byDate = Object.fromEntries(
+					(body.rehearsals ?? []).map((item) => [`${item.event_date}_${item.event_type}`, item])
+				)
+				setRehearsalByDate(byDate)
+			} catch {
+				setRehearsalByDate({})
+			}
+		}
+
+		loadRehearsals()
+	}, [schedule?.quarter.id])
+
 	const isAdmin = viewer?.role === 'admin'
+	const canEditRehearsal = viewer?.role === 'admin' || viewer?.role === 'minister'
 
 	const assignedCount = useMemo(() => {
 		if (!schedule || !viewer?.id) return 0
@@ -184,6 +237,50 @@ export default function EscalaPage() {
 			})
 			.filter(({ isPast }) => !isPast)
 	}, [schedule, viewer?.id])
+
+	const handleSaveRehearsal = useCallback(async (payload: {
+		eventDate: string
+		eventType: 'thursday' | 'sunday'
+		rehearsalDate: string | null
+		rehearsalTime: string | null
+		rehearsalPlace: string | null
+	}) => {
+		if (!schedule) return
+
+		const response = await fetch('/api/schedule/rehearsal', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				quarter_id: schedule.quarter.id,
+				event_date: payload.eventDate,
+				event_type: payload.eventType,
+				rehearsal_date: payload.rehearsalDate,
+				rehearsal_time: payload.rehearsalTime,
+				rehearsal_place: payload.rehearsalPlace,
+			}),
+		})
+
+		const body = (await response.json()) as { rehearsal?: ScheduleRehearsal; error?: string }
+		if (!response.ok || !body.rehearsal) {
+			const message = body.error || 'Não foi possível salvar o ensaio'
+			toast({
+				variant: 'destructive',
+				title: 'Falha ao salvar ensaio',
+				description: message,
+			})
+			throw new Error(message)
+		}
+
+		setRehearsalByDate((current) => ({
+			...current,
+			[`${body.rehearsal!.event_date}_${body.rehearsal!.event_type}`]: body.rehearsal!,
+		}))
+
+		toast({
+			title: 'Ensaio atualizado',
+			description: 'As informações já estão visíveis para toda a equipe.',
+		})
+	}, [schedule, toast])
 
 	return (
 		<div className="min-h-screen bg-background">
@@ -321,6 +418,9 @@ export default function EscalaPage() {
 													<div className="grid grid-cols-2 gap-2">
 														{/* Thursday */}
 														{thursday ? (
+															(() => {
+																const rehearsalSummary = formatRehearsalSummary(rehearsalByDate[`${thursday}_thursday`])
+																return (
 															<div
 																className={[
 																	'rounded-lg border p-3',
@@ -333,6 +433,11 @@ export default function EscalaPage() {
 																<p className="mb-2 text-xs text-foreground">
 																	{format(new Date(`${thursday}T12:00:00`), 'dd/MM')}
 																</p>
+																{rehearsalSummary && (
+																	<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+																		<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
+																	</p>
+																)}
 																{thursdayRoles && thursdayRoles.length > 0 ? (
 																	<div className="space-y-1">
 																		{thursdayRoles.map(({ role, isTrainee }) => (
@@ -349,6 +454,8 @@ export default function EscalaPage() {
 																	<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
 																)}
 															</div>
+																)
+															})()
 														) : (
 															<div className="rounded-lg border border-dashed border-border/50 p-3 opacity-40">
 																<p className="text-[10px] text-muted-foreground">Sem quinta nessa semana</p>
@@ -357,6 +464,9 @@ export default function EscalaPage() {
 
 														{/* Sunday */}
 														{sunday ? (
+															(() => {
+																const rehearsalSummary = formatRehearsalSummary(rehearsalByDate[`${sunday}_sunday`])
+																return (
 															<div
 																className={[
 																	'rounded-lg border p-3',
@@ -369,6 +479,11 @@ export default function EscalaPage() {
 																<p className="mb-2 text-xs text-foreground">
 																	{format(new Date(`${sunday}T12:00:00`), 'dd/MM')}
 																</p>
+																{rehearsalSummary && (
+																	<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+																		<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
+																	</p>
+																)}
 																{sundayRoles && sundayRoles.length > 0 ? (
 																	<div className="space-y-1">
 																		{sundayRoles.map(({ role, isTrainee }) => (
@@ -385,6 +500,8 @@ export default function EscalaPage() {
 																	<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
 																)}
 															</div>
+																)
+															})()
 														) : (
 															<div className="rounded-lg border border-dashed border-border/50 p-3 opacity-40">
 																<p className="text-[10px] text-muted-foreground">Sem domingo nessa semana</p>
@@ -423,6 +540,9 @@ export default function EscalaPage() {
 												assignments={schedule.assignments}
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
+												rehearsalByDate={rehearsalByDate}
+												canEditRehearsal={canEditRehearsal}
+												onSaveRehearsal={handleSaveRehearsal}
 											/>
 										)}
 									</TabsContent>
@@ -444,6 +564,9 @@ export default function EscalaPage() {
 												assignments={schedule.assignments}
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
+												rehearsalByDate={rehearsalByDate}
+												canEditRehearsal={canEditRehearsal}
+												onSaveRehearsal={handleSaveRehearsal}
 											/>
 										)}
 									</TabsContent>

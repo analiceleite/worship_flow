@@ -10,6 +10,10 @@ type QueueRow = {
   quarter_id: string | null
   minister_id: string
   event_date: string | null
+  status: NotificationStatus
+  attempts: number
+  last_error: string | null
+  sent_at: string | null
   payload_json: Record<string, unknown>
 }
 
@@ -19,6 +23,14 @@ type AssignmentWithRelations = {
   event_type: 'thursday' | 'sunday'
   minister: { id: string; name: string; email: string | null; is_active: boolean } | null
   role: { name: string } | null
+}
+
+type RehearsalRow = {
+  event_date: string
+  event_type: 'thursday' | 'sunday'
+  rehearsal_date: string | null
+  rehearsal_time: string | null
+  rehearsal_place: string | null
 }
 
 function formatEventType(eventType: 'thursday' | 'sunday') {
@@ -36,14 +48,44 @@ function toPtDate(isoDate: string) {
   })
 }
 
-function groupAssignmentsByMinister(assignments: AssignmentWithRelations[]) {
+function toRehearsalSummary(input: {
+  rehearsal_date?: string | null
+  rehearsal_time?: string | null
+  rehearsal_place?: string | null
+}) {
+  const parts: string[] = []
+
+  if (input.rehearsal_date) {
+    parts.push(toPtDate(input.rehearsal_date))
+  }
+  if (input.rehearsal_time) {
+    parts.push(String(input.rehearsal_time).slice(0, 5))
+  }
+  if (input.rehearsal_place) {
+    parts.push(input.rehearsal_place)
+  }
+
+  return parts.length ? parts.join(' - ') : null
+}
+
+function groupAssignmentsByMinister(
+  assignments: AssignmentWithRelations[],
+  rehearsalsByEvent: Map<string, RehearsalRow>
+) {
   const grouped = new Map<
     string,
     {
       minister_id: string
       minister_name: string
       minister_email: string | null
-      items: Array<{ event_date: string; event_type: 'thursday' | 'sunday'; role_name: string }>
+      items: Array<{
+        event_date: string
+        event_type: 'thursday' | 'sunday'
+        role_name: string
+        rehearsal_date: string | null
+        rehearsal_time: string | null
+        rehearsal_place: string | null
+      }>
     }
   >()
 
@@ -59,10 +101,15 @@ function groupAssignmentsByMinister(assignments: AssignmentWithRelations[]) {
       })
     }
 
+    const rehearsal = rehearsalsByEvent.get(`${row.event_date}_${row.event_type}`)
+
     grouped.get(row.minister_id)!.items.push({
       event_date: row.event_date,
       event_type: row.event_type,
       role_name: row.role?.name ?? 'Função',
+      rehearsal_date: rehearsal?.rehearsal_date ?? null,
+      rehearsal_time: rehearsal?.rehearsal_time ?? null,
+      rehearsal_place: rehearsal?.rehearsal_place ?? null,
     })
   }
 
@@ -83,17 +130,32 @@ export async function enqueueQuarterPublishedNotifications(input: {
 }) {
   const admin = createAdminClient()
 
-  const { data: assignments, error } = await admin
-    .from('schedule_assignments')
-    .select(
-      'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
-    )
-    .eq('quarter_id', input.quarterId)
-    .not('minister_id', 'is', null)
+  const [assignmentsRes, rehearsalsRes] = await Promise.all([
+    admin
+      .from('schedule_assignments')
+      .select(
+        'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
+      )
+      .eq('quarter_id', input.quarterId)
+      .not('minister_id', 'is', null),
+    admin
+      .from('schedule_rehearsals')
+      .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
+      .eq('quarter_id', input.quarterId),
+  ])
 
-  if (error) throw new Error(error.message)
+  if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
+  if (rehearsalsRes.error) throw new Error(rehearsalsRes.error.message)
 
-  const grouped = groupAssignmentsByMinister((assignments ?? []) as AssignmentWithRelations[])
+  const rehearsalsByEvent = new Map<string, RehearsalRow>()
+  for (const rehearsal of (rehearsalsRes.data ?? []) as RehearsalRow[]) {
+    rehearsalsByEvent.set(`${rehearsal.event_date}_${rehearsal.event_type}`, rehearsal)
+  }
+
+  const grouped = groupAssignmentsByMinister(
+    (assignmentsRes.data ?? []) as AssignmentWithRelations[],
+    rehearsalsByEvent
+  )
   if (grouped.length === 0) return { queued: 0 }
 
   const rows: QueueRow[] = grouped.map((g) => ({
@@ -151,18 +213,34 @@ async function enqueueReminderNotifications(input: {
   if (quarterError) throw new Error(quarterError.message)
   if (!publishedQuarter) return { queued: 0 }
 
-  const { data: assignments, error } = await admin
-    .from('schedule_assignments')
-    .select(
-      'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
-    )
-    .eq('quarter_id', publishedQuarter.id)
-    .eq('event_date', input.targetDate)
-    .not('minister_id', 'is', null)
+  const [assignmentsRes, rehearsalsRes] = await Promise.all([
+    admin
+      .from('schedule_assignments')
+      .select(
+        'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
+      )
+      .eq('quarter_id', publishedQuarter.id)
+      .eq('event_date', input.targetDate)
+      .not('minister_id', 'is', null),
+    admin
+      .from('schedule_rehearsals')
+      .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
+      .eq('quarter_id', publishedQuarter.id)
+      .eq('event_date', input.targetDate),
+  ])
 
-  if (error) throw new Error(error.message)
+  if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
+  if (rehearsalsRes.error) throw new Error(rehearsalsRes.error.message)
 
-  const grouped = groupAssignmentsByMinister((assignments ?? []) as AssignmentWithRelations[])
+  const rehearsalsByEvent = new Map<string, RehearsalRow>()
+  for (const rehearsal of (rehearsalsRes.data ?? []) as RehearsalRow[]) {
+    rehearsalsByEvent.set(`${rehearsal.event_date}_${rehearsal.event_type}`, rehearsal)
+  }
+
+  const grouped = groupAssignmentsByMinister(
+    (assignmentsRes.data ?? []) as AssignmentWithRelations[],
+    rehearsalsByEvent
+  )
   if (grouped.length === 0) return { queued: 0 }
 
   const rows: QueueRow[] = grouped.map((g) => ({
@@ -230,18 +308,79 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
   const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
 
-  const lines = items.map((item) => {
-    const event = item as { event_date?: string; event_type?: 'thursday' | 'sunday'; role_name?: string }
-    const eventDate = event.event_date ? toPtDate(event.event_date) : '-'
-    const eventType = event.event_type ? formatEventType(event.event_type) : 'Culto'
+  const groupedByEvent = new Map<string, {
+    eventDate: string
+    eventType: 'thursday' | 'sunday'
+    roles: string[]
+    rehearsal: string | null
+  }>()
+
+  for (const item of items) {
+    const event = item as {
+      event_date?: string
+      event_type?: 'thursday' | 'sunday'
+      role_name?: string
+      rehearsal_date?: string | null
+      rehearsal_time?: string | null
+      rehearsal_place?: string | null
+    }
+
+    const rawEventDate = event.event_date ?? ''
+    const rawEventType = event.event_type ?? 'thursday'
+    const key = `${rawEventDate}_${rawEventType}`
+
+    if (!groupedByEvent.has(key)) {
+      groupedByEvent.set(key, {
+        eventDate: rawEventDate,
+        eventType: rawEventType,
+        roles: [],
+        rehearsal: toRehearsalSummary(event),
+      })
+    }
+
     const roleName = event.role_name ?? 'Função'
-    return `${eventDate} • ${eventType} • ${roleName}`
+    const group = groupedByEvent.get(key)!
+    if (!group.roles.includes(roleName)) {
+      group.roles.push(roleName)
+    }
+  }
+
+  const sortedEvents = Array.from(groupedByEvent.values())
+    .sort((a, b) => {
+      if (a.eventDate !== b.eventDate) return a.eventDate < b.eventDate ? -1 : 1
+      if (a.eventType !== b.eventType) return a.eventType === 'thursday' ? -1 : 1
+      return 0
+    })
+
+  const lines = sortedEvents.map((event) => {
+    const eventDate = event.eventDate ? toPtDate(event.eventDate) : '-'
+    const eventType = formatEventType(event.eventType)
+    return {
+      header: `${eventDate} • ${eventType}`,
+      roles: event.roles,
+      rehearsal: event.rehearsal,
+    }
   })
+
+  const isOneDayReminder = input.notificationType === 'reminder_1day'
+  const textDetailsLabel =
+    isOneDayReminder && lines.length === 1
+      ? 'Funções de amanhã:'
+      : input.notificationType === 'reminder_7days' && lines.length === 1
+        ? 'Funções da próxima escala:'
+        : 'Detalhes:'
+
+  const htmlDetailsLabel =
+    isOneDayReminder && lines.length === 1
+      ? 'Funções de amanhã'
+      : input.notificationType === 'reminder_7days' && lines.length === 1
+        ? 'Funções da próxima escala'
+        : 'Detalhes da sua escala'
 
   const itemCards = lines
     .map(
       (line) =>
-        `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;">${line}</div>`
+        `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${line.header}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.join(', ')}</div>${line.rehearsal ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${line.rehearsal}</div>` : ''}</div>`
     )
     .join('')
 
@@ -272,7 +411,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
           </div>
 
           <div style="margin-bottom:10px;font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#6b7280;">
-            Detalhes da sua escala
+            ${htmlDetailsLabel}
           </div>
 
           <div style="margin-bottom:24px;">
@@ -301,7 +440,10 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         `A escala trimestral "${quarterName}" foi publicada.`,
         '',
         'Suas escalas:',
-        ...lines,
+        ...lines.map((line) => {
+          const base = `${line.header} | Funções: ${line.roles.join(', ')}`
+          return line.rehearsal ? `${base} | Ensaio: ${line.rehearsal}` : base
+        }),
         '',
         `Acesse o sistema para mais detalhes: ${scheduleUrl}`,
       ].join('\n'),
@@ -317,23 +459,25 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   }
 
   const targetDate = String(input.payload.target_date ?? '')
-  const isOneDayReminder = input.notificationType === 'reminder_1day'
   return {
     subject: isOneDayReminder
-      ? `Lembrete: sua escala é amanhã (${targetDate})`
-      : `Lembrete: sua escala é em 7 dias (${targetDate})`,
+      ? 'Lembrete: sua escala é amanhã'
+      : 'Lembrete: sua escala está próxima',
     text: [
       `Olá, ${ministerName}!`,
       '',
       isOneDayReminder
-        ? `Sua escala acontece amanhã (${toPtDate(targetDate)}).`
-        : `Sua próxima escala está próxima (${toPtDate(targetDate)}).`,
+        ? 'Sua escala acontece amanhã.'
+        : 'Sua próxima escala está próxima.',
       isOneDayReminder
         ? 'Passe esta mensagem em revista e se organize para chegar preparado(a) para sua função.'
         : 'Não esqueça de ensaiar e se preparar para sua função.',
       '',
-      'Detalhes:',
-      ...lines,
+      textDetailsLabel,
+      ...lines.map((line) => {
+        const base = `${line.header} | Funções: ${line.roles.join(', ')}`
+        return line.rehearsal ? `${base} | Ensaio: ${line.rehearsal}` : base
+      }),
       '',
       `Veja mais em: ${scheduleUrl}`,
     ].join('\n'),
@@ -341,8 +485,8 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       eyebrow: isOneDayReminder ? 'Amanhã' : 'Lembrete',
       title: isOneDayReminder ? 'Sua escala é amanhã' : 'Sua escala está chegando',
       message: isOneDayReminder
-        ? `Olá, ${ministerName}. Sua escala acontece amanhã, ${toPtDate(targetDate)}. Confira os detalhes e deixe tudo preparado para servir com tranquilidade.`
-        : `Olá, ${ministerName}. Sua próxima escala acontece em breve, no dia ${toPtDate(targetDate)}. Reserve um tempo para ensaiar e se preparar com tranquilidade.`,
+        ? `Olá, ${ministerName}. Confira os detalhes abaixo e deixe tudo preparado para servir com tranquilidade.`
+        : `Olá, ${ministerName}. Confira os detalhes abaixo e reserve um tempo para ensaiar com tranquilidade.`,
       accentColor: '#ff3b30',
       accentSoft: '#fff1f0',
       ctaLabel: 'Abrir escala',

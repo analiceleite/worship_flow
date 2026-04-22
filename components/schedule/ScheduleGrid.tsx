@@ -6,6 +6,7 @@ import { ptBR } from 'date-fns/locale'
 import { Check, ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import {
     Command,
     CommandEmpty,
@@ -40,6 +41,15 @@ export interface ScheduleAssignment {
     minister: AssignmentMinister | null
 }
 
+export interface ScheduleRehearsal {
+    quarter_id: string
+    event_date: string
+    event_type: 'thursday' | 'sunday'
+    rehearsal_date: string | null
+    rehearsal_time: string | null
+    rehearsal_place: string | null
+}
+
 interface MinisterOption {
     id: string
     name: string
@@ -66,6 +76,15 @@ interface ScheduleGridProps {
     onSaveAssignment?: (payload: SavePayload) => Promise<void>
     readOnly?: boolean
     highlightedMinisterId?: string | null
+    rehearsalByDate?: Record<string, ScheduleRehearsal>
+    canEditRehearsal?: boolean
+    onSaveRehearsal?: (payload: {
+        eventDate: string
+        eventType: 'thursday' | 'sunday'
+        rehearsalDate: string | null
+        rehearsalTime: string | null
+        rehearsalPlace: string | null
+    }) => Promise<void>
 }
 
 function toCellKey(roleId: string, date: string) {
@@ -78,6 +97,125 @@ function formatDate(dateStr: string) {
 
 function formatWeekTag(dateStr: string) {
     return `S${getISOWeek(new Date(`${dateStr}T12:00:00`))}`
+}
+
+function rehearsalSummary(rehearsal: ScheduleRehearsal | undefined) {
+    if (!rehearsal) return 'Ensaio não informado'
+
+    const parts: string[] = []
+    if (rehearsal.rehearsal_date) {
+        parts.push(format(new Date(`${rehearsal.rehearsal_date}T12:00:00`), 'dd/MM', { locale: ptBR }))
+    }
+    if (rehearsal.rehearsal_time) {
+        parts.push(rehearsal.rehearsal_time.slice(0, 5))
+    }
+    if (rehearsal.rehearsal_place) {
+        parts.push(rehearsal.rehearsal_place)
+    }
+
+    return parts.length ? parts.join(' • ') : 'Ensaio não informado'
+}
+
+function RehearsalEditor({
+    eventDate,
+    eventType,
+    rehearsal,
+    canEdit,
+    onSave,
+}: {
+    eventDate: string
+    eventType: 'thursday' | 'sunday'
+    rehearsal?: ScheduleRehearsal
+    canEdit: boolean
+    onSave?: (payload: {
+        eventDate: string
+        eventType: 'thursday' | 'sunday'
+        rehearsalDate: string | null
+        rehearsalTime: string | null
+        rehearsalPlace: string | null
+    }) => Promise<void>
+}) {
+    const [open, setOpen] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const [rehearsalDate, setRehearsalDate] = useState(rehearsal?.rehearsal_date ?? '')
+    const [rehearsalTime, setRehearsalTime] = useState(rehearsal?.rehearsal_time?.slice(0, 5) ?? '')
+    const [rehearsalPlace, setRehearsalPlace] = useState(rehearsal?.rehearsal_place ?? '')
+
+    useEffect(() => {
+        setRehearsalDate(rehearsal?.rehearsal_date ?? '')
+        setRehearsalTime(rehearsal?.rehearsal_time?.slice(0, 5) ?? '')
+        setRehearsalPlace(rehearsal?.rehearsal_place ?? '')
+    }, [rehearsal?.rehearsal_date, rehearsal?.rehearsal_place, rehearsal?.rehearsal_time])
+
+    const handleSave = async () => {
+        if (!onSave) return
+        setSaving(true)
+        try {
+            await onSave({
+                eventDate,
+                eventType,
+                rehearsalDate: rehearsalDate || null,
+                rehearsalTime: rehearsalTime || null,
+                rehearsalPlace: rehearsalPlace.trim() || null,
+            })
+            setOpen(false)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    return (
+        <div className="mt-1.5 flex items-center gap-2">
+            <p className="line-clamp-1 text-[11px] text-muted-foreground">{rehearsalSummary(rehearsal)}</p>
+            {canEdit && (
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]">
+                            {rehearsal ? 'Editar ensaio' : 'Adicionar ensaio'}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-80 space-y-3 p-3">
+                        <p className="text-xs font-medium text-foreground">Ensaio do dia {formatDate(eventDate)}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <Input
+                                type="date"
+                                value={rehearsalDate}
+                                onChange={(event) => setRehearsalDate(event.target.value)}
+                                disabled={saving}
+                            />
+                            <Input
+                                type="time"
+                                value={rehearsalTime}
+                                onChange={(event) => setRehearsalTime(event.target.value)}
+                                disabled={saving}
+                            />
+                        </div>
+                        <Input
+                            type="text"
+                            placeholder="Local do ensaio"
+                            value={rehearsalPlace}
+                            onChange={(event) => setRehearsalPlace(event.target.value)}
+                            disabled={saving}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={saving}
+                                onClick={() => setOpen(false)}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
+                                {saving ? 'Salvando...' : 'Salvar'}
+                            </Button>
+                        </div>
+                    </PopoverContent>
+                </Popover>
+            )}
+        </div>
+    )
 }
 
 function CellEditor({
@@ -243,6 +381,9 @@ export function ScheduleGrid({
     onSaveAssignment,
     readOnly = false,
     highlightedMinisterId = null,
+    rehearsalByDate = {},
+    canEditRehearsal = false,
+    onSaveRehearsal,
 }: ScheduleGridProps) {
     const assignmentMap = useMemo(() => {
         const map = new Map<string, ScheduleAssignment>()
@@ -314,11 +455,20 @@ export function ScheduleGrid({
                             <TableHead className="sticky left-0 z-10 min-w-52 bg-card">Função</TableHead>
                             {dates.map((date) => (
                                 <TableHead key={date} className="min-w-44">
-                                    <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                        <p className="text-xs sm:text-sm">{formatDate(date)}</p>
-                                        <span className="inline-flex rounded-md border border-border bg-muted px-1 py-0.5 text-[9px] font-medium leading-none text-muted-foreground">
-                                            {formatWeekTag(date)}
-                                        </span>
+                                    <div>
+                                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                            <p className="text-xs sm:text-sm">{formatDate(date)}</p>
+                                            <span className="inline-flex rounded-md border border-border bg-muted px-1 py-0.5 text-[9px] font-medium leading-none text-muted-foreground">
+                                                {formatWeekTag(date)}
+                                            </span>
+                                        </div>
+                                        <RehearsalEditor
+                                            eventDate={date}
+                                            eventType={eventType}
+                                            rehearsal={rehearsalByDate[`${date}_${eventType}`]}
+                                            canEdit={canEditRehearsal}
+                                            onSave={onSaveRehearsal}
+                                        />
                                     </div>
                                 </TableHead>
                             ))}
@@ -405,6 +555,13 @@ export function ScheduleGrid({
                                 {formatWeekTag(date)}
                             </span>
                         </div>
+                        <RehearsalEditor
+                            eventDate={date}
+                            eventType={eventType}
+                            rehearsal={rehearsalByDate[`${date}_${eventType}`]}
+                            canEdit={canEditRehearsal}
+                            onSave={onSaveRehearsal}
+                        />
 
                         {/* Role rows */}
                         <div className="space-y-2">
