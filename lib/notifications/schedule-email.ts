@@ -355,8 +355,11 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const lines = sortedEvents.map((event) => {
     const eventDate = event.eventDate ? toPtDate(event.eventDate) : '-'
     const eventType = formatEventType(event.eventType)
+    const isSingleReminderEvent = input.notificationType !== 'quarter_published' && sortedEvents.length === 1
     return {
       header: `${eventDate} • ${eventType}`,
+      compactHeader: eventType,
+      useCompactHeader: isSingleReminderEvent,
       roles: event.roles,
       rehearsal: event.rehearsal,
     }
@@ -380,7 +383,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const itemCards = lines
     .map(
       (line) =>
-        `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${line.header}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.join(', ')}</div>${line.rehearsal ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${line.rehearsal}</div>` : ''}</div>`
+        `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${line.useCompactHeader ? line.compactHeader : line.header}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.join(', ')}</div>${line.rehearsal ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${line.rehearsal}</div>` : ''}</div>`
     )
     .join('')
 
@@ -404,12 +407,6 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         </div>
 
         <div style="padding:24px 28px;">
-          <div style="margin-bottom:16px;padding:14px 16px;border-radius:12px;background:#f6f6f7;border:1px solid #e4e4e7;">
-            <p style="margin:0;font-size:14px;line-height:1.6;color:#4b5563;">
-              <strong style="color:#1f2937;">Ministro:</strong> ${ministerName}
-            </p>
-          </div>
-
           <div style="margin-bottom:10px;font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#6b7280;">
             ${htmlDetailsLabel}
           </div>
@@ -441,7 +438,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         '',
         'Suas escalas:',
         ...lines.map((line) => {
-          const base = `${line.header} | Funções: ${line.roles.join(', ')}`
+          const base = `${line.useCompactHeader ? line.compactHeader : line.header} | Funções: ${line.roles.join(', ')}`
           return line.rehearsal ? `${base} | Ensaio: ${line.rehearsal}` : base
         }),
         '',
@@ -475,7 +472,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       '',
       textDetailsLabel,
       ...lines.map((line) => {
-        const base = `${line.header} | Funções: ${line.roles.join(', ')}`
+        const base = `${line.useCompactHeader ? line.compactHeader : line.header} | Funções: ${line.roles.join(', ')}`
         return line.rehearsal ? `${base} | Ensaio: ${line.rehearsal}` : base
       }),
       '',
