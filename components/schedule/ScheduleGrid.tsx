@@ -241,12 +241,12 @@ function RehearsalEditor({
                                 {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
                             </Button>
                             <Dialog open={open} onOpenChange={setOpen}>
-                                <DialogContent className="w-[calc(100vw-1rem)] max-w-[22rem] max-h-[85vh] overflow-x-hidden overflow-y-auto p-4 sm:w-full sm:max-w-sm sm:p-6">
+                                <DialogContent className="h-[100dvh] w-screen max-w-none rounded-none border-0 overflow-x-hidden overflow-y-auto p-4 pt-8 flex flex-col">
                                     <DialogHeader>
                                         <DialogTitle>Ensaio — {formatDate(eventDate)}</DialogTitle>
                                     </DialogHeader>
                                     {formContent}
-                                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">{formActions}</DialogFooter>
+                                    <DialogFooter className="mt-4 flex-col-reverse gap-2">{formActions}</DialogFooter>
                                 </DialogContent>
                             </Dialog>
                         </>
