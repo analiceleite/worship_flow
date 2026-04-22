@@ -15,8 +15,11 @@ import {
     CommandItem,
     CommandList,
 } from '@/components/ui/command'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 export interface ScheduleRole {
     id: string
@@ -137,6 +140,7 @@ function RehearsalEditor({
 }) {
     const [open, setOpen] = useState(false)
     const [saving, setSaving] = useState(false)
+    const isMobile = useIsMobile()
     const [rehearsalDate, setRehearsalDate] = useState(rehearsal?.rehearsal_date ?? '')
     const [rehearsalTime, setRehearsalTime] = useState(rehearsal?.rehearsal_time?.slice(0, 5) ?? '')
     const [rehearsalPlace, setRehearsalPlace] = useState(rehearsal?.rehearsal_place ?? '')
@@ -164,55 +168,104 @@ function RehearsalEditor({
         }
     }
 
+    const rehearsalInfo = rehearsalSummary(rehearsal)
+    const hasRehearsal = rehearsal && (rehearsal.rehearsal_date || rehearsal.rehearsal_time || rehearsal.rehearsal_place)
+
+    const formContent = (
+        <div className="space-y-4">
+            <div className="space-y-1.5">
+                <Label htmlFor="rehearsal-date">Data do ensaio</Label>
+                <Input
+                    id="rehearsal-date"
+                    type="date"
+                    value={rehearsalDate}
+                    onChange={(e) => setRehearsalDate(e.target.value)}
+                    disabled={saving}
+                />
+            </div>
+            <div className="space-y-1.5">
+                <Label htmlFor="rehearsal-time">Horário</Label>
+                <Input
+                    id="rehearsal-time"
+                    type="time"
+                    value={rehearsalTime}
+                    onChange={(e) => setRehearsalTime(e.target.value)}
+                    disabled={saving}
+                />
+            </div>
+            <div className="space-y-1.5">
+                <Label htmlFor="rehearsal-place">Local</Label>
+                <Input
+                    id="rehearsal-place"
+                    type="text"
+                    placeholder="Ex: Igreja…"
+                    value={rehearsalPlace}
+                    onChange={(e) => setRehearsalPlace(e.target.value)}
+                    disabled={saving}
+                />
+            </div>
+        </div>
+    )
+
+    const formActions = (
+        <>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setOpen(false)}>
+                Cancelar
+            </Button>
+            <Button type="button" disabled={saving} onClick={handleSave}>
+                {saving ? 'Salvando…' : 'Salvar ensaio'}
+            </Button>
+        </>
+    )
+
     return (
-        <div className="mt-1.5 flex items-center gap-2">
-            <p className="line-clamp-1 text-[11px] text-muted-foreground">{rehearsalSummary(rehearsal)}</p>
-            {canEdit && (
-                <Popover open={open} onOpenChange={setOpen}>
-                    <PopoverTrigger asChild>
-                        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]">
-                            {rehearsal ? 'Editar ensaio' : 'Adicionar ensaio'}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-80 space-y-3 p-3">
-                        <p className="text-xs font-medium text-foreground">Ensaio do dia {formatDate(eventDate)}</p>
-                        <div className="grid grid-cols-2 gap-2">
-                            <Input
-                                type="date"
-                                value={rehearsalDate}
-                                onChange={(event) => setRehearsalDate(event.target.value)}
-                                disabled={saving}
-                            />
-                            <Input
-                                type="time"
-                                value={rehearsalTime}
-                                onChange={(event) => setRehearsalTime(event.target.value)}
-                                disabled={saving}
-                            />
-                        </div>
-                        <Input
-                            type="text"
-                            placeholder="Local do ensaio"
-                            value={rehearsalPlace}
-                            onChange={(event) => setRehearsalPlace(event.target.value)}
-                            disabled={saving}
-                        />
-                        <div className="flex justify-end gap-2">
+        <div className="mt-1">
+            {/* Resumo visível quando há ensaio */}
+            {hasRehearsal && (
+                <p className="mb-1 text-[11px] text-muted-foreground">{rehearsalInfo}</p>
+            )}
+
+            {canEdit ? (
+                <>
+                    {isMobile ? (
+                        <>
                             <Button
-                                type="button"
                                 size="sm"
-                                variant="outline"
-                                disabled={saving}
-                                onClick={() => setOpen(false)}
+                                variant={hasRehearsal ? 'outline' : 'secondary'}
+                                className="mb-4 h-7 w-full text-xs"
+                                onClick={() => setOpen(true)}
                             >
-                                Cancelar
+                                {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
                             </Button>
-                            <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
-                                {saving ? 'Salvando...' : 'Salvar'}
-                            </Button>
-                        </div>
-                    </PopoverContent>
-                </Popover>
+                            <Dialog open={open} onOpenChange={setOpen}>
+                                <DialogContent className="max-w-sm">
+                                    <DialogHeader>
+                                        <DialogTitle>Ensaio — {formatDate(eventDate)}</DialogTitle>
+                                    </DialogHeader>
+                                    {formContent}
+                                    <DialogFooter className="flex-row justify-end gap-2">{formActions}</DialogFooter>
+                                </DialogContent>
+                            </Dialog>
+                        </>
+                    ) : (
+                        <Popover open={open} onOpenChange={setOpen}>
+                            <PopoverTrigger asChild>
+                                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]">
+                                    {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-72 space-y-3 p-4">
+                                <p className="text-xs font-semibold text-foreground">Ensaio — {formatDate(eventDate)}</p>
+                                {formContent}
+                                <div className="flex justify-end gap-2">{formActions}</div>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                </>
+            ) : (
+                !hasRehearsal && (
+                    <p className="text-[11px] italic text-muted-foreground/60">Ensaio não informado</p>
+                )
             )}
         </div>
     )
