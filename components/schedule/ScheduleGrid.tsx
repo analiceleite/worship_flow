@@ -209,10 +209,10 @@ function RehearsalEditor({
 
     const formActions = (
         <>
-            <Button type="button" variant="outline" disabled={saving} onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" disabled={saving} onClick={() => setOpen(false)}>
                 Cancelar
             </Button>
-            <Button type="button" disabled={saving} onClick={handleSave}>
+            <Button type="button" className="w-full sm:w-auto" disabled={saving} onClick={handleSave}>
                 {saving ? 'Salvando…' : 'Salvar ensaio'}
             </Button>
         </>
@@ -238,12 +238,12 @@ function RehearsalEditor({
                                 {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
                             </Button>
                             <Dialog open={open} onOpenChange={setOpen}>
-                                <DialogContent className="max-w-sm">
+                                <DialogContent className="w-[calc(100vw-1rem)] max-w-[22rem] max-h-[85vh] overflow-y-auto p-4 sm:w-full sm:max-w-sm sm:p-6">
                                     <DialogHeader>
                                         <DialogTitle>Ensaio — {formatDate(eventDate)}</DialogTitle>
                                     </DialogHeader>
                                     {formContent}
-                                    <DialogFooter className="flex-row justify-end gap-2">{formActions}</DialogFooter>
+                                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">{formActions}</DialogFooter>
                                 </DialogContent>
                             </Dialog>
                         </>
