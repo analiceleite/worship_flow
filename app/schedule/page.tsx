@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { format, getISOWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Header } from '@/components/header'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { ROUTES } from '@/lib/routes'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -73,6 +74,7 @@ export default function EscalaPage() {
 	const [error, setError] = useState<string | null>(null)
 	const [schedule, setSchedule] = useState<CurrentScheduleResponse['schedule']>(null)
 	const [viewer, setViewer] = useState<CurrentScheduleResponse['viewer']>(null)
+	const isMobile = useIsMobile()
 
 	const loadSchedule = useCallback(async () => {
 		try {
@@ -103,6 +105,34 @@ export default function EscalaPage() {
 		if (!schedule || !viewer?.id) return 0
 		return schedule.assignments.filter((item) => item.minister_id === viewer.id).length
 	}, [schedule, viewer?.id])
+
+	const generalDates = useMemo(() => {
+		if (!schedule) {
+			return { thursday: [], sunday: [] as string[] }
+		}
+
+		if (!isMobile) {
+			return {
+				thursday: schedule.dates.thursday,
+				sunday: schedule.dates.sunday,
+			}
+		}
+
+		const today = new Date()
+		today.setHours(0, 0, 0, 0)
+
+		const filterCurrentAndFutureDates = (dates: string[]) =>
+			dates.filter((date) => {
+				const parsed = new Date(`${date}T12:00:00`)
+				parsed.setHours(0, 0, 0, 0)
+				return parsed >= today
+			})
+
+		return {
+			thursday: filterCurrentAndFutureDates(schedule.dates.thursday),
+			sunday: filterCurrentAndFutureDates(schedule.dates.sunday),
+		}
+	}, [isMobile, schedule])
 
 	const weekPairs = useMemo(() => {
 		if (!schedule || !viewer?.id) return []
@@ -377,16 +407,18 @@ export default function EscalaPage() {
 									</TabsList>
 
 									<TabsContent value="thursday" className="mt-3">
-										{schedule.dates.thursday.length === 0 ? (
+										{generalDates.thursday.length === 0 ? (
 											<Card>
 												<CardContent className="py-12 text-center text-sm text-muted-foreground">
-													O trimestre publicado não possui datas de quinta-feira.
+													{isMobile
+														? 'Não há escalas atuais de quinta-feira para mostrar no celular.'
+														: 'O trimestre publicado não possui datas de quinta-feira.'}
 												</CardContent>
 											</Card>
 										) : (
 											<ScheduleGrid
 												roles={schedule.roles}
-												dates={schedule.dates.thursday}
+												dates={generalDates.thursday}
 												eventType="thursday"
 												assignments={schedule.assignments}
 												readOnly
@@ -396,16 +428,18 @@ export default function EscalaPage() {
 									</TabsContent>
 
 									<TabsContent value="sunday" className="mt-3">
-										{schedule.dates.sunday.length === 0 ? (
+										{generalDates.sunday.length === 0 ? (
 											<Card>
 												<CardContent className="py-12 text-center text-sm text-muted-foreground">
-													O trimestre publicado não possui datas de domingo.
+													{isMobile
+														? 'Não há escalas atuais de domingo para mostrar no celular.'
+														: 'O trimestre publicado não possui datas de domingo.'}
 												</CardContent>
 											</Card>
 										) : (
 											<ScheduleGrid
 												roles={schedule.roles}
-												dates={schedule.dates.sunday}
+												dates={generalDates.sunday}
 												eventType="sunday"
 												assignments={schedule.assignments}
 												readOnly
