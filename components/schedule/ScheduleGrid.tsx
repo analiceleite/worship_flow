@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '../ui/sheet'
 
 export interface ScheduleRole {
     id: string
@@ -141,12 +142,26 @@ function RehearsalEditor({
     const [open, setOpen] = useState(false)
     const [saving, setSaving] = useState(false)
     const isMobile = useIsMobile()
-    const [rehearsalDate, setRehearsalDate] = useState(rehearsal?.rehearsal_date ?? '')
+
+    // helpers: convert between storage format (YYYY-MM-DD) and display format (DD/MM/AAAA)
+    const toDisplay = (iso: string) => {
+        if (!iso) return ''
+        const [y, m, d] = iso.split('-')
+        return `${d}/${m}/${y}`
+    }
+    const toISO = (display: string) => {
+        if (!display) return null
+        const [d, m, y] = display.split('/')
+        if (!d || !m || !y || y.length !== 4) return null
+        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+    }
+
+    const [rehearsalDate, setRehearsalDate] = useState(() => toDisplay(rehearsal?.rehearsal_date ?? ''))
     const [rehearsalTime, setRehearsalTime] = useState(rehearsal?.rehearsal_time?.slice(0, 5) ?? '')
     const [rehearsalPlace, setRehearsalPlace] = useState(rehearsal?.rehearsal_place ?? '')
 
     useEffect(() => {
-        setRehearsalDate(rehearsal?.rehearsal_date ?? '')
+        setRehearsalDate(toDisplay(rehearsal?.rehearsal_date ?? ''))
         setRehearsalTime(rehearsal?.rehearsal_time?.slice(0, 5) ?? '')
         setRehearsalPlace(rehearsal?.rehearsal_place ?? '')
     }, [rehearsal?.rehearsal_date, rehearsal?.rehearsal_place, rehearsal?.rehearsal_time])
@@ -158,7 +173,7 @@ function RehearsalEditor({
             await onSave({
                 eventDate,
                 eventType,
-                rehearsalDate: rehearsalDate || null,
+                rehearsalDate: toISO(rehearsalDate),
                 rehearsalTime: rehearsalTime || null,
                 rehearsalPlace: rehearsalPlace.trim() || null,
             })
@@ -174,24 +189,38 @@ function RehearsalEditor({
     const formContent = (
         <div className="min-w-0 space-y-4">
             <div className="min-w-0 space-y-1.5">
-                <Label htmlFor="rehearsal-date">Data do ensaio</Label>
+                <Label htmlFor="rehearsal-date">Data do ensaio (DD/MM/AAAA)</Label>
                 <Input
-                    className="w-full min-w-0 max-w-full"
                     id="rehearsal-date"
-                    type="date"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="DD/MM/AAAA"
+                    maxLength={10}
                     value={rehearsalDate}
-                    onChange={(e) => setRehearsalDate(e.target.value)}
+                    onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
+                        let masked = digits
+                        if (digits.length > 4) masked = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+                        else if (digits.length > 2) masked = `${digits.slice(0, 2)}/${digits.slice(2)}`
+                        setRehearsalDate(masked)
+                    }}
                     disabled={saving}
                 />
             </div>
             <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-time">Horário</Label>
                 <Input
-                    className="w-full min-w-0 max-w-full"
                     id="rehearsal-time"
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="HH:MM"
+                    maxLength={5}
                     value={rehearsalTime}
-                    onChange={(e) => setRehearsalTime(e.target.value)}
+                    onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 4)
+                        const masked = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits
+                        setRehearsalTime(masked)
+                    }}
                     disabled={saving}
                 />
             </div>
@@ -240,18 +269,15 @@ function RehearsalEditor({
                             >
                                 {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
                             </Button>
-                            <Dialog open={open} onOpenChange={setOpen}>
-                                <DialogContent
-                                    showCloseButton={false}
-                                    className="inset-0 top-0 left-0 translate-x-0 translate-y-0 h-[100dvh] w-screen max-w-none rounded-none border-0 overflow-x-hidden overflow-y-auto p-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col"
-                                >
-                                    <DialogHeader>
-                                        <DialogTitle>Ensaio — {formatDate(eventDate)}</DialogTitle>
-                                    </DialogHeader>
+                            <Sheet open={open} onOpenChange={setOpen}>
+                                <SheetContent side="bottom" className="rounded-t-xl px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+                                    <SheetHeader>
+                                        <SheetTitle>Ensaio — {formatDate(eventDate)}</SheetTitle>
+                                    </SheetHeader>
                                     {formContent}
-                                    <DialogFooter className="mt-4 flex-col-reverse gap-2">{formActions}</DialogFooter>
-                                </DialogContent>
-                            </Dialog>
+                                    <SheetFooter className="mt-4">{formActions}</SheetFooter>
+                                </SheetContent>
+                            </Sheet>
                         </>
                     ) : (
                         <Popover open={open} onOpenChange={setOpen}>
