@@ -176,7 +176,7 @@ function RehearsalEditor({
             <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-date">Data do ensaio</Label>
                 <Input
-                    className="w-full min-w-0"
+                    className="w-full min-w-0 max-w-full"
                     id="rehearsal-date"
                     type="date"
                     value={rehearsalDate}
@@ -187,7 +187,7 @@ function RehearsalEditor({
             <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-time">Horário</Label>
                 <Input
-                    className="w-full min-w-0"
+                    className="w-full min-w-0 max-w-full"
                     id="rehearsal-time"
                     type="time"
                     value={rehearsalTime}
@@ -198,7 +198,7 @@ function RehearsalEditor({
             <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="rehearsal-place">Local</Label>
                 <Input
-                    className="w-full min-w-0"
+                    className="w-full min-w-0 max-w-full"
                     id="rehearsal-place"
                     type="text"
                     placeholder="Ex: Igreja…"
@@ -241,7 +241,10 @@ function RehearsalEditor({
                                 {hasRehearsal ? 'Editar ensaio' : '+ Adicionar ensaio'}
                             </Button>
                             <Dialog open={open} onOpenChange={setOpen}>
-                                <DialogContent className="h-[100dvh] w-screen max-w-none rounded-none border-0 overflow-x-hidden overflow-y-auto p-4 pt-8 flex flex-col">
+                                <DialogContent
+                                    showCloseButton={false}
+                                    className="inset-0 top-0 left-0 translate-x-0 translate-y-0 h-[100dvh] w-screen max-w-none rounded-none border-0 overflow-x-hidden overflow-y-auto p-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col"
+                                >
                                     <DialogHeader>
                                         <DialogTitle>Ensaio — {formatDate(eventDate)}</DialogTitle>
                                     </DialogHeader>
