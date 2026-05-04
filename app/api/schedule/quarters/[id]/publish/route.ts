@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
-  enqueueQuarterPublishedNotifications,
+  enqueueBimesterPublishedNotifications,
   processScheduleEmailQueue,
 } from '@/lib/notifications/schedule-email'
 
@@ -54,9 +54,9 @@ export async function PATCH(
   let notifications = { queued: 0, processed: 0, sent: 0, failed: 0, skipped: 0 }
   if (isPublished) {
     try {
-      const enqueueResult = await enqueueQuarterPublishedNotifications({
-        quarterId: data.id,
-        quarterName: data.name,
+      const enqueueResult = await enqueueBimesterPublishedNotifications({
+        bimesterId: data.id,
+        bimesterName: data.name,
       })
 
       const processResult = await processScheduleEmailQueue(200)

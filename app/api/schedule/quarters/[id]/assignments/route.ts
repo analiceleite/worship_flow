@@ -61,7 +61,7 @@ export async function GET(
 
   if (quarterRes.error || !quarterRes.data) {
     return NextResponse.json(
-      { error: quarterRes.error?.message ?? 'Trimestre não encontrado' },
+      { error: quarterRes.error?.message ?? 'bimestre não encontrado' },
       { status: 404 }
     )
   }

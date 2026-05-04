@@ -9,11 +9,56 @@ interface ServiceDate {
   event_type: EventType
 }
 
+interface QuarterSeedRow {
+  id: string
+  end_date: string
+}
+
+interface RehearsalSeedRow {
+  event_date: string
+  event_type: EventType
+  rehearsal_date: string | null
+  rehearsal_time: string | null
+  rehearsal_place: string | null
+}
+
 function toDateString(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function getMonthStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function addMonths(date: Date, amount: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
+}
+
+function getMonthEnd(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
+}
+
+function buildPeriodName(startDate: Date, endDate: Date): string {
+  const startMonth = startDate.toLocaleDateString('pt-BR', { month: 'long' })
+  const endMonth = endDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return `${startMonth.charAt(0).toUpperCase()}${startMonth.slice(1)} a ${endMonth}`
+}
+
+function getMonthBoundsFromIsoDate(isoDate: string) {
+  const [yearText, monthText] = isoDate.split('-')
+  const year = Number(yearText)
+  const month = Number(monthText)
+
+  const monthStart = new Date(year, month - 1, 1)
+  const monthEnd = new Date(year, month, 0)
+
+  return {
+    start: toDateString(monthStart),
+    end: toDateString(monthEnd),
+  }
 }
 
 function generateServiceDates(startDate: string, endDate: string): ServiceDate[] {
@@ -82,9 +127,60 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const name = String(body?.name ?? '').trim()
-  const startDate = String(body?.start_date ?? '').trim()
-  const endDate = String(body?.end_date ?? '').trim()
+  const rawName = String(body?.name ?? '').trim()
+  const requestedStartDate = String(body?.start_date ?? '').trim()
+  const requestedEndDate = String(body?.end_date ?? '').trim()
+  const useBimonthlyFlow = body?.use_bimonthly_flow !== false
+
+  const { data: minister, error: ministerError } = await supabase
+    .from('ministers')
+    .select('id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (ministerError || !minister) {
+    return NextResponse.json({ error: 'Ministro não encontrado' }, { status: 404 })
+  }
+
+  const adminSupabase = createAdminClient()
+
+  let startDate = requestedStartDate
+  let endDate = requestedEndDate
+  let name = rawName
+  let previousQuarterForSeed: QuarterSeedRow | null = null
+  let overlapMonthBounds: { start: string; end: string } | null = null
+
+  if (useBimonthlyFlow) {
+    const { data: latestQuarter, error: latestQuarterError } = await adminSupabase
+      .from('schedule_quarters')
+      .select('id, end_date')
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (latestQuarterError) {
+      return NextResponse.json({ error: latestQuarterError.message }, { status: 500 })
+    }
+
+    previousQuarterForSeed = (latestQuarter as QuarterSeedRow | null) ?? null
+
+    const baseDate = latestQuarter?.end_date
+      ? new Date(`${latestQuarter.end_date}T12:00:00`)
+      : new Date()
+
+    const computedStart = getMonthStart(baseDate)
+    const computedEnd = getMonthEnd(addMonths(computedStart, 2))
+    startDate = toDateString(computedStart)
+    endDate = toDateString(computedEnd)
+
+    if (!name) {
+      name = buildPeriodName(computedStart, computedEnd)
+    }
+
+    if (previousQuarterForSeed) {
+      overlapMonthBounds = getMonthBoundsFromIsoDate(previousQuarterForSeed.end_date)
+    }
+  }
 
   if (!name || !startDate || !endDate) {
     return NextResponse.json(
@@ -100,14 +196,22 @@ export async function POST(request: Request) {
     )
   }
 
-  const { data: minister, error: ministerError } = await supabase
-    .from('ministers')
+  const { data: duplicatedQuarter, error: duplicatedQuarterError } = await adminSupabase
+    .from('schedule_quarters')
     .select('id')
-    .eq('user_id', user.id)
-    .single()
+    .eq('start_date', startDate)
+    .eq('end_date', endDate)
+    .maybeSingle()
 
-  if (ministerError || !minister) {
-    return NextResponse.json({ error: 'Ministro não encontrado' }, { status: 404 })
+  if (duplicatedQuarterError) {
+    return NextResponse.json({ error: duplicatedQuarterError.message }, { status: 500 })
+  }
+
+  if (duplicatedQuarter) {
+    return NextResponse.json(
+      { error: 'Já existe um período cadastrado para este intervalo de datas' },
+      { status: 409 }
+    )
   }
 
   const generatedDates = generateServiceDates(startDate, endDate)
@@ -117,9 +221,6 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
-
-  const adminSupabase = createAdminClient()
-
   const { data: quarter, error: quarterError } = await adminSupabase
     .from('schedule_quarters')
     .insert({
@@ -133,7 +234,7 @@ export async function POST(request: Request) {
 
   if (quarterError || !quarter) {
     return NextResponse.json(
-      { error: quarterError?.message ?? 'Erro ao criar trimestre' },
+      { error: quarterError?.message ?? 'Erro ao criar bimestre' },
       { status: 500 }
     )
   }
@@ -152,16 +253,44 @@ export async function POST(request: Request) {
   const assignmentRows: Array<{
     quarter_id: string
     minister_id: string | null
+    is_trainee: boolean
     role_id: string
     event_date: string
     event_type: EventType
   }> = []
 
+  const seedAssignmentsMap = new Map<string, { minister_id: string | null; is_trainee: boolean }>()
+
+  if (previousQuarterForSeed && overlapMonthBounds) {
+    const { data: seedAssignments, error: seedAssignmentsError } = await adminSupabase
+      .from('schedule_assignments')
+      .select('role_id, event_date, event_type, minister_id, is_trainee')
+      .eq('quarter_id', previousQuarterForSeed.id)
+      .gte('event_date', overlapMonthBounds.start)
+      .lte('event_date', overlapMonthBounds.end)
+
+    if (seedAssignmentsError) {
+      return NextResponse.json({ error: seedAssignmentsError.message }, { status: 500 })
+    }
+
+    for (const row of seedAssignments ?? []) {
+      const key = `${row.role_id}_${row.event_date}_${row.event_type}`
+      seedAssignmentsMap.set(key, {
+        minister_id: row.minister_id,
+        is_trainee: Boolean(row.is_trainee),
+      })
+    }
+  }
+
   for (const role of roles) {
     for (const dateInfo of generatedDates) {
+      const seedKey = `${role.id}_${dateInfo.event_date}_${dateInfo.event_type}`
+      const seededAssignment = seedAssignmentsMap.get(seedKey)
+
       assignmentRows.push({
         quarter_id: quarter.id,
-        minister_id: null,
+        minister_id: seededAssignment?.minister_id ?? null,
+        is_trainee: seededAssignment?.is_trainee ?? false,
         role_id: role.id,
         event_date: dateInfo.event_date,
         event_type: dateInfo.event_type
@@ -178,6 +307,38 @@ export async function POST(request: Request) {
       { error: assignmentsError.message },
       { status: 500 }
     )
+  }
+
+  if (previousQuarterForSeed && overlapMonthBounds) {
+    const { data: seedRehearsals, error: seedRehearsalsError } = await adminSupabase
+      .from('schedule_rehearsals')
+      .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
+      .eq('quarter_id', previousQuarterForSeed.id)
+      .gte('event_date', overlapMonthBounds.start)
+      .lte('event_date', overlapMonthBounds.end)
+
+    if (seedRehearsalsError) {
+      return NextResponse.json({ error: seedRehearsalsError.message }, { status: 500 })
+    }
+
+    const rehearsalRows = ((seedRehearsals ?? []) as RehearsalSeedRow[]).map((row) => ({
+      quarter_id: quarter.id,
+      event_date: row.event_date,
+      event_type: row.event_type,
+      rehearsal_date: row.rehearsal_date,
+      rehearsal_time: row.rehearsal_time,
+      rehearsal_place: row.rehearsal_place,
+    }))
+
+    if (rehearsalRows.length > 0) {
+      const { error: rehearsalInsertError } = await adminSupabase
+        .from('schedule_rehearsals')
+        .insert(rehearsalRows)
+
+      if (rehearsalInsertError) {
+        return NextResponse.json({ error: rehearsalInsertError.message }, { status: 500 })
+      }
+    }
   }
 
   return NextResponse.json({ quarter }, { status: 201 })

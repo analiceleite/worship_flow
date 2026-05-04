@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-interface QuarterSummary {
+interface BimesterSummary {
     id: string
     name: string
     start_date: string
@@ -84,8 +84,8 @@ interface AnalyticsEvent {
 }
 
 interface AnalyticsResponse {
-    quarter: QuarterSummary | null
-    quarter_label?: string
+    quarter: BimesterSummary | null
+    bimester_label?: string
     summary: AnalyticsSummary
     by_role: AnalyticsRole[]
     by_minister: AnalyticsMinister[]
@@ -301,58 +301,58 @@ function EventRow({ event }: { event: AnalyticsEvent }) {
 
 export default function ScheduleAdminDashboardPage() {
     const [loading, setLoading] = useState(true)
-    const [loadingQuarters, setLoadingQuarters] = useState(true)
+    const [loadingBimesters, setLoadingBimesters] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [eventFilter, setEventFilter] = useState<'all' | 'sunday' | 'thursday'>('all')
 
-    const [quarters, setQuarters] = useState<QuarterSummary[]>([])
-    const [selectedQuarterId, setSelectedQuarterId] = useState<string>('')
+    const [bimesters, setBimesters] = useState<BimesterSummary[]>([])
+    const [selectedBimesterId, setSelectedBimesterId] = useState<string>('')
     const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null)
 
-    const loadQuarters = useCallback(async () => {
+    const loadBimesters = useCallback(async () => {
         try {
             const response = await fetch('/api/schedule/quarters', { cache: 'no-store' })
             const body = await response.json()
-            if (!response.ok) throw new Error(body.error || 'Não foi possível carregar os trimestres')
-            const loaded = (body.quarters ?? []) as QuarterSummary[]
-            setQuarters(loaded)
-            if (!loaded.length) { setSelectedQuarterId(''); return }
+            if (!response.ok) throw new Error(body.error || 'Não foi possível carregar os bimestres')
+            const loaded = (body.quarters ?? []) as BimesterSummary[]
+            setBimesters(loaded)
+            if (!loaded.length) { setSelectedBimesterId(''); return }
             const published = loaded.find((q) => q.is_published)?.id
-            setSelectedQuarterId((current) => current || published || loaded[0].id)
+            setSelectedBimesterId((current) => current || published || loaded[0].id)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Erro ao carregar trimestres')
+            setError(err instanceof Error ? err.message : 'Erro ao carregar bimestres')
         } finally {
-            setLoadingQuarters(false)
+            setLoadingBimesters(false)
         }
     }, [])
 
-    const loadAnalytics = useCallback(async (quarterId?: string) => {
+    const loadAnalytics = useCallback(async (bimesterId?: string) => {
         try {
             setError(null)
-            const suffix = quarterId ? `?quarter_id=${quarterId}` : ''
+            const suffix = bimesterId ? `?quarter_id=${bimesterId}` : ''
             const response = await fetch(`/api/schedule/admin/analytics${suffix}`, { cache: 'no-store' })
             const body = (await response.json()) as AnalyticsResponse & { error?: string }
             if (!response.ok) throw new Error(body.error || 'Não foi possível carregar os indicadores')
             setAnalytics(body)
-            if (body.quarter?.id && !quarterId) setSelectedQuarterId(body.quarter.id)
+            if (body.quarter?.id && !bimesterId) setSelectedBimesterId(body.quarter.id)
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Erro ao carregar indicadores')
             setAnalytics(null)
         }
     }, [])
 
-    useEffect(() => { void loadQuarters() }, [loadQuarters])
+    useEffect(() => { void loadBimesters() }, [loadBimesters])
 
     useEffect(() => {
         const run = async () => {
-            if (loadingQuarters) return
+            if (loadingBimesters) return
             setLoading(true)
-            await loadAnalytics(selectedQuarterId || undefined)
+            await loadAnalytics(selectedBimesterId || undefined)
             setLoading(false)
         }
         void run()
-    }, [loadingQuarters, loadAnalytics, selectedQuarterId])
+    }, [loadingBimesters, loadAnalytics, selectedBimesterId])
 
     const maxAssignments = useMemo(
         () => Math.max(...(analytics?.by_minister ?? []).map((m) => m.total_assignments), 1),
@@ -381,21 +381,21 @@ export default function ScheduleAdminDashboardPage() {
                     <div>
                         <h1 className="text-xl font-semibold text-foreground">Dashboard de Alocação</h1>
                         <p className="text-sm text-muted-foreground">
-                            Cobertura, sobrecarga e lacunas do trimestre
+                            Cobertura, sobrecarga e lacunas do bimestre
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                         <Select
-                            value={selectedQuarterId}
-                            onValueChange={setSelectedQuarterId}
-                            disabled={loadingQuarters || quarters.length === 0}
+                            value={selectedBimesterId}
+                            onValueChange={setSelectedBimesterId}
+                            disabled={loadingBimesters || bimesters.length === 0}
                         >
                             <SelectTrigger className="min-w-[220px]">
-                                <SelectValue placeholder={loadingQuarters ? 'Carregando…' : 'Selecionar trimestre'} />
+                                <SelectValue placeholder={loadingBimesters ? 'Carregando…' : 'Selecionar bimestre'} />
                             </SelectTrigger>
                             <SelectContent>
-                                {quarters.map((q) => (
+                                {bimesters.map((q) => (
                                     <SelectItem key={q.id} value={q.id}>{q.name}</SelectItem>
                                 ))}
                             </SelectContent>
@@ -406,7 +406,7 @@ export default function ScheduleAdminDashboardPage() {
                             size="sm"
                             onClick={async () => {
                                 setRefreshing(true)
-                                await loadAnalytics(selectedQuarterId || undefined)
+                                await loadAnalytics(selectedBimesterId || undefined)
                                 setRefreshing(false)
                             }}
                             disabled={loading || refreshing}
@@ -434,9 +434,9 @@ export default function ScheduleAdminDashboardPage() {
                 ) : !analytics?.quarter ? (
                     <Card>
                         <CardContent className="py-12 text-center">
-                            <p className="text-sm font-medium">Nenhum trimestre disponível para análise</p>
+                            <p className="text-sm font-medium">Nenhum bimestre disponível para análise</p>
                             <p className="mt-1 text-xs text-muted-foreground">
-                                Crie e publique um trimestre para visualizar os indicadores.
+                                Crie e publique um bimestre para visualizar os indicadores.
                             </p>
                         </CardContent>
                     </Card>
@@ -444,7 +444,7 @@ export default function ScheduleAdminDashboardPage() {
                 ) : (
                     <div className="space-y-4">
 
-                        {/* ── Quarter header ── */}
+                        {/* ── Bimester header ── */}
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
                             <div>
                                 <p className="text-sm font-medium text-foreground">{analytics.quarter.name}</p>
@@ -523,7 +523,7 @@ export default function ScheduleAdminDashboardPage() {
                                         <Users className="h-4 w-4 text-muted-foreground" />
                                         Carga por Ministro
                                     </CardTitle>
-                                    <CardDescription className="text-xs">Top 10 · linha laranja = média do trimestre</CardDescription>
+                                    <CardDescription className="text-xs">Top 10 · linha laranja = média do bimestre</CardDescription>
                                     <div className="flex items-center gap-4 pt-1 flex-wrap">
                                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                             <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 dark:bg-blue-400 inline-block" />
@@ -592,7 +592,7 @@ export default function ScheduleAdminDashboardPage() {
                                                     </div>
                                                     {/* Linha 2: subtexto */}
                                                     <p className="text-xs text-muted-foreground mt-0.5">
-                                                        {item.total_assignments} alocações no trimestre
+                                                        {item.total_assignments} alocações no bimestre
                                                     </p>
                                                     {/* Linha 3: barra de sobrecarga visual */}
                                                     <div className="mt-2 h-1 rounded-full bg-destructive/20 overflow-hidden">

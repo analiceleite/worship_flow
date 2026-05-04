@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
-import { QuarterForm, type QuarterSummary } from '@/components/schedule/QuarterForm'
+import { BimesterForm, type BimesterSummary } from '@/components/schedule/BimesterForm'
 import { Plus, AlertCircle, ExternalLink, ArrowLeft, BarChart3 } from 'lucide-react'
 
 function formatRange(startDate: string, endDate: string) {
@@ -26,7 +26,7 @@ export default function EscalaQuartersPage() {
 	const [loading, setLoading] = useState(true)
 	const [formOpen, setFormOpen] = useState(false)
 	const [error, setError] = useState<string | null>(null)
-	const [quarters, setQuarters] = useState<QuarterSummary[]>([])
+	const [bimesters, setBimesters] = useState<BimesterSummary[]>([])
 
 	const loadQuarters = useCallback(async () => {
 		try {
@@ -35,12 +35,12 @@ export default function EscalaQuartersPage() {
 			const body = await response.json()
 
 			if (!response.ok) {
-				throw new Error(body.error || 'Não foi possível carregar os trimestres')
+				throw new Error(body.error || 'Não foi possível carregar os bimestres')
 			}
 
-			setQuarters(body.quarters ?? [])
+			setBimesters(body.quarters ?? [])
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Erro ao carregar trimestres')
+			setError(err instanceof Error ? err.message : 'Erro ao carregar bimestres')
 		} finally {
 			setLoading(false)
 		}
@@ -51,8 +51,8 @@ export default function EscalaQuartersPage() {
 	}, [loadQuarters])
 
 	const publishedQuarterId = useMemo(
-		() => quarters.find((item) => item.is_published)?.id ?? null,
-		[quarters]
+		() => bimesters.find((item) => item.is_published)?.id ?? null,
+		[bimesters]
 	)
 
 	return (
@@ -68,9 +68,9 @@ export default function EscalaQuartersPage() {
 								Voltar para a escala
 							</Link>
 						</Button>
-						<h1 className="text-2xl font-bold text-foreground">Trimestres da Escala</h1>
+						<h1 className="text-2xl font-bold text-foreground">Bimestres da Escala</h1>
 						<p className="text-sm text-muted-foreground">
-							Crie trimestres e abra o builder para preencher as funções de cada culto.
+							Crie bimestres com sobreposição gradual e abra o builder para preencher as funções de cada culto.
 						</p>
 					</div>
 
@@ -83,7 +83,7 @@ export default function EscalaQuartersPage() {
 						</Button>
 						<Button onClick={() => setFormOpen(true)}>
 							<Plus className="mr-2 h-4 w-4" />
-							Novo trimestre
+							Novo bimestre
 						</Button>
 					</div>
 				</div>
@@ -99,27 +99,27 @@ export default function EscalaQuartersPage() {
 					<div className="flex items-center justify-center py-16">
 						<Spinner className="h-6 w-6" />
 					</div>
-				) : quarters.length === 0 ? (
+				) : bimesters.length === 0 ? (
 					<Card>
 						<CardContent className="py-12 text-center">
-							<p className="text-sm font-medium text-foreground">Nenhum trimestre cadastrado</p>
+							<p className="text-sm font-medium text-foreground">Nenhum bimestre cadastrado</p>
 							<p className="mt-1 text-xs text-muted-foreground">
-								Clique em "Novo trimestre" para começar a montar a escala.
+								Clique em "Novo bimestre" para começar a montar a escala.
 							</p>
 						</CardContent>
 					</Card>
 				) : (
 					<div className="grid gap-4">
-						{quarters.map((quarter) => (
-							<Card key={quarter.id}>
+						{bimesters.map((bimester) => (
+							<Card key={bimester.id}>
 								<CardHeader className="pb-3">
 									<div className="flex flex-wrap items-start justify-between gap-3 mt-4">
 										<div>
-											<CardTitle className="text-base">{quarter.name}</CardTitle>
-											<CardDescription>{formatRange(quarter.start_date, quarter.end_date)}</CardDescription>
+											<CardTitle className="text-base">{bimester.name}</CardTitle>
+											<CardDescription>{formatRange(bimester.start_date, bimester.end_date)}</CardDescription>
 										</div>
 
-										{quarter.id === publishedQuarterId ? (
+										{bimester.id === publishedQuarterId ? (
 											<Badge>Publicado</Badge>
 										) : (
 											<Badge variant="outline">Rascunho</Badge>
@@ -129,7 +129,7 @@ export default function EscalaQuartersPage() {
 								<CardContent>
 									<div className="flex flex-wrap gap-2 mb-4">
 										<Button asChild size="sm">
-											<Link href={`${ROUTES.SCHEDULE_ADMIN_BUILDER}?quarter=${quarter.id}`}>
+											<Link href={`${ROUTES.SCHEDULE_ADMIN_BUILDER}?quarter=${bimester.id}`}>
 												Abrir builder
 												<ExternalLink className="ml-2 h-3.5 w-3.5" />
 											</Link>
@@ -142,11 +142,12 @@ export default function EscalaQuartersPage() {
 				)}
 			</main>
 
-			<QuarterForm
+			<BimesterForm
 				open={formOpen}
 				onOpenChange={setFormOpen}
-				onCreated={(quarter) => {
-					setQuarters((current) => [quarter, ...current])
+				existingBimesters={bimesters}
+				onCreated={(bimester) => {
+					setBimesters((current) => [bimester, ...current])
 				}}
 			/>
 		</div>

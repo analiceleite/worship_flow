@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { enqueueQuarterPublishedNotifications } from '@/lib/notifications/schedule-email'
+import { enqueueBimesterPublishedNotifications } from '@/lib/notifications/schedule-email'
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   try {
     const admin = createAdminClient()
 
-    const { data: publishedQuarter, error } = await admin
+    const { data: publishedBimester, error } = await admin
       .from('schedule_quarters')
       .select('id, name')
       .eq('is_published', true)
@@ -31,19 +31,19 @@ export async function POST(request: Request) {
       throw new Error(error.message)
     }
 
-    if (!publishedQuarter) {
+    if (!publishedBimester) {
       return NextResponse.json({ ok: true, queued: 0, message: 'Nenhuma escala publicada encontrada.' })
     }
 
-    const result = await enqueueQuarterPublishedNotifications({
-      quarterId: publishedQuarter.id,
-      quarterName: publishedQuarter.name,
+    const result = await enqueueBimesterPublishedNotifications({
+      bimesterId: publishedBimester.id,
+      bimesterName: publishedBimester.name,
     })
 
     return NextResponse.json({
       ok: true,
       queued: result.queued,
-      quarter: publishedQuarter,
+      quarter: publishedBimester,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro ao enfileirar notificações da escala publicada'

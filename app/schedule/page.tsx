@@ -25,7 +25,7 @@ function formatFullDate(dateStr: string) {
 	return format(new Date(`${dateStr}T12:00:00`), "EEEE, dd 'de' MMMM", { locale: ptBR })
 }
 
-interface QuarterSummary {
+interface BimesterSummary {
 	id: string
 	name: string
 	start_date: string
@@ -34,9 +34,9 @@ interface QuarterSummary {
 	created_at: string
 }
 
-interface CurrentScheduleResponse {
+interface CurrentScheduleApiResponse {
 	schedule: {
-		quarter: QuarterSummary
+		quarter: BimesterSummary
 		roles: ScheduleRole[]
 		assignments: ScheduleAssignment[]
 		dates: {
@@ -49,6 +49,16 @@ interface CurrentScheduleResponse {
 		name: string
 		role: 'admin' | 'minister' | 'midia'
 	} | null
+}
+
+interface CurrentSchedule {
+	bimester: BimesterSummary
+	roles: ScheduleRole[]
+	assignments: ScheduleAssignment[]
+	dates: {
+		sunday: string[]
+		thursday: string[]
+	}
 }
 
 function formatRange(startDate: string, endDate: string) {
@@ -94,8 +104,8 @@ export default function EscalaPage() {
 	const { toast } = useToast()
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
-	const [schedule, setSchedule] = useState<CurrentScheduleResponse['schedule']>(null)
-	const [viewer, setViewer] = useState<CurrentScheduleResponse['viewer']>(null)
+	const [schedule, setSchedule] = useState<CurrentSchedule | null>(null)
+	const [viewer, setViewer] = useState<CurrentScheduleApiResponse['viewer']>(null)
 	const [rehearsalByDate, setRehearsalByDate] = useState<Record<string, ScheduleRehearsal>>({})
 	const isMobile = useIsMobile()
 
@@ -103,13 +113,22 @@ export default function EscalaPage() {
 		try {
 			setError(null)
 			const response = await fetch('/api/schedule/current', { cache: 'no-store' })
-			const body = (await response.json()) as CurrentScheduleResponse & { error?: string }
+			const body = (await response.json()) as CurrentScheduleApiResponse & { error?: string }
 
 			if (!response.ok) {
 				throw new Error(body.error || 'Não foi possível carregar a escala')
 			}
 
-			setSchedule(body.schedule)
+			setSchedule(
+				body.schedule
+					? {
+						bimester: body.schedule.quarter,
+						roles: body.schedule.roles,
+						assignments: body.schedule.assignments,
+						dates: body.schedule.dates,
+					}
+					: null
+			)
 			setViewer(body.viewer)
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Erro ao carregar escala')
@@ -124,13 +143,13 @@ export default function EscalaPage() {
 
 	useEffect(() => {
 		const loadRehearsals = async () => {
-			if (!schedule?.quarter.id) {
+			if (!schedule?.bimester.id) {
 				setRehearsalByDate({})
 				return
 			}
 
 			try {
-				const response = await fetch(`/api/schedule/rehearsal?quarter_id=${schedule.quarter.id}`, {
+				const response = await fetch(`/api/schedule/rehearsal?quarter_id=${schedule.bimester.id}`, {
 					cache: 'no-store',
 				})
 				const body = (await response.json()) as { rehearsals?: ScheduleRehearsal[]; error?: string }
@@ -149,7 +168,7 @@ export default function EscalaPage() {
 		}
 
 		loadRehearsals()
-	}, [schedule?.quarter.id])
+	}, [schedule?.bimester.id])
 
 	const isAdmin = viewer?.role === 'admin'
 	const canEditRehearsal = viewer?.role === 'admin' || viewer?.role === 'minister'
@@ -251,7 +270,7 @@ export default function EscalaPage() {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				quarter_id: schedule.quarter.id,
+				quarter_id: schedule.bimester.id,
 				event_date: payload.eventDate,
 				event_type: payload.eventType,
 				rehearsal_date: payload.rehearsalDate,
@@ -306,7 +325,7 @@ export default function EscalaPage() {
 						<CardHeader className="py-4">
 							<CardTitle className="text-base">Gerenciar Escala</CardTitle>
 							<CardDescription>
-								Crie trimestres, preencha o builder e publique para liberar esta visualização.
+								Crie bimestres, preencha o builder e publique para liberar esta visualização.
 							</CardDescription>
 							<div className="flex flex-wrap gap-2 pt-2">
 								<Button asChild size="sm" variant="outline">
@@ -318,7 +337,7 @@ export default function EscalaPage() {
 								<Button asChild size="sm" variant="outline">
 									<Link href={ROUTES.SCHEDULE_ADMIN_QUARTERS}>
 										<Settings2 className="mr-2 h-3.5 w-3.5" />
-										Trimestres
+										Bimestres
 									</Link>
 								</Button>
 								<Button asChild size="sm" variant="outline">
@@ -347,7 +366,7 @@ export default function EscalaPage() {
 								<p className="text-sm font-medium text-foreground">Nenhuma escala publicada</p>
 								<p className="text-xs text-muted-foreground">
 									{isAdmin
-										? 'Publique um trimestre no builder para exibir aqui.'
+										? 'Publique um bimestre no builder para exibir aqui.'
 										: 'O admin ainda não publicou a escala. Volte em breve.'}
 								</p>
 							</div>
@@ -359,16 +378,16 @@ export default function EscalaPage() {
 							<CardHeader className="pb-3 py-4">
 								<div className="flex flex-wrap items-start justify-between gap-3">
 									<div>
-										<CardTitle className="text-base">{schedule.quarter.name}</CardTitle>
+										<CardTitle className="text-base">{schedule.bimester.name}</CardTitle>
 										<CardDescription>
-											{formatRange(schedule.quarter.start_date, schedule.quarter.end_date)}
+											{formatRange(schedule.bimester.start_date, schedule.bimester.end_date)}
 										</CardDescription>
 									</div>
 
 									<div className="flex flex-wrap items-center gap-2">
 										<Badge>Publicado</Badge>
 										<Badge variant="outline" className='p-1'>
-										 {assignedCount} {assignedCount === 1 ? 'atribuição' : 'atribuições'} para você.
+											{assignedCount} {assignedCount === 1 ? 'atribuição' : 'atribuições'} para você.
 										</Badge>
 									</div>
 								</div>
@@ -392,7 +411,7 @@ export default function EscalaPage() {
 											<div className="space-y-1">
 												<p className="text-sm font-medium text-foreground">Nenhuma escala publicada</p>
 												<p className="text-xs text-muted-foreground">
-													Não há datas neste trimestre ainda.
+													Não há datas neste bimestre ainda.
 												</p>
 											</div>
 										</CardContent>
@@ -421,39 +440,39 @@ export default function EscalaPage() {
 															(() => {
 																const rehearsalSummary = formatRehearsalSummary(rehearsalByDate[`${thursday}_thursday`])
 																return (
-															<div
-																className={[
-																	'rounded-lg border p-3',
-																	thursdayRoles && thursdayRoles.length > 0
-																		? 'border-primary/30 bg-primary/5'
-																		: 'border-border bg-muted/20',
-																].join(' ')}
-															>
-																<p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Quinta</p>
-																<p className="mb-2 text-xs text-foreground">
-																	{format(new Date(`${thursday}T12:00:00`), 'dd/MM')}
-																</p>
-																{rehearsalSummary && (
-																	<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
-																		<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
-																	</p>
-																)}
-																{thursdayRoles && thursdayRoles.length > 0 ? (
-																	<div className="space-y-1">
-																		{thursdayRoles.map(({ role, isTrainee }) => (
-																			<div key={role.id} className="flex items-center gap-1.5">
-																				<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-																				<span className="text-xs font-medium text-foreground">
-																					{role.name}
-																					{isTrainee ? ' (Aprendiz)' : ''}
-																				</span>
+																	<div
+																		className={[
+																			'rounded-lg border p-3',
+																			thursdayRoles && thursdayRoles.length > 0
+																				? 'border-primary/30 bg-primary/5'
+																				: 'border-border bg-muted/20',
+																		].join(' ')}
+																	>
+																		<p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Quinta</p>
+																		<p className="mb-2 text-xs text-foreground">
+																			{format(new Date(`${thursday}T12:00:00`), 'dd/MM')}
+																		</p>
+																		{rehearsalSummary && (
+																			<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+																				<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
+																			</p>
+																		)}
+																		{thursdayRoles && thursdayRoles.length > 0 ? (
+																			<div className="space-y-1">
+																				{thursdayRoles.map(({ role, isTrainee }) => (
+																					<div key={role.id} className="flex items-center gap-1.5">
+																						<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+																						<span className="text-xs font-medium text-foreground">
+																							{role.name}
+																							{isTrainee ? ' (Aprendiz)' : ''}
+																						</span>
+																					</div>
+																				))}
 																			</div>
-																		))}
+																		) : (
+																			<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
+																		)}
 																	</div>
-																) : (
-																	<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
-																)}
-															</div>
 																)
 															})()
 														) : (
@@ -467,39 +486,39 @@ export default function EscalaPage() {
 															(() => {
 																const rehearsalSummary = formatRehearsalSummary(rehearsalByDate[`${sunday}_sunday`])
 																return (
-															<div
-																className={[
-																	'rounded-lg border p-3',
-																	sundayRoles && sundayRoles.length > 0
-																		? 'border-primary/30 bg-primary/5'
-																		: 'border-border bg-muted/20',
-																].join(' ')}
-															>
-																<p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Domingo</p>
-																<p className="mb-2 text-xs text-foreground">
-																	{format(new Date(`${sunday}T12:00:00`), 'dd/MM')}
-																</p>
-																{rehearsalSummary && (
-																	<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
-																		<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
-																	</p>
-																)}
-																{sundayRoles && sundayRoles.length > 0 ? (
-																	<div className="space-y-1">
-																		{sundayRoles.map(({ role, isTrainee }) => (
-																			<div key={role.id} className="flex items-center gap-1.5">
-																				<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-																				<span className="text-xs font-medium text-foreground">
-																					{role.name}
-																					{isTrainee ? ' (Aprendiz)' : ''}
-																				</span>
+																	<div
+																		className={[
+																			'rounded-lg border p-3',
+																			sundayRoles && sundayRoles.length > 0
+																				? 'border-primary/30 bg-primary/5'
+																				: 'border-border bg-muted/20',
+																		].join(' ')}
+																	>
+																		<p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Domingo</p>
+																		<p className="mb-2 text-xs text-foreground">
+																			{format(new Date(`${sunday}T12:00:00`), 'dd/MM')}
+																		</p>
+																		{rehearsalSummary && (
+																			<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+																				<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
+																			</p>
+																		)}
+																		{sundayRoles && sundayRoles.length > 0 ? (
+																			<div className="space-y-1">
+																				{sundayRoles.map(({ role, isTrainee }) => (
+																					<div key={role.id} className="flex items-center gap-1.5">
+																						<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+																						<span className="text-xs font-medium text-foreground">
+																							{role.name}
+																							{isTrainee ? ' (Aprendiz)' : ''}
+																						</span>
+																					</div>
+																				))}
 																			</div>
-																		))}
+																		) : (
+																			<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
+																		)}
 																	</div>
-																) : (
-																	<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
-																)}
-															</div>
 																)
 															})()
 														) : (
@@ -529,7 +548,7 @@ export default function EscalaPage() {
 												<CardContent className="py-12 text-center text-sm text-muted-foreground">
 													{isMobile
 														? 'Não há escalas atuais de quinta-feira para mostrar no celular.'
-														: 'O trimestre publicado não possui datas de quinta-feira.'}
+														: 'O bimestre publicado não possui datas de quinta-feira.'}
 												</CardContent>
 											</Card>
 										) : (
@@ -553,7 +572,7 @@ export default function EscalaPage() {
 												<CardContent className="py-12 text-center text-sm text-muted-foreground">
 													{isMobile
 														? 'Não há escalas atuais de domingo para mostrar no celular.'
-														: 'O trimestre publicado não possui datas de domingo.'}
+														: 'O bimestre publicado não possui datas de domingo.'}
 												</CardContent>
 											</Card>
 										) : (

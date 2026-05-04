@@ -3,6 +3,7 @@ import { ROUTES } from '@/lib/routes'
 
 type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped'
 type NotificationType = 'quarter_published' | 'reminder_7days' | 'reminder_1day'
+const BIMESTER_PUBLISHED_NOTIFICATION_TYPE: NotificationType = 'quarter_published'
 
 type QueueRow = {
   dedupe_key: string
@@ -124,9 +125,9 @@ function groupAssignmentsByMinister(
   return Array.from(grouped.values())
 }
 
-export async function enqueueQuarterPublishedNotifications(input: {
-  quarterId: string
-  quarterName: string
+export async function enqueueBimesterPublishedNotifications(input: {
+  bimesterId: string
+  bimesterName: string
 }) {
   const admin = createAdminClient()
 
@@ -136,12 +137,12 @@ export async function enqueueQuarterPublishedNotifications(input: {
       .select(
         'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
       )
-      .eq('quarter_id', input.quarterId)
+      .eq('quarter_id', input.bimesterId)
       .not('minister_id', 'is', null),
     admin
       .from('schedule_rehearsals')
       .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
-      .eq('quarter_id', input.quarterId),
+      .eq('quarter_id', input.bimesterId),
   ])
 
   if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
@@ -159,9 +160,9 @@ export async function enqueueQuarterPublishedNotifications(input: {
   if (grouped.length === 0) return { queued: 0 }
 
   const rows: QueueRow[] = grouped.map((g) => ({
-    dedupe_key: `quarter_published:${input.quarterId}:${g.minister_id}`,
-    notification_type: 'quarter_published',
-    quarter_id: input.quarterId,
+    dedupe_key: `quarter_published:${input.bimesterId}:${g.minister_id}`,
+    notification_type: BIMESTER_PUBLISHED_NOTIFICATION_TYPE,
+    quarter_id: input.bimesterId,
     minister_id: g.minister_id,
     event_date: null,
     status: 'pending',
@@ -169,7 +170,7 @@ export async function enqueueQuarterPublishedNotifications(input: {
     last_error: null,
     sent_at: null,
     payload_json: {
-      quarter_name: input.quarterName,
+      bimester_name: input.bimesterName,
       minister_name: g.minister_name,
       minister_email: g.minister_email,
       items: g.items,
@@ -202,7 +203,7 @@ async function enqueueReminderNotifications(input: {
 }) {
   const admin = createAdminClient()
 
-  const { data: publishedQuarter, error: quarterError } = await admin
+  const { data: publishedBimester, error: publishedBimesterError } = await admin
     .from('schedule_quarters')
     .select('id, name')
     .eq('is_published', true)
@@ -210,8 +211,8 @@ async function enqueueReminderNotifications(input: {
     .limit(1)
     .maybeSingle()
 
-  if (quarterError) throw new Error(quarterError.message)
-  if (!publishedQuarter) return { queued: 0 }
+  if (publishedBimesterError) throw new Error(publishedBimesterError.message)
+  if (!publishedBimester) return { queued: 0 }
 
   const [assignmentsRes, rehearsalsRes] = await Promise.all([
     admin
@@ -219,13 +220,13 @@ async function enqueueReminderNotifications(input: {
       .select(
         'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
       )
-      .eq('quarter_id', publishedQuarter.id)
+      .eq('quarter_id', publishedBimester.id)
       .eq('event_date', input.targetDate)
       .not('minister_id', 'is', null),
     admin
       .from('schedule_rehearsals')
       .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
-      .eq('quarter_id', publishedQuarter.id)
+      .eq('quarter_id', publishedBimester.id)
       .eq('event_date', input.targetDate),
   ])
 
@@ -246,7 +247,7 @@ async function enqueueReminderNotifications(input: {
   const rows: QueueRow[] = grouped.map((g) => ({
     dedupe_key: `${input.notificationType}:${g.minister_id}:${input.targetDate}`,
     notification_type: input.notificationType,
-    quarter_id: publishedQuarter.id,
+    quarter_id: publishedBimester.id,
     minister_id: g.minister_id,
     event_date: input.targetDate,
     status: 'pending',
@@ -254,7 +255,7 @@ async function enqueueReminderNotifications(input: {
     last_error: null,
     sent_at: null,
     payload_json: {
-      quarter_name: publishedQuarter.name,
+      bimester_name: publishedBimester.name,
       minister_name: g.minister_name,
       minister_email: g.minister_email,
       target_date: input.targetDate,
@@ -303,7 +304,7 @@ type EmailTemplateInput = {
 
 function buildEmailTemplate(input: EmailTemplateInput) {
   const ministerName = String(input.payload.minister_name ?? 'Ministro(a)')
-  const quarterName = String(input.payload.quarter_name ?? 'Escala')
+  const bimesterName = String(input.payload.bimester_name ?? input.payload.quarter_name ?? 'Escala')
   const items = Array.isArray(input.payload.items) ? input.payload.items : []
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
   const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
@@ -355,7 +356,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const lines = sortedEvents.map((event) => {
     const eventDate = event.eventDate ? toPtDate(event.eventDate) : '-'
     const eventType = formatEventType(event.eventType)
-    const isSingleReminderEvent = input.notificationType !== 'quarter_published' && sortedEvents.length === 1
+    const isSingleReminderEvent = input.notificationType !== BIMESTER_PUBLISHED_NOTIFICATION_TYPE && sortedEvents.length === 1
     return {
       header: `${eventDate} • ${eventType}`,
       compactHeader: eventType,
@@ -428,13 +429,13 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       </div>
     </div>`
 
-  if (input.notificationType === 'quarter_published') {
+  if (input.notificationType === BIMESTER_PUBLISHED_NOTIFICATION_TYPE) {
     return {
-      subject: `Nova escala publicada - ${quarterName}`,
+      subject: `Nova escala publicada - ${bimesterName}`,
       text: [
         `Olá, ${ministerName}!`,
         '',
-        `A escala trimestral "${quarterName}" foi publicada.`,
+        `A escala bimestral "${bimesterName}" foi publicada.`,
         '',
         'Suas escalas:',
         ...lines.map((line) => {
@@ -446,8 +447,8 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       ].join('\n'),
       html: emailShell({
         eyebrow: 'Nova escala',
-        title: `Sua escala do trimestre foi publicada`,
-        message: `Olá, ${ministerName}. A escala trimestral "${quarterName}" já está disponível com todas as suas datas e funções.`,
+        title: `Sua escala do bimestre foi publicada`,
+        message: `Olá, ${ministerName}. A escala bimestral "${bimesterName}" já está disponível com todas as suas datas e funções.`,
         accentColor: '#ff3b30',
         accentSoft: '#fff1f0',
         ctaLabel: 'Ver minha escala',

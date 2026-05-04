@@ -7,6 +7,17 @@ import { Header } from '@/components/header'
 import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
@@ -28,12 +39,13 @@ import {
 	Megaphone,
 	MegaphoneOff,
 	Plus,
+	Trash2,
 } from 'lucide-react'
-import { QuarterForm, type QuarterSummary } from '@/components/schedule/QuarterForm'
+import { BimesterForm, type BimesterSummary } from '@/components/schedule/BimesterForm'
 import { ScheduleGrid, type ScheduleAssignment, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
 
-interface QuarterAssignmentsResponse {
-	quarter: QuarterSummary
+interface BimesterAssignmentsResponse {
+	bimester: BimesterSummary
 	roles: ScheduleRole[]
 	assignments: ScheduleAssignment[]
 	dates: {
@@ -62,11 +74,12 @@ function EscalaBuilderContent() {
 	const [formOpen, setFormOpen] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
-	const [quarters, setQuarters] = useState<QuarterSummary[]>([])
-	const [selectedQuarterId, setSelectedQuarterId] = useState<string>('')
-	const [data, setData] = useState<QuarterAssignmentsResponse | null>(null)
+	const [bimesters, setBimesters] = useState<BimesterSummary[]>([])
+	const [selectedBimesterId, setSelectedBimesterId] = useState<string>('')
+	const [data, setData] = useState<BimesterAssignmentsResponse | null>(null)
 	const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
 	const [publishing, setPublishing] = useState(false)
+	const [deleting, setDeleting] = useState(false)
 
 	const loadQuarters = useCallback(async () => {
 		try {
@@ -74,14 +87,14 @@ function EscalaBuilderContent() {
 			const response = await fetch('/api/schedule/quarters', { cache: 'no-store' })
 			const body = await response.json()
 			if (!response.ok) {
-				throw new Error(body.error || 'Erro ao carregar trimestres')
+				throw new Error(body.error || 'Erro ao carregar bimestres')
 			}
 
-			const loaded: QuarterSummary[] = body.quarters ?? []
-			setQuarters(loaded)
+			const loaded: BimesterSummary[] = body.quarters ?? []
+			setBimesters(loaded)
 
 			if (!loaded.length) {
-				setSelectedQuarterId('')
+				setSelectedBimesterId('')
 				return
 			}
 
@@ -91,9 +104,9 @@ function EscalaBuilderContent() {
 				loaded.find((item) => item.is_published)?.id ||
 				loaded[0].id
 
-			setSelectedQuarterId(selected)
+			setSelectedBimesterId(selected)
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Erro ao carregar trimestres')
+			setError(err instanceof Error ? err.message : 'Erro ao carregar bimestres')
 		} finally {
 			setLoadingQuarters(false)
 		}
@@ -120,7 +133,7 @@ function EscalaBuilderContent() {
 
 			setData(body)
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Erro ao carregar dados do trimestre')
+			setError(err instanceof Error ? err.message : 'Erro ao carregar dados do bimestre')
 			setData(null)
 		} finally {
 			setLoadingData(false)
@@ -132,14 +145,14 @@ function EscalaBuilderContent() {
 	}, [loadQuarters])
 
 	useEffect(() => {
-		if (selectedQuarterId) {
-			loadQuarterData(selectedQuarterId)
+		if (selectedBimesterId) {
+			loadQuarterData(selectedBimesterId)
 		}
-	}, [selectedQuarterId, loadQuarterData])
+	}, [selectedBimesterId, loadQuarterData])
 
-	const selectedQuarter = useMemo(
-		() => quarters.find((item) => item.id === selectedQuarterId) ?? null,
-		[quarters, selectedQuarterId]
+	const selectedBimester = useMemo(
+		() => bimesters.find((item) => item.id === selectedBimesterId) ?? null,
+		[bimesters, selectedBimesterId]
 	)
 
 	const handleSaveAssignment = async (payload: SavePayload) => {
@@ -214,15 +227,15 @@ function EscalaBuilderContent() {
 	}
 
 	const togglePublish = async () => {
-		if (!selectedQuarter) return
+		if (!selectedBimester) return
 
 		try {
 			setPublishing(true)
 
-			const response = await fetch(`/api/schedule/quarters/${selectedQuarter.id}/publish`, {
+			const response = await fetch(`/api/schedule/quarters/${selectedBimester.id}/publish`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ is_published: !selectedQuarter.is_published }),
+				body: JSON.stringify({ is_published: !selectedBimester.is_published }),
 			})
 
 			const body = await response.json()
@@ -230,9 +243,9 @@ function EscalaBuilderContent() {
 				throw new Error(body.error || 'Não foi possível atualizar a publicação')
 			}
 
-			const updated = body.quarter as QuarterSummary
+			const updated = body.quarter as BimesterSummary
 
-			setQuarters((current) =>
+			setBimesters((current) =>
 				current.map((item) => {
 					if (item.id === updated.id) return updated
 					if (updated.is_published) return { ...item, is_published: false }
@@ -240,13 +253,13 @@ function EscalaBuilderContent() {
 				})
 			)
 
-			setData((current) => (current ? { ...current, quarter: updated } : current))
+			setData((current) => (current ? { ...current, bimester: updated } : current))
 
 			toast({
-				title: updated.is_published ? 'Trimestre publicado' : 'Trimestre despublicado',
+				title: updated.is_published ? 'Bimestre publicado' : 'Bimestre despublicado',
 				description: updated.is_published
 					? 'A nova escala está visível para toda a equipe.'
-					: 'O trimestre voltou para o modo rascunho.',
+					: 'O bimestre voltou para o modo rascunho.',
 			})
 		} catch (err) {
 			toast({
@@ -256,6 +269,48 @@ function EscalaBuilderContent() {
 			})
 		} finally {
 			setPublishing(false)
+		}
+	}
+
+	const deleteBimester = async () => {
+		if (!selectedBimester) return
+
+		try {
+			setDeleting(true)
+
+			const response = await fetch(`/api/schedule/quarters/${selectedBimester.id}`, {
+				method: 'DELETE',
+			})
+			const body = await response.json()
+
+			if (!response.ok) {
+				throw new Error(body.error || 'Não foi possível apagar o bimestre')
+			}
+
+			const nextBimesters = bimesters.filter((item) => item.id !== selectedBimester.id)
+			setBimesters(nextBimesters)
+
+			if (!nextBimesters.length) {
+				setSelectedBimesterId('')
+				setData(null)
+			} else {
+				const nextSelectedId =
+					nextBimesters.find((item) => item.is_published)?.id ?? nextBimesters[0].id
+				setSelectedBimesterId(nextSelectedId)
+			}
+
+			toast({
+				title: 'Bimestre apagado',
+				description: 'O bimestre e suas alocações foram removidos com sucesso.',
+			})
+		} catch (err) {
+			toast({
+				variant: 'destructive',
+				title: 'Falha ao apagar',
+				description: err instanceof Error ? err.message : 'Erro ao apagar bimestre',
+			})
+		} finally {
+			setDeleting(false)
 		}
 	}
 
@@ -274,7 +329,7 @@ function EscalaBuilderContent() {
 						</Button>
 						<h1 className="text-2xl font-bold text-foreground">Builder da Escala</h1>
 						<p className="text-sm text-muted-foreground">
-							Monte o trimestre por função e data com auto-save em cada célula.
+							Monte o bimestre por função e data com auto-save em cada célula.
 						</p>
 					</div>
 
@@ -288,12 +343,12 @@ function EscalaBuilderContent() {
 						<Button asChild variant="outline">
 							<Link href={ROUTES.SCHEDULE_ADMIN_QUARTERS}>
 								<ListFilter className="mr-2 h-4 w-4" />
-								Ver trimestres
+								Ver bimestres
 							</Link>
 						</Button>
 						<Button onClick={() => setFormOpen(true)}>
 							<Plus className="mr-2 h-4 w-4" />
-							Novo trimestre
+							Novo bimestre
 						</Button>
 					</div>
 				</div>
@@ -307,30 +362,30 @@ function EscalaBuilderContent() {
 
 				<Card className="py-4 mb-4">
 					<CardHeader className="pb-3">
-						<CardTitle className="text-base">Trimestre ativo no builder</CardTitle>
-						<CardDescription>Escolha o trimestre que você quer editar.</CardDescription>
+						<CardTitle className="text-base">Bimestre ativo no builder</CardTitle>
+						<CardDescription>Escolha o bimestre que você quer editar.</CardDescription>
 					</CardHeader>
 					<CardContent className="flex flex-wrap items-center gap-3">
 						<div className="min-w-72 flex-1">
-							<Select value={selectedQuarterId} onValueChange={setSelectedQuarterId} disabled={loadingQuarters || !quarters.length}>
+							<Select value={selectedBimesterId} onValueChange={setSelectedBimesterId} disabled={loadingQuarters || !bimesters.length}>
 								<SelectTrigger>
-									<SelectValue placeholder={loadingQuarters ? 'Carregando trimestres...' : 'Selecione um trimestre'} />
+									<SelectValue placeholder={loadingQuarters ? 'Carregando bimestres...' : 'Selecione um bimestre'} />
 								</SelectTrigger>
 								<SelectContent>
-									{quarters.map((quarter) => (
-										<SelectItem key={quarter.id} value={quarter.id}>
-											{quarter.name}
+									{bimesters.map((bimester) => (
+										<SelectItem key={bimester.id} value={bimester.id}>
+											{bimester.name}
 										</SelectItem>
 									))}
 								</SelectContent>
 							</Select>
 						</div>
 
-						{selectedQuarter && (
+						{selectedBimester && (
 							<>
-								{selectedQuarter.is_published ? <Badge>Publicado</Badge> : <Badge variant="outline">Rascunho</Badge>}
+								{selectedBimester.is_published ? <Badge>Publicado</Badge> : <Badge variant="outline">Rascunho</Badge>}
 								<Button variant="outline" size="sm" onClick={togglePublish} disabled={publishing}>
-									{selectedQuarter.is_published ? (
+									{selectedBimester.is_published ? (
 										<>
 											<MegaphoneOff className="mr-2 h-4 w-4" />
 											Despublicar
@@ -342,6 +397,29 @@ function EscalaBuilderContent() {
 										</>
 									)}
 								</Button>
+								<AlertDialog>
+									<AlertDialogTrigger asChild>
+										<Button variant="destructive" size="sm" disabled={deleting}>
+											<Trash2 className="mr-2 h-4 w-4" />
+											Apagar bimestre
+										</Button>
+									</AlertDialogTrigger>
+									<AlertDialogContent>
+										<AlertDialogHeader>
+											<AlertDialogTitle>Apagar bimestre?</AlertDialogTitle>
+											<AlertDialogDescription>
+												Esta ação é irreversível e vai apagar definitivamente este bimestre, incluindo
+												todas as alocações e ensaios vinculados.
+											</AlertDialogDescription>
+										</AlertDialogHeader>
+										<AlertDialogFooter>
+											<AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+											<AlertDialogAction onClick={deleteBimester} disabled={deleting}>
+												{deleting ? 'Apagando...' : 'Sim, apagar bimestre'}
+											</AlertDialogAction>
+										</AlertDialogFooter>
+									</AlertDialogContent>
+								</AlertDialog>
 							</>
 						)}
 					</CardContent>
@@ -355,8 +433,8 @@ function EscalaBuilderContent() {
 				) : !data ? (
 					<Card>
 						<CardContent className="py-14 text-center">
-							<p className="text-sm font-medium text-foreground">Nenhum trimestre selecionado</p>
-							<p className="mt-1 text-xs text-muted-foreground">Crie um trimestre para começar a montar a escala.</p>
+							<p className="text-sm font-medium text-foreground">Nenhum bimestre selecionado</p>
+							<p className="mt-1 text-xs text-muted-foreground">Crie um bimestre para começar a montar a escala.</p>
 						</CardContent>
 					</Card>
 				) : (
@@ -376,7 +454,7 @@ function EscalaBuilderContent() {
 								{data.dates.thursday.length === 0 ? (
 									<Card>
 										<CardContent className="py-12 text-center text-sm text-muted-foreground">
-											O trimestre não possui datas de quinta-feira nesse período.
+											O bimestre não possui datas de quinta-feira nesse período.
 										</CardContent>
 									</Card>
 								) : (
@@ -395,7 +473,7 @@ function EscalaBuilderContent() {
 								{data.dates.sunday.length === 0 ? (
 									<Card>
 										<CardContent className="py-12 text-center text-sm text-muted-foreground">
-											O trimestre não possui datas de domingo nesse período.
+											O bimestre não possui datas de domingo nesse período.
 										</CardContent>
 									</Card>
 								) : (
@@ -414,12 +492,13 @@ function EscalaBuilderContent() {
 				)}
 			</main>
 
-			<QuarterForm
+			<BimesterForm
 				open={formOpen}
 				onOpenChange={setFormOpen}
-				onCreated={(quarter) => {
-					setQuarters((current) => [quarter, ...current])
-					setSelectedQuarterId(quarter.id)
+				existingBimesters={bimesters}
+				onCreated={(bimester) => {
+					setBimesters((current) => [bimester, ...current])
+					setSelectedBimesterId(bimester.id)
 				}}
 			/>
 		</div>
