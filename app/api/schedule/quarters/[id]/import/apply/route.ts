@@ -1,0 +1,107 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+interface ApplyItem {
+    assignment_id: string
+    minister_id: string | null
+    is_trainee?: boolean
+}
+
+interface ApplyPayload {
+    items?: ApplyItem[]
+}
+
+interface AssignmentApplyRow {
+    id: string
+    quarter_id: string
+    minister_id: string | null
+    is_trainee: boolean
+}
+
+export async function POST(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const { id } = await params
+
+    const supabase = await createClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = (await request.json().catch(() => ({}))) as ApplyPayload
+    const items = payload.items ?? []
+
+    if (!items.length) {
+        return NextResponse.json({ error: 'Nenhuma alteração informada para aplicar' }, { status: 400 })
+    }
+
+    const assignmentIds = Array.from(new Set(items.map((item) => item.assignment_id).filter(Boolean)))
+    if (!assignmentIds.length) {
+        return NextResponse.json({ error: 'Nenhuma célula válida para aplicar' }, { status: 400 })
+    }
+
+    const adminSupabase = createAdminClient()
+
+    const { data: assignments, error: assignmentsError } = await adminSupabase
+        .from('schedule_assignments')
+        .select('id, quarter_id, minister_id, is_trainee')
+        .in('id', assignmentIds)
+        .eq('quarter_id', id)
+
+    if (assignmentsError) {
+        return NextResponse.json({ error: assignmentsError.message }, { status: 500 })
+    }
+
+    const assignmentMap = new Map(
+        ((assignments ?? []) as AssignmentApplyRow[]).map((row) => [row.id, row])
+    )
+
+    let updatedCount = 0
+    let skippedCount = 0
+
+    for (const item of items) {
+        const assignment = assignmentMap.get(item.assignment_id)
+        if (!assignment) {
+            skippedCount += 1
+            continue
+        }
+
+        const nextMinisterId = item.minister_id ?? null
+        const nextIsTrainee = nextMinisterId ? Boolean(item.is_trainee) : false
+
+        const noChanges =
+            assignment.minister_id === nextMinisterId &&
+            Boolean(assignment.is_trainee) === nextIsTrainee
+
+        if (noChanges) {
+            skippedCount += 1
+            continue
+        }
+
+        const { error: updateError } = await adminSupabase
+            .from('schedule_assignments')
+            .update({
+                minister_id: nextMinisterId,
+                is_trainee: nextIsTrainee,
+            })
+            .eq('id', assignment.id)
+
+        if (updateError) {
+            return NextResponse.json({ error: updateError.message }, { status: 500 })
+        }
+
+        updatedCount += 1
+    }
+
+    return NextResponse.json({
+        ok: true,
+        updated_count: updatedCount,
+        skipped_count: skippedCount,
+    })
+}

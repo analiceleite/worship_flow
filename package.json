@@ -77,7 +77,8 @@
     "postcss": "^8.5",
     "tailwindcss": "^4.2.0",
     "tw-animate-css": "1.3.3",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "xlsx": "^0.18.5"
   },
   "devDependenciesAddons": {
     "sharp": "^0.32.1"
