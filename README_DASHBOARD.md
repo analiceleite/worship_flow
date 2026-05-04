@@ -2,7 +2,7 @@
 
 ## O que é
 
-O Dashboard de Alocação é a tela principal do administrador (`/schedule/admin/dashboard`). Ela consolida em uma única view todos os indicadores importantes sobre o preenchimento das escalas de um trimestre: quem está escalado, quais cultos têm vagas em aberto, quais ministros estão sobrecarregados e quais estão sendo pouco aproveitados.
+O Dashboard de Alocação é a tela principal do administrador (`/schedule/admin/dashboard`). Ela consolida em uma única view todos os indicadores importantes sobre o preenchimento das escalas de um bimestre: quem está escalado, quais cultos têm vagas em aberto, quais ministros estão sobrecarregados e quais estão sendo pouco aproveitados.
 
 ---
 
@@ -16,9 +16,9 @@ O Dashboard de Alocação é a tela principal do administrador (`/schedule/admin
 
 ## Estrutura da tela
 
-### 1. Seletor de trimestre
+### 1. Seletor de bimestre
 
-No topo da tela há um `<Select>` com todos os trimestres cadastrados. Por padrão, carrega o trimestre **publicado mais recente**. O administrador pode trocar para qualquer outro trimestre e clicar em **Atualizar** para recarregar os dados.
+No topo da tela há um `<Select>` com todos os bimestres cadastrados. Por padrão, carrega o bimestre **publicado mais recente**. O administrador pode trocar para qualquer outro bimestre e clicar em **Atualizar** para recarregar os dados.
 
 ---
 
@@ -26,7 +26,7 @@ No topo da tela há um `<Select>` com todos os trimestres cadastrados. Por padr�
 
 | Card | O que mede | Verde quando | Vermelho quando |
 |---|---|---|---|
-| **Cobertura geral** | % de posições preenchidas no trimestre | ≥ 80% | < 30% |
+| **Cobertura geral** | % de posições preenchidas no bimestre | ≥ 80% | < 30% |
 | **Vagas em aberto** | Posições sem nenhum ministro definido | 0 vagas | > 0 vagas |
 | **Sobrecarregados** | Ministros com carga > 30% acima da média | Nenhum | ≥ 1 ministro |
 | **Aprendizes** | Total de alocações marcadas como trainee | — | — |
@@ -39,7 +39,7 @@ Lista cada **função da escala** (ex: Guitarra, Bateria, Vocal etc.) com uma ba
 - **Verde** = posições preenchidas
 - **Vermelho claro** = posições vazias
 
-Permite identificar de relance qual função está mais carente de ministros no trimestre.
+Permite identificar de relance qual função está mais carente de ministros no bimestre.
 
 ---
 
@@ -49,7 +49,7 @@ Exibe os 10 ministros mais escalados comparados entre si, usando barras horizont
 
 | Marcador | Cor | O que representa |
 |---|---|---|
-| Linha laranja | Âmbar | Média de escalas por ministro no trimestre |
+| Linha laranja | Âmbar | Média de escalas por ministro no bimestre |
 | Linha vermelha | Vermelho (70% opacidade) | Limite de sobrecarga (+30% acima da média) |
 
 A barra muda de azul para **vermelho** quando o ministro ultrapassa o limite de sobrecarga.
@@ -58,9 +58,9 @@ A barra muda de azul para **vermelho** quando o ministro ultrapassa o limite de 
 
 ### 5. Alertas de Sobrecarga
 
-Lista os ministros cujo número de alocações ultrapassa **30% acima da média do trimestre**.
+Lista os ministros cujo número de alocações ultrapassa **30% acima da média do bimestre**.
 
-Exemplo: se a média do trimestre é 10 escalas por ministro, qualquer um com mais de 16 aparece aqui, com um badge mostrando o quanto está acima (ex: `+73%`).
+Exemplo: se a média do bimestre é 10 escalas por ministro, qualquer um com mais de 16 aparece aqui, com um badge mostrando o quanto está acima (ex: `+73%`).
 
 ---
 
@@ -80,7 +80,7 @@ O ponto colorido indica a gravidade:
 
 ### 7. Resumo por Evento (tabela)
 
-Tabela com todos os cultos do trimestre, filtrável por **Todos / Domingos / Quintas**. Limita a exibição aos 16 primeiros eventos. Cada linha mostra cobertura e badge de vagas restantes.
+Tabela com todos os cultos do bimestre, filtrável por **Todos / Domingos / Quintas**. Limita a exibição aos 16 primeiros eventos. Cada linha mostra cobertura e badge de vagas restantes.
 
 ---
 
@@ -89,7 +89,7 @@ Tabela com todos os cultos do trimestre, filtrável por **Todos / Domingos / Qui
 Lista os 20 primeiros ministros em ordem decrescente de escalas, com:
 - Avatar com iniciais (vermelho = sobrecarregado)
 - Nome e instrumento
-- Total de escalas no trimestre
+- Total de escalas no bimestre
 - Badges de status:
   - **Sobrecarregado** (vermelho) — acima de 130% da média
   - **Subutilizado** (cinza) — abaixo de 70% da média
@@ -120,7 +120,7 @@ GET /api/schedule/admin/analytics?quarter_id=<uuid>
 ```
 
 - **Autenticação:** apenas usuários com `role = 'admin'` têm acesso (retorna 403 caso contrário)
-- **Parâmetro opcional:** `quarter_id` — se omitido, usa o trimestre publicado mais recente
+- **Parâmetro opcional:** `quarter_id` — se omitido, usa o bimestre publicado mais recente
 - **Tabelas consultadas:** `schedule_quarters`, `schedule_roles`, `ministers`, `schedule_assignments`
 
 ---
