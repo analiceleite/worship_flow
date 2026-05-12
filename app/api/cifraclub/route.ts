@@ -101,7 +101,7 @@ async function fetchPage(url: string): Promise<{ $: cheerio.CheerioAPI; html: st
     const response = await fetch(url, {
         headers: {
             'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
             'Accept-Language': 'pt-BR,pt;q=0.9',
             Accept: 'text/html',
         },
@@ -205,8 +205,11 @@ export async function GET(request: NextRequest) {
     const version = searchParams.get('version')?.trim()
     const targetToneParam = searchParams.get('target_tone')?.trim()
 
+    console.log('Received parameters:', { artist, song, version, targetToneParam })
+
     // Validation
     if (!artist || !song) {
+        console.error('Missing required parameters:', { artist, song })
         return NextResponse.json(
             { error: 'Parâmetros "artist" e "song" são obrigatórios.' },
             { status: 400 }
@@ -215,6 +218,7 @@ export async function GET(request: NextRequest) {
 
     const validSlug = /^[a-z0-9-]+$/
     if (!validSlug.test(artist) || !validSlug.test(song)) {
+        console.error('Invalid slugs:', { artist, song })
         return NextResponse.json(
             { error: 'Os slugs precisam conter apenas letras minúsculas, números e hífens.' },
             { status: 400 }
@@ -223,6 +227,7 @@ export async function GET(request: NextRequest) {
 
     const validVersion = /^[a-z0-9-]+\.html$/
     if (version && !validVersion.test(version)) {
+        console.error('Invalid version:', version)
         return NextResponse.json(
             { error: 'A versão da cifra é inválida.' },
             { status: 400 }
@@ -231,6 +236,7 @@ export async function GET(request: NextRequest) {
 
     const targetTone = targetToneParam ? normalizeTone(targetToneParam) : null
     if (targetToneParam && !targetTone) {
+        console.error('Invalid target tone:', targetToneParam)
         return NextResponse.json(
             { error: 'O parâmetro "target_tone" é inválido.' },
             { status: 400 }
@@ -242,8 +248,11 @@ export async function GET(request: NextRequest) {
         ? `${CIFRACLUB_BASE}/${artist}/${song}/${version}`
         : `${CIFRACLUB_BASE}/${artist}/${song}/`
 
+    console.log('Fetching CifraClub page:', basePageUrl)
+
     const basePage = await fetchPage(basePageUrl)
     if (!basePage) {
+        console.error('Failed to fetch CifraClub page:', basePageUrl)
         return NextResponse.json(
             { error: 'Não foi possível acessar o CifraClub. Verifique se o artista/música estão corretos.' },
             { status: 502 }
@@ -251,6 +260,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { $: $base, html: baseHtml } = basePage
+    console.log('Fetched CifraClub page successfully.')
+
     const name = $base('h1.t1').first().text().trim() || song
     const artistName = $base('h2.t3 a').first().text().trim() || artist
 
