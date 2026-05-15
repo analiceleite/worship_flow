@@ -1,19 +1,11 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Song, Minister } from '@/lib/types'
+import { Song, Minister, YouTubeSearchResult } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Separator } from '@/components/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -24,21 +16,9 @@ import {
 } from '@/components/ui/dialog'
 import { createClient } from '@/lib/supabase/client'
 import { Spinner } from '@/components/ui/spinner'
-import { Search } from 'lucide-react'
-import type { CifraClubSong } from '@/app/api/cifraclub/route'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface FormData {
-  title: string
-  artist: string
-  tone: string
-  cipher_url: string
-  youtube_url: string
-  cifra_content: string[] | null
-}
+import { FileUp, Search, X, Youtube } from 'lucide-react'
+import { uploadCifraFile, validateCifraFile } from '@/lib/cifra-storage'
+import { buildYoutubeSearchCacheKey } from '@/lib/youtube-search-cache'
 
 interface SongFormProps {
   open: boolean
@@ -47,10 +27,6 @@ interface SongFormProps {
   onSuccess: () => void
   currentMinister: Minister | null
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function toTitleCase(value: string): string {
   return value
@@ -64,604 +40,460 @@ function ensureHttps(value: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
 }
 
-interface ParsedCifraUrl {
-  artist: string
-  song: string
-  version?: string
+function youtubeWatchUrl(videoId: string): string {
+  return `https://www.youtube.com/watch?v=${videoId}`
 }
-
-/**
- * Parse a CifraClub URL into its slug components.
- * Accepts full URLs or "artist-slug/song-slug" shorthand.
- */
-function parseCifraClubUrl(input: string): ParsedCifraUrl | null {
-  try {
-    const url = new URL(input.trim())
-    const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/')
-    if (parts.length >= 2) {
-      const version = parts[2]?.toLowerCase().endsWith('.html') ? parts[2] : undefined
-      return { artist: parts[0], song: parts[1], version }
-    }
-  } catch {
-    // shorthand: artist/song
-    const parts = input.trim().replace(/^\/+|\/+$/g, '').split('/')
-    if (
-      parts.length >= 2 &&
-      /^[a-z0-9-]+$/.test(parts[0]) &&
-      /^[a-z0-9-]+$/.test(parts[1])
-    ) {
-      const version = parts[2]?.toLowerCase().endsWith('.html') ? parts[2] : undefined
-      return { artist: parts[0], song: parts[1], version }
-    }
-  }
-  return null
-}
-
-function buildApiUrl(parsed: ParsedCifraUrl, targetTone?: string): string {
-  const params = new URLSearchParams({
-    artist: parsed.artist,
-    song: parsed.song,
-  })
-  if (parsed.version) params.set('version', parsed.version)
-  if (targetTone) params.set('target_tone', targetTone)
-  return `/api/cifraclub?${params.toString()}`
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister }: SongFormProps) {
-  // ── State ──────────────────────────────────────────────────────────────────
+  const [title, setTitle] = useState('')
+  const [artist, setArtist] = useState('')
+  const [cifraFile, setCifraFile] = useState<File | null>(null)
+  const [existingPdfPath, setExistingPdfPath] = useState<string | null>(null)
 
-  const [lookupUrl, setLookupUrl] = useState('')
-  const [lookupLoading, setLookupLoading] = useState(false)
-  const [lookupError, setLookupError] = useState<string | null>(null)
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [youtubeVideoTitle, setYoutubeVideoTitle] = useState('')
+  const [youtubeManualUrl, setYoutubeManualUrl] = useState('')
+  const [youtubeQuery, setYoutubeQuery] = useState('')
+  const [youtubeResults, setYoutubeResults] = useState<YouTubeSearchResult[]>([])
+  const [youtubeSearching, setYoutubeSearching] = useState(false)
+  const [youtubeSearchError, setYoutubeSearchError] = useState<string | null>(null)
+  const [youtubeFromCache, setYoutubeFromCache] = useState(false)
 
-  // Tones that are confirmed available for this song by the CifraClub API.
-  // This is the SINGLE source of truth — never derived from the cifra content.
-  const [availableTones, setAvailableTones] = useState<string[]>([])
-
-  // Whether the cifra shown in formData is in sync with the selected tone.
-  const [cifraLoading, setCifraLoading] = useState(false)
-  const [cifraError, setCifraError] = useState<string | null>(null)
-  const [capoFrets, setCapoFrets] = useState<number | null>(null)
-
-  const [formData, setFormData] = useState<FormData>({
-    title: '',
-    artist: '',
-    tone: '',
-    cipher_url: '',
-    youtube_url: '',
-    cifra_content: null,
-  })
-
+  const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const lastYoutubeSearchKeyRef = useRef<string | null>(null)
 
-  // Ref to track the in-flight tone fetch so we can cancel stale requests.
-  const cifraAbortRef = useRef<AbortController | null>(null)
-  // Ref to track which (url, tone) pair the current cifra_content belongs to.
-  const cifraKeyRef = useRef('')
-
-  // ── Reset on open/close ────────────────────────────────────────────────────
+  const YOUTUBE_SEARCH_MAX = 8
 
   useEffect(() => {
     if (!open) return
 
-    setLookupUrl('')
-    setLookupError(null)
-    setCifraError(null)
-    cifraKeyRef.current = ''
-    setCapoFrets(null)
+    setFormError(null)
+    setCifraFile(null)
+    setYoutubeResults([])
+    setYoutubeSearchError(null)
+    setYoutubeFromCache(false)
+    setYoutubeManualUrl('')
+    lastYoutubeSearchKeyRef.current = null
 
     if (song) {
-      const tone = song.tone || ''
-      setFormData({
-        title: song.title || '',
-        artist: song.artist || '',
-        tone,
-        cipher_url: song.cipher_url || '',
-        youtube_url: song.youtube_url || '',
-        // When editing, always re-fetch from API to get a fresh cifra.
-        cifra_content: null,
-      })
-      // Start with empty available tones — the sync effect will populate them
-      // from the API. The select stays disabled until the API responds.
-      setAvailableTones([])
-      setCapoFrets(null)
+      setTitle(song.title || '')
+      setArtist(song.artist || '')
+      setExistingPdfPath(song.cifra_pdf_path ?? null)
+      setYoutubeUrl(song.youtube_url || '')
+      setYoutubeVideoTitle(song.youtube_video_title || '')
+      setYoutubeQuery(`${song.artist} ${song.title}`.trim())
       return
     }
 
-    // New song
-    setAvailableTones([])
-    setFormData({
-      title: '',
-      artist: '',
-      tone: '',
-      cipher_url: '',
-      youtube_url: '',
-      cifra_content: null,
-    })
-    setCapoFrets(null)
+    setTitle('')
+    setArtist('')
+    setExistingPdfPath(null)
+    setYoutubeUrl('')
+    setYoutubeVideoTitle('')
+    setYoutubeQuery('')
   }, [open, song])
 
-  // ── Tone-sync effect ───────────────────────────────────────────────────────
-  // Runs whenever cipher_url or tone changes. Fetches the cifra for the current
-  // (cipher_url, tone) pair from the API. The API is the single source of truth:
-  // it fetches the CifraClub page with the correct ?key= param for that tone.
-
   useEffect(() => {
-    if (!open) return
+    if (!open || song) return
+    const q = `${artist} ${title}`.trim()
+    if (q.length >= 3) setYoutubeQuery(q)
+  }, [open, song, artist, title])
 
-    const cipherUrl = ensureHttps(formData.cipher_url)
-    const selectedTone = formData.tone
-
-    if (!cipherUrl || !selectedTone) return
-
-    const parsed = parseCifraClubUrl(cipherUrl)
-    if (!parsed) return
-
-    const syncKey = `${parsed.artist}|${parsed.song}|${parsed.version ?? ''}|${selectedTone}`
-    if (syncKey === cifraKeyRef.current) return
-
-    // Cancel any previous in-flight request
-    cifraAbortRef.current?.abort()
-    const controller = new AbortController()
-    cifraAbortRef.current = controller
-
-    const fetchCifra = async () => {
-      setCifraLoading(true)
-      setCifraError(null)
-
-      try {
-        const url = buildApiUrl(parsed, selectedTone)
-        const res = await fetch(url, { signal: controller.signal })
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: string; available_tones?: string[] }
-          // If the API returned updated available_tones (e.g. tone not found), update them.
-          if (err.available_tones && err.available_tones.length > 0) {
-            setAvailableTones(err.available_tones)
-          }
-          setCifraError(err.error ?? `Erro ao buscar cifra (${res.status}).`)
-          return
-        }
-
-        const data: CifraClubSong = await res.json()
-
-        // Update available tones from this response (freshest data)
-        if (data.available_tones && data.available_tones.length > 0) {
-          setAvailableTones(data.available_tones)
-        }
-        setCapoFrets(typeof data.capo_frets === 'number' ? data.capo_frets : null)
-
-        // Update formData with the cifra and metadata.
-        // IMPORTANT: never overwrite `tone` here — the user may have already
-        // changed it while this fetch was in flight. The tone the user selected
-        // is the source of truth; the API just fetches the cifra for that tone.
-        setFormData(prev => ({
-          ...prev,
-          title: prev.title || toTitleCase(data.name),
-          artist: prev.artist || toTitleCase(data.artist),
-          youtube_url: prev.youtube_url || data.youtube_url || '',
-          cifra_content: data.cifra && data.cifra.length > 0 ? data.cifra : prev.cifra_content,
-        }))
-
-        cifraKeyRef.current = syncKey
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        setCifraError('Não foi possível buscar a cifra no CifraClub.')
-      } finally {
-        setCifraLoading(false)
-      }
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    setFormError(null)
+    if (!file) {
+      setCifraFile(null)
+      return
     }
-
-    void fetchCifra()
-
-    return () => {
-      controller.abort()
+    const validation = validateCifraFile(file)
+    if (validation) {
+      setFormError(validation)
+      setCifraFile(null)
+      e.target.value = ''
+      return
     }
-    // Only re-run when the URL or tone changes (not every formData change)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, formData.cipher_url, formData.tone])
+    setCifraFile(file)
+  }
 
-  // ── Lookup handler (new songs) ─────────────────────────────────────────────
-
-  const handleLookup = async () => {
-    setLookupError(null)
-
-    const parsed = parseCifraClubUrl(lookupUrl)
-    if (!parsed) {
-      setLookupError(
-        'Cole uma URL do CifraClub válida, ex.: https://www.cifraclub.com.br/anjo-solto/venha-senhor/'
-      )
+  const handleYoutubeSearch = async (forceRefresh = false) => {
+    const q = youtubeQuery.trim()
+    if (q.length < 2) {
+      setYoutubeSearchError('Digite pelo menos 2 caracteres para buscar.')
       return
     }
 
-    setLookupLoading(true)
+    const searchKey = buildYoutubeSearchCacheKey(q, YOUTUBE_SEARCH_MAX)
+    if (
+      !forceRefresh &&
+      lastYoutubeSearchKeyRef.current === searchKey &&
+      youtubeResults.length > 0
+    ) {
+      return
+    }
+
+    setYoutubeSearching(true)
+    setYoutubeSearchError(null)
+    if (forceRefresh) setYoutubeResults([])
+
     try {
-      // First fetch: no target tone — just get metadata + default tone + available tones
-      const res = await fetch(buildApiUrl(parsed))
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string }
-        setLookupError(err.error ?? `Erro ao buscar (${res.status})`)
-        return
-      }
-
-      const data: CifraClubSong = await res.json()
-
-      const tones = data.available_tones?.filter(t => /^[A-G](?:#|b)?m?$/.test(t)) ?? []
-      if (!data.tone || tones.length === 0) {
-        setLookupError(
-          'Não foi possível obter os tons disponíveis desta música no CifraClub. Tente outra versão da cifra.'
-        )
-        return
-      }
-
-      // Validate that the returned tone is actually in the available list
-      if (!tones.includes(data.tone)) {
-        setLookupError(
-          'Tom padrão retornado pelo CifraClub não está na lista de tons disponíveis. Tente outra versão da cifra.'
-        )
-        return
-      }
-
-      setAvailableTones(tones)
-      setCapoFrets(typeof data.capo_frets === 'number' ? data.capo_frets : null)
-      cifraKeyRef.current = '' // force the sync effect to re-run
-
-      setFormData({
-        title: toTitleCase(data.name),
-        artist: toTitleCase(data.artist),
-        tone: data.tone,
-        cipher_url: data.cifraclub_url || `https://www.cifraclub.com.br/${parsed.artist}/${parsed.song}/`,
-        youtube_url: data.youtube_url || '',
-        cifra_content: data.cifra && data.cifra.length > 0 ? data.cifra : null,
+      const params = new URLSearchParams({
+        q,
+        maxResults: String(YOUTUBE_SEARCH_MAX),
       })
+      if (forceRefresh) params.set('refresh', '1')
+
+      const res = await fetch(`/api/youtube/search?${params.toString()}`)
+      const data = (await res.json().catch(() => ({}))) as {
+        results?: YouTubeSearchResult[]
+        cached?: boolean
+        error?: string
+      }
+
+      if (!res.ok) {
+        setYoutubeSearchError(data.error ?? 'Erro ao buscar vídeos.')
+        return
+      }
+
+      lastYoutubeSearchKeyRef.current = searchKey
+      setYoutubeFromCache(Boolean(data.cached))
+      setYoutubeResults(data.results ?? [])
+      if (!data.results?.length) {
+        setYoutubeSearchError('Nenhum vídeo encontrado. Tente outro termo ou cole o link abaixo.')
+      }
     } catch {
-      setLookupError('Não foi possível conectar ao CifraClub. Tente novamente.')
+      setYoutubeSearchError('Não foi possível buscar no YouTube.')
     } finally {
-      setLookupLoading(false)
+      setYoutubeSearching(false)
     }
   }
 
-  // ── Tone change handler ────────────────────────────────────────────────────
-
-  const handleToneChange = (newTone: string) => {
-    // Only allow tones confirmed by the API
-    if (!availableTones.includes(newTone)) return
-
-    setLookupError(null)
-    setCifraError(null)
-    // Clear the sync key BEFORE updating formData so the effect
-    // always sees a new (url, tone) pair and re-fetches immediately.
-    cifraKeyRef.current = ''
-    // Changing tone will trigger the sync effect to fetch the new cifra.
-    // Reset cifra_content so the UI shows loading state while fetching.
-    setFormData(prev => ({ ...prev, tone: newTone, cifra_content: null }))
+  const selectYoutubeVideo = (item: YouTubeSearchResult) => {
+    setYoutubeUrl(youtubeWatchUrl(item.videoId))
+    setYoutubeVideoTitle(item.title)
+    setYoutubeManualUrl(youtubeWatchUrl(item.videoId))
+    setYoutubeSearchError(null)
   }
 
-  // ── Submit ─────────────────────────────────────────────────────────────────
+  const clearYoutubeSelection = () => {
+    setYoutubeUrl('')
+    setYoutubeVideoTitle('')
+    setYoutubeManualUrl('')
+  }
+
+  const applyManualYoutubeUrl = () => {
+    const url = ensureHttps(youtubeManualUrl)
+    if (!url) return
+    setYoutubeUrl(url)
+    setYoutubeVideoTitle('')
+    setYoutubeSearchError(null)
+  }
+
+  const hasCifraSource = Boolean(cifraFile || existingPdfPath)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
 
-    if (cifraLoading) {
-      setLookupError('Aguarde a cifra terminar de carregar antes de salvar.')
+    if (!title.trim() || !artist.trim()) {
+      setFormError('Informe tÃ­tulo e artista.')
       return
     }
 
-    const selectedTone = formData.tone
-    const cipherUrl = ensureHttps(formData.cipher_url)
+    if (!song && !cifraFile) {
+      setFormError('Envie o PDF ou a foto da cifra.')
+      return
+    }
 
-    // For new songs: require lookup to have been done
-    if (!song && (!formData.title.trim() || !selectedTone || !formData.cifra_content)) {
-      setLookupError('Cole o link da cifra e clique em buscar para preencher os dados antes de salvar.')
+    if (song && !cifraFile && !existingPdfPath) {
+      setFormError('Envie o PDF ou a foto da cifra.')
       return
     }
 
     setSaving(true)
-    setLookupError(null)
-
     const supabase = createClient()
 
     try {
-      // ── Always re-fetch the cifra from the API right before saving ───────
-      // This guarantees we persist exactly what the CifraClub serves for this
-      // (song, tone) pair — never a locally transposed version.
-      let cifraToSave: string[] | null = formData.cifra_content
+      const resolvedYoutube = ensureHttps(youtubeUrl || youtubeManualUrl) || null
 
-      const parsed = parseCifraClubUrl(cipherUrl)
-      if (parsed && selectedTone) {
-        const res = await fetch(buildApiUrl(parsed, selectedTone))
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: string }
-          throw new Error(err.error ?? `Erro ${res.status} ao buscar cifra para salvar.`)
-        }
-        const data: CifraClubSong = await res.json()
-
-        if (!data.cifra || data.cifra.length === 0) {
-          throw new Error('A cifra retornada pelo CifraClub está vazia.')
-        }
-
-        cifraToSave = data.cifra
+      const basePayload = {
+        title: toTitleCase(title),
+        artist: toTitleCase(artist),
+        tone: song?.tone ?? 'C',
+        cipher_url: null,
+        youtube_url: resolvedYoutube,
+        youtube_video_title: youtubeVideoTitle.trim() || null,
+        cifra_content: null,
+        capo_frets: 0,
       }
 
-      if (!cifraToSave || cifraToSave.length === 0) {
-        throw new Error('Nenhuma cifra disponível para salvar.')
-      }
-
-      const payload = {
-        title: toTitleCase(formData.title),
-        artist: toTitleCase(formData.artist),
-        tone: selectedTone,
-        cipher_url: cipherUrl || null,
-        youtube_url: ensureHttps(formData.youtube_url) || null,
-        cifra_content: cifraToSave,
-        capo_frets: typeof capoFrets === 'number' ? capoFrets : 0,
-      }
+      let songId = song?.id
 
       const performSave = async (body: Record<string, unknown>) => {
         if (song) {
           return supabase.from('songs').update(body).eq('id', song.id)
         }
-        return supabase.from('songs').insert({
-          ...body,
-          minister_id: currentMinister?.id,
-        })
+        return supabase
+          .from('songs')
+          .insert({ ...body, minister_id: currentMinister?.id })
+          .select('id')
+          .single()
       }
 
-      let { error } = await performSave(payload)
-      // Fallback if the column doesn't exist or is rejected by the DB schema
-      if (error && /capo_frets/i.test(error.message ?? '')) {
-        const { capo_frets, ...rest } = payload
-        console.warn('Retrying save without capo_frets column:', error.message)
-        ;({ error } = await performSave(rest))
+      let saveResult = await performSave(basePayload)
+      if (saveResult.error && /youtube_video_title|cifra_pdf_path/i.test(saveResult.error.message ?? '')) {
+        const { youtube_video_title, ...rest } = basePayload
+        saveResult = await performSave(rest)
       }
 
-      if (error) throw error
+      if (saveResult.error) throw saveResult.error
+
+      if (!song && saveResult.data && 'id' in saveResult.data) {
+        songId = saveResult.data.id as string
+      }
+
+      if (!songId) throw new Error('Nao foi possivel identificar a musica.')
+
+      if (cifraFile) {
+        const path = await uploadCifraFile(supabase, songId, cifraFile)
+        let { error: pathError } = await supabase
+          .from('songs')
+          .update({ cifra_pdf_path: path })
+          .eq('id', songId)
+
+        if (pathError && /cifra_pdf_path/i.test(pathError.message ?? '')) {
+          throw new Error(
+            'Arquivo enviado, mas a coluna cifra_pdf_path não existe. Execute a migration scripts/022_song_cifra_pdf_storage.sql no Supabase.'
+          )
+        }
+        if (pathError) throw pathError
+      }
 
       onSuccess()
       onOpenChange(false)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro desconhecido ao salvar.'
-      setLookupError(msg)
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar a musica.'
+      setFormError(msg)
     } finally {
       setSaving(false)
     }
   }
 
-  // ── Derived state ──────────────────────────────────────────────────────────
-
-  const selectedTone = formData.tone
-  const isLookupDone = Boolean(
-    formData.title.trim() &&
-    formData.artist.trim() &&
-    selectedTone &&
-    formData.cifra_content &&
-    formData.cifra_content.length > 0
-  )
-  const canSave = song ? Boolean(selectedTone) : isLookupDone
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const canSave = Boolean(title.trim() && artist.trim() && (song ? hasCifraSource : cifraFile))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[92dvh] flex-col overflow-hidden sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{song ? 'Editar Música' : 'Nova Música'}</DialogTitle>
+          <DialogTitle>{song ? 'Editar música' : 'Nova música'}</DialogTitle>
           <DialogDescription>
             {song
-              ? 'Atualize as informações da música.'
-              : 'Adicione uma nova música ao repertório.'}
+              ? 'Atualize os dados, a cifra (PDF/foto) ou o video de referência.'
+              : 'Título, artista e arquivo da cifra. Ideal para cadastro no celular.'}
           </DialogDescription>
         </DialogHeader>
 
         <form
           id="song-form"
           onSubmit={handleSubmit}
-          className="space-y-4 overflow-y-auto flex-1 pr-1"
+          className="flex-1 space-y-4 overflow-y-auto pr-1"
         >
-          {/* ── CifraClub lookup (new songs only) ── */}
-          {!song && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="lookup_url">Buscar no CifraClub</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="lookup_url"
-                    value={lookupUrl}
-                    onChange={(e) => {
-                      setLookupUrl(e.target.value)
-                      setLookupError(null)
-                    }}
-                    placeholder="https://www.cifraclub.com.br/artista/musica/"
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon"
-                    onClick={() => void handleLookup()}
-                    disabled={lookupLoading || !lookupUrl.trim()}
-                    title="Buscar cifra"
-                  >
-                    {lookupLoading ? (
-                      <Spinner className="h-4 w-4" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-
-                {lookupError && (
-                  <Alert variant="destructive" className="py-2">
-                    <AlertDescription className="text-xs">{lookupError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {isLookupDone && !cifraLoading && (
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                    ✓ Cifra carregada ({formData.cifra_content!.length} linhas) — campos preenchidos automaticamente.
-                  </p>
-                )}
-              </div>
-              <Separator />
-            </>
-          )}
-
-          {/* ── Song metadata ── */}
-          {!song ? (
-            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">Dados preenchidos automaticamente</p>
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">
-                  {formData.title || 'Aguardando busca da cifra...'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formData.artist || 'Artista será preenchido automaticamente'}
-                </p>
-              </div>
-              {formData.cipher_url && (
-                <p className="truncate text-xs text-muted-foreground">
-                  Fonte: {formData.cipher_url}
-                </p>
-              )}
-              {formData.youtube_url && (
-                <p className="truncate text-xs text-muted-foreground">
-                  YouTube: {formData.youtube_url}
-                </p>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="title">Título</Label>
-                <Input
-                  id="title"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="Nome da música"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="artist">Artista</Label>
-                <Input
-                  id="artist"
-                  value={formData.artist}
-                  onChange={(e) => setFormData({ ...formData, artist: e.target.value })}
-                  placeholder="Nome do artista ou banda"
-                  required
-                />
-              </div>
-            </>
-          )}
-
-          {/* ── Tone selector ── */}
           <div className="space-y-2">
-            <Label htmlFor="tone">Tom</Label>
-            <Select
-              value={selectedTone}
-              onValueChange={handleToneChange}
-              disabled={availableTones.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    availableTones.length === 0
-                      ? song
-                        ? 'Carregando tons...'
-                        : 'Busque a cifra primeiro'
-                      : 'Selecione o tom'
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {availableTones.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="title">Título</Label>
+            <Input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Nome da música"
+              required
+              autoComplete="off"
+            />
+          </div>
 
-            {cifraLoading && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Spinner className="h-3 w-3" />
-                Buscando cifra no CifraClub para o tom {selectedTone}...
-              </p>
-            )}
-            {cifraError && !cifraLoading && (
-              <p className="text-xs text-destructive">{cifraError}</p>
-            )}
-            {!cifraLoading && !cifraError && formData.cifra_content && selectedTone && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                ✓ Cifra em tom {selectedTone} pronta para salvar.
-              </p>
-            )}
-            {capoFrets !== null && capoFrets > 0 && (
-              <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2 py-1">
-                <span className="font-semibold">Capotraste:</span>
-                <span>{capoFrets}ª casa</span>
-                <span className="text-[11px] text-muted-foreground">
-                  (cifra já transposta para soar no tom escolhido)
-                </span>
-              </div>
+          <div className="space-y-2">
+            <Label htmlFor="artist">Artista</Label>
+            <Input
+              id="artist"
+              value={artist}
+              onChange={(e) => setArtist(e.target.value)}
+              placeholder="Nome do artista ou banda"
+              required
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cifra_file">Cifra (PDF ou foto)</Label>
+            <input
+              ref={fileInputRef}
+              id="cifra_file"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              className="sr-only"
+              aria-label="Arquivo da cifra em PDF ou imagem"
+              onChange={handleFileChange}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto w-full flex-col gap-1 py-4"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FileUp className="h-5 w-5" />
+              <span className="text-sm font-medium">
+                {cifraFile
+                  ? cifraFile.name
+                  : existingPdfPath && !cifraFile
+                    ? 'Arquivo atual mantido - toque para substituir'
+                    : 'Escolher da galeria ou arquivos PDF, JPG, PNG ou WebP'}
+              </span>
+              <span className="text-xs text-muted-foreground">PDF, JPG, PNG ou WebP - máx. 10 MB</span>
+            </Button>
+            {cifraFile && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => {
+                  setCifraFile(null)
+                  if (fileInputRef.current) fileInputRef.current.value = ''
+                }}
+              >
+                <X className="mr-1 h-3 w-3" />
+                Remover arquivo selecionado
+              </Button>
             )}
           </div>
 
-          {/* ── Edit-only fields ── */}
-          {song && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="cipher_url">Link da Cifra (opcional)</Label>
-                <Input
-                  id="cipher_url"
-                  type="url"
-                  value={formData.cipher_url}
-                  onChange={(e) => setFormData({ ...formData, cipher_url: e.target.value })}
-                  onBlur={(e) =>
-                    setFormData({ ...formData, cipher_url: ensureHttps(e.target.value) })
-                  }
-                  placeholder="https://cifraclub.com.br/..."
-                />
-              </div>
+          <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+            <div className="flex items-center gap-2">
+              <Youtube className="h-4 w-4 text-destructive" />
+              <Label className="text-sm font-medium">Vídeo no YouTube (opcional)</Label>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="youtube_url">Link do YouTube (opcional)</Label>
+            <div className="flex gap-2">
+              <Input
+                value={youtubeQuery}
+                onChange={(e) => setYoutubeQuery(e.target.value)}
+                placeholder="Buscar vídeo..."
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                onClick={() => void handleYoutubeSearch(false)}
+                disabled={youtubeSearching || youtubeQuery.trim().length < 2}
+                title="Buscar no YouTube"
+              >
+                {youtubeSearching ? <Spinner className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            {youtubeResults.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-0 text-xs text-muted-foreground"
+                disabled={youtubeSearching}
+                onClick={() => void handleYoutubeSearch(true)}
+              >
+                Buscar novamente (ignorar cache)
+              </Button>
+            )}
+
+            {youtubeFromCache && youtubeResults.length > 0 && !youtubeSearchError && (
+              <p className="text-xs text-muted-foreground">
+                Resultados reutilizados do cache — economiza cota da API do YouTube.
+              </p>
+            )}
+
+            {youtubeSearchError && (
+              <p className="text-xs text-muted-foreground">{youtubeSearchError}</p>
+            )}
+
+            {youtubeResults.length > 0 && (
+              <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border bg-background p-1">
+                {youtubeResults.map((item) => (
+                  <li key={item.videoId}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                      onClick={() => selectYoutubeVideo(item)}
+                    >
+                      {item.thumbnailUrl ? (
+                        <img
+                          src={item.thumbnailUrl}
+                          alt=""
+                          className="h-10 w-16 shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="h-10 w-16 shrink-0 rounded bg-muted" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 text-xs font-medium">{item.title}</span>
+                        <span className="line-clamp-1 text-[10px] text-muted-foreground">
+                          {item.channelTitle}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {youtubeUrl && (
+              <div className="flex items-start justify-between gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    Video selecionado
+                  </p>
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {youtubeVideoTitle || youtubeUrl}
+                  </p>
+                </div>
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={clearYoutubeSelection}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label htmlFor="youtube_manual" className="text-xs text-muted-foreground">
+                Ou cole o link do YouTube
+              </Label>
+              <div className="flex gap-2">
                 <Input
-                  id="youtube_url"
+                  id="youtube_manual"
                   type="url"
-                  value={formData.youtube_url}
-                  onChange={(e) => setFormData({ ...formData, youtube_url: e.target.value })}
-                  onBlur={(e) =>
-                    setFormData({ ...formData, youtube_url: ensureHttps(e.target.value) })
-                  }
+                  value={youtubeManualUrl}
+                  onChange={(e) => setYoutubeManualUrl(e.target.value)}
                   placeholder="https://youtube.com/watch?v=..."
+                  className="flex-1"
                 />
+                <Button type="button" variant="outline" size="sm" onClick={applyManualYoutubeUrl}>
+                  Usar
+                </Button>
               </div>
-            </>
-          )}
+            </div>
+          </div>
 
-          {/* ── Global error (save step) ── */}
-          {lookupError && song && (
+          {formError && (
             <Alert variant="destructive" className="py-2">
-              <AlertDescription className="text-xs">{lookupError}</AlertDescription>
+              <AlertDescription className="text-xs">{formError}</AlertDescription>
             </Alert>
           )}
         </form>
 
-        <DialogFooter className="pt-2 border-t">
+        <DialogFooter className="border-t pt-2">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button
-            type="submit"
-            form="song-form"
-            disabled={saving || cifraLoading || !canSave}
-          >
+          <Button type="submit" form="song-form" disabled={saving || !canSave}>
             {saving && <Spinner className="mr-2" />}
             {song ? 'Salvar' : 'Adicionar'}
           </Button>

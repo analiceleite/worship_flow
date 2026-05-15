@@ -936,7 +936,7 @@ export default function RepertorioPage() {
                                                 </p>
                                             </div>
                                             <div className="flex shrink-0 items-center">
-                                                {item.song?.cifra_content && item.song.cifra_content.length > 0 ? (
+                                                {item.song && (item.song.cifra_pdf_path || (item.song.cifra_content && item.song.cifra_content.length > 0)) ? (
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"

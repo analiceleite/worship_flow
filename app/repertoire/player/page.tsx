@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ChevronLeft, ExternalLink, FileText, SkipBack, SkipForward, Youtube } from 'lucide-react'
+import { ChevronLeft, ExternalLink, FileText, Maximize2, SkipBack, SkipForward, Youtube } from 'lucide-react'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { CifraPanel, CifraViewer } from '@/components/cifra-viewer'
 import { Header } from '@/components/header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -14,6 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { Minister, RepertoireItem } from '@/lib/types'
+import { songHasCifra } from '@/lib/cifra-storage'
 
 type TimeSignature = '2/4' | '3/4' | '4/4' | '6/8'
 
@@ -346,6 +348,8 @@ function RepertoirePlayerContent() {
     }, [date, eventName])
 
     const currentItem = items[currentIndex]
+    const isMobile = useIsMobile()
+    const currentSongHasPdf = Boolean(currentItem?.song?.cifra_pdf_path)
     const currentVideoId = useMemo(
         () => extractYouTubeVideoId(currentItem?.song?.youtube_url),
         [currentItem]
@@ -497,11 +501,21 @@ function RepertoirePlayerContent() {
                                     ) : null}
                                 </div>
 
-                                {currentItem?.song?.cifra_content && currentItem.song.cifra_content.length > 0 ? (
+                                {currentItem?.song && songHasCifra(currentItem.song) ? (
                                     <div className="mt-3 flex flex-wrap gap-2">
-                                        <Button type="button" variant="outline" size="sm" onClick={() => setCifraViewerOpen(true)}>
-                                            <FileText className="mr-1.5 h-3.5 w-3.5" />
-                                            Abrir cifra
+                                        <Button
+                                            type="button"
+                                            variant={currentSongHasPdf ? 'default' : 'outline'}
+                                            size={currentSongHasPdf ? 'default' : 'sm'}
+                                            className={currentSongHasPdf ? 'w-full sm:w-auto' : undefined}
+                                            onClick={() => setCifraViewerOpen(true)}
+                                        >
+                                            {currentSongHasPdf ? (
+                                                <Maximize2 className="mr-1.5 h-4 w-4" />
+                                            ) : (
+                                                <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                            )}
+                                            {currentSongHasPdf ? 'Cifra em tela cheia' : 'Abrir cifra'}
                                         </Button>
                                         {currentItem.song.cipher_url ? (
                                             <Button type="button" variant="ghost" size="sm" asChild>
@@ -710,21 +724,40 @@ function RepertoirePlayerContent() {
                                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Referência da cifra</p>
                                         <p className="text-xs text-muted-foreground">Acompanhe a música real com a cifra local e use o metrônomo se quiser.</p>
                                     </div>
-                                    {currentItem?.song?.cifra_content && currentItem.song.cifra_content.length > 0 ? (
+                                    {currentItem?.song && songHasCifra(currentItem.song) ? (
                                         <Button type="button" variant="outline" size="sm" onClick={() => setCifraViewerOpen(true)}>
-                                            <FileText className="mr-1.5 h-3.5 w-3.5" />
-                                            Expandir
+                                            {currentSongHasPdf ? (
+                                                <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
+                                            ) : (
+                                                <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                            )}
+                                            {currentSongHasPdf ? 'Tela cheia' : 'Expandir'}
                                         </Button>
                                     ) : null}
                                 </div>
 
                                 {currentItem?.song ? (
-                                    currentItem.song.cifra_content && currentItem.song.cifra_content.length > 0 ? (
-                                        <CifraPanel
-                                            song={currentItem.song}
-                                            heightClassName="h-[26rem] rounded-lg border bg-background"
-                                            contentClassName="px-3 py-3 font-mono text-[12px] leading-5 text-foreground sm:text-[13px] sm:leading-6"
-                                        />
+                                    songHasCifra(currentItem.song) ? (
+                                        currentSongHasPdf && isMobile ? (
+                                            <Button
+                                                type="button"
+                                                className="h-24 w-full flex-col gap-2 text-base"
+                                                onClick={() => setCifraViewerOpen(true)}
+                                            >
+                                                <Maximize2 className="h-6 w-6" />
+                                                Abrir cifra em tela cheia
+                                            </Button>
+                                        ) : (
+                                            <CifraPanel
+                                                song={currentItem.song}
+                                                heightClassName={
+                                                    currentSongHasPdf
+                                                        ? 'h-[min(75dvh,36rem)] lg:h-[min(82dvh,44rem)] xl:h-[min(85dvh,48rem)] rounded-lg border bg-background'
+                                                        : 'h-[26rem] lg:h-[28rem] rounded-lg border bg-background'
+                                                }
+                                                contentClassName="px-3 py-3 font-mono text-[12px] leading-5 text-foreground sm:text-[13px] sm:leading-6"
+                                            />
+                                        )
                                     ) : (
                                         <div className="rounded-lg border bg-background px-3 py-6 text-sm text-muted-foreground">
                                             Cifra local não disponível para esta música.

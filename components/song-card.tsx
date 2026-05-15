@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Music, Youtube, FileText, Pencil, Trash2, Copy } from 'lucide-react'
 import { CifraViewer } from '@/components/cifra-viewer'
+import { songHasCifra } from '@/lib/cifra-storage'
 
 interface SongCardProps {
   song: Song
@@ -19,7 +20,8 @@ interface SongCardProps {
 
 export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister = false, duplicateCount = 1 }: SongCardProps) {
   const [cifraOpen, setCifraOpen] = useState(false)
-  const hasLocalCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
+  const hasLocalCifra = songHasCifra(song)
+  const showToneBadge = Boolean(song.cifra_content && song.cifra_content.length > 0)
 
   const getYoutubeId = (url: string) => {
     const match = url.match(/(?:youtu\.be\/|youtube\.com(?:\/embed\/|\/v\/|\/watch\?v=|\/watch\?.+&v=))([\w-]{11})/)
@@ -125,9 +127,11 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
                 {song.artist}
               </p>
             </div>
-            <Badge variant="secondary" className="shrink-0 font-mono text-xs">
-              {song.tone}
-            </Badge>
+            {showToneBadge ? (
+              <Badge variant="secondary" className="shrink-0 font-mono text-xs">
+                {song.tone}
+              </Badge>
+            ) : null}
           </div>
 
           {(showMinister || duplicateCount > 1) && (

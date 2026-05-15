@@ -6,7 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Song } from '@/lib/types'
-import { ExternalLink, Pause, Play, RotateCcw } from 'lucide-react'
+import { songHasCifra } from '@/lib/cifra-storage'
+import { CifraPdfViewer } from '@/components/cifra-pdf-viewer'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { ExternalLink, Pause, Play, RotateCcw, X } from 'lucide-react'
+import { DialogClose } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 
 interface CifraViewerProps {
     song: Song | null
@@ -17,6 +22,7 @@ interface CifraViewerProps {
 interface CifraContentProps {
     song: Song
     className?: string
+    pdfVariant?: 'embedded' | 'fullscreen'
 }
 
 interface CifraPanelProps {
@@ -78,7 +84,20 @@ function renderLine(line: string, lineIndex: number) {
     )
 }
 
-export function CifraContent({ song, className }: CifraContentProps) {
+export function CifraContent({ song, className, pdfVariant = 'embedded' }: CifraContentProps) {
+    const isMobile = useIsMobile()
+
+    if (song.cifra_pdf_path) {
+        return (
+            <CifraPdfViewer
+                storagePath={song.cifra_pdf_path}
+                variant={pdfVariant}
+                className={cn('h-full w-full', className)}
+                showToolbar={pdfVariant === 'embedded' || (pdfVariant === 'fullscreen' && !isMobile)}
+            />
+        )
+    }
+
     if (song.cifra_content && song.cifra_content.length > 0) {
         return (
             <div className={className ?? 'px-3 py-3 font-mono text-[13px] leading-6 text-foreground sm:text-sm sm:leading-6'}>
@@ -101,7 +120,9 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(false)
     const [secondsPerScreen, setSecondsPerScreen] = useState(DEFAULT_SECONDS_PER_SCREEN)
 
-    const hasCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
+    const hasPdfCifra = Boolean(song.cifra_pdf_path)
+    const hasTextCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
+    const hasCifra = songHasCifra(song)
 
     const speedLabel = useMemo(() => {
         if (secondsPerScreen === 1) return '1 segundo por tela'
@@ -229,7 +250,7 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
 
     return (
         <div className="flex h-full min-h-0 flex-col gap-3">
-            {hasCifra ? (
+            {hasTextCifra ? (
                 <div className="flex shrink-0 flex-col gap-3 rounded-md border bg-background px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Autorrolagem</p>
@@ -277,12 +298,23 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
             ) : null}
 
             <div ref={rootRef} className="min-h-0 flex-1">
-                <ScrollArea className={heightClassName ?? 'h-full rounded-md border bg-muted/40'}>
-                    <CifraContent
-                        song={song}
-                        className={contentClassName ?? 'px-3 py-3 font-mono text-[13px] leading-6 text-foreground sm:text-sm sm:leading-6'}
-                    />
-                </ScrollArea>
+                {hasPdfCifra ? (
+                    <div
+                        className={cn(
+                            'h-full min-h-[min(70dvh,28rem)] lg:min-h-[min(75dvh,36rem)] xl:min-h-[min(80dvh,42rem)]',
+                            heightClassName
+                        )}
+                    >
+                        <CifraContent song={song} pdfVariant="embedded" className="h-full" />
+                    </div>
+                ) : (
+                    <ScrollArea className={heightClassName ?? 'h-full rounded-md border bg-muted/40'}>
+                        <CifraContent
+                            song={song}
+                            className={contentClassName ?? 'px-3 py-3 font-mono text-[13px] leading-6 text-foreground sm:text-sm sm:leading-6'}
+                        />
+                    </ScrollArea>
+                )}
             </div>
         </div>
     )
@@ -291,32 +323,106 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
 export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
     if (!song) return null
 
-    // Some older rows may store the capo value under a legacy `capo` column.
+    const isMobile = useIsMobile()
+    const hasPdfCifra = Boolean(song.cifra_pdf_path)
+    const hasTextCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
+
     const capoFrets = typeof song.capo_frets === 'number'
         ? song.capo_frets
         : typeof (song as any)?.capo === 'number'
             ? (song as any).capo
             : null
 
+    if (hasPdfCifra) {
+        return (
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent
+                    showCloseButton={false}
+                    className={cn(
+                        'fixed z-50 flex flex-col gap-0 overflow-hidden p-0',
+                        isMobile
+                            ? 'inset-0 top-0 left-0 h-[100dvh] max-h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 rounded-none border-0 pb-[env(safe-area-inset-bottom)] shadow-none'
+                            : 'inset-auto top-[50%] left-[50%] h-[96vh] max-h-[96vh] w-[min(94vw,1200px)] max-w-[1200px] -translate-x-1/2 -translate-y-1/2 rounded-xl border shadow-2xl'
+                    )}
+                >
+                    <header
+                        className={cn(
+                            'flex shrink-0 items-center gap-3 border-b border-border/60 bg-background/95 backdrop-blur-sm',
+                            isMobile
+                                ? 'px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]'
+                                : 'px-5 py-3.5'
+                        )}
+                    >
+                        <div className="min-w-0 flex-1">
+                            <DialogTitle
+                                className={cn(
+                                    'truncate text-left leading-tight',
+                                    isMobile ? 'text-base' : 'text-xl'
+                                )}
+                            >
+                                {song.title}
+                            </DialogTitle>
+                            <p
+                                className={cn(
+                                    'truncate text-muted-foreground',
+                                    isMobile ? 'text-xs' : 'text-sm'
+                                )}
+                            >
+                                {song.artist}
+                            </p>
+                            {!isMobile ? (
+                                <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
+                                    Esc para fechar · use a barra abaixo para tela cheia ou nova aba
+                                </p>
+                            ) : null}
+                        </div>
+                        <DialogClose asChild>
+                            <Button
+                                type="button"
+                                variant={isMobile ? 'outline' : 'secondary'}
+                                size={isMobile ? 'icon' : 'default'}
+                                className={cn('shrink-0', isMobile ? 'h-9 w-9 rounded-full' : 'gap-1.5')}
+                                aria-label="Fechar cifra"
+                            >
+                                <X className="h-4 w-4" />
+                                {!isMobile ? <span>Fechar</span> : null}
+                            </Button>
+                        </DialogClose>
+                    </header>
+                    <div className="min-h-0 flex-1 overflow-hidden bg-zinc-100 dark:bg-zinc-950">
+                        <CifraContent song={song} pdfVariant="fullscreen" className="h-full" />
+                    </div>
+                </DialogContent>
+            </Dialog>
+        )
+    }
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="flex h-[92dvh] max-h-[92dvh] w-[96vw] max-w-4xl flex-col p-3 sm:p-5">
+            <DialogContent
+                className={cn(
+                    'flex max-h-[92dvh] flex-col p-3 sm:p-5',
+                    isMobile ? 'h-[100dvh] max-h-[100dvh] w-full max-w-none' : 'h-[94dvh] w-[min(96vw,1100px)] max-w-[1100px]'
+                )}
+            >
                 <DialogHeader className="shrink-0">
                     <div className="flex items-start justify-between gap-3 pr-8">
                         <div className="min-w-0">
                             <DialogTitle className="truncate text-lg">{song.title}</DialogTitle>
                             <p className="mt-0.5 truncate text-sm text-muted-foreground">{song.artist}</p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="secondary" className="mt-0.5 shrink-0 font-mono text-xs">
-                                {song.tone}
-                            </Badge>
-                            {capoFrets && capoFrets > 0 ? (
-                                <Badge variant="outline" className="mt-0.5 shrink-0 text-xs">
-                                    Capo: {capoFrets}ª casa
+                        {hasTextCifra ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="secondary" className="mt-0.5 shrink-0 font-mono text-xs">
+                                    {song.tone}
                                 </Badge>
-                            ) : null}
-                        </div>
+                                {capoFrets && capoFrets > 0 ? (
+                                    <Badge variant="outline" className="mt-0.5 shrink-0 text-xs">
+                                        Capo: {capoFrets}ª casa
+                                    </Badge>
+                                ) : null}
+                            </div>
+                        ) : null}
                     </div>
                     {song.cipher_url && (
                         <div className="mt-2">

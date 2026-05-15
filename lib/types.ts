@@ -17,11 +17,20 @@ export interface Song {
   tone: string
   cipher_url: string | null
   youtube_url: string | null
+  youtube_video_title?: string | null
   cifra_content: string[] | null
+  cifra_pdf_path?: string | null
   capo_frets?: number | null
   minister_id: string
   created_at: string
   minister?: Minister
+}
+
+export interface YouTubeSearchResult {
+  videoId: string
+  title: string
+  channelTitle: string
+  thumbnailUrl: string
 }
 
 export interface RepertoireItem {
