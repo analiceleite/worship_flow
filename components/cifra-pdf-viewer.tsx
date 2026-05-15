@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getCifraSignedUrl, isPdfStoragePath } from '@/lib/cifra-storage'
+import { PdfScrollViewer } from '@/components/pdf-scroll-viewer'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { ExternalLink, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react'
@@ -10,21 +11,19 @@ import { cn } from '@/lib/utils'
 
 export type CifraPdfViewerVariant = 'embedded' | 'fullscreen'
 
-interface CifraPdfViewerProps {
-  storagePath: string
+interface CifraPdfViewerProps {  storagePath: string
   variant?: CifraPdfViewerVariant
   className?: string
   showToolbar?: boolean
 }
 
-function pdfViewerUrl(signedUrl: string): string {
-  const hash = 'toolbar=0&navpanes=0&scrollbar=1&view=FitH'
-  return signedUrl.includes('#') ? signedUrl : `${signedUrl}#${hash}`
-}
-
 const IMAGE_ZOOM_MIN = 0.75
 const IMAGE_ZOOM_MAX = 2.5
 const IMAGE_ZOOM_STEP = 0.25
+
+const PDF_ZOOM_MIN = 0.75
+const PDF_ZOOM_MAX = 2
+const PDF_ZOOM_STEP = 0.15
 
 export function CifraPdfViewer({
   storagePath,
@@ -38,6 +37,7 @@ export function CifraPdfViewer({
   const [error, setError] = useState<string | null>(null)
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false)
   const [imageZoom, setImageZoom] = useState(1)
+  const [pdfZoom, setPdfZoom] = useState(1)
 
   const isFullscreen = variant === 'fullscreen'
   const isPdf = isPdfStoragePath(storagePath)
@@ -48,6 +48,7 @@ export function CifraPdfViewer({
     setError(null)
     setSignedUrl(null)
     setImageZoom(1)
+    setPdfZoom(1)
 
     const load = async () => {
       const supabase = createClient()
@@ -97,6 +98,13 @@ export function CifraPdfViewer({
     })
   }, [])
 
+  const adjustPdfZoom = useCallback((delta: number) => {
+    setPdfZoom((current) => {
+      const next = Math.round((current + delta) * 100) / 100
+      return Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, next))
+    })
+  }, [])
+
   if (loading) {
     return (
       <div
@@ -141,7 +149,37 @@ export function CifraPdfViewer({
             isFullscreen && 'sm:px-4'
           )}
         >
-          {!isPdf && (
+          {isPdf ? (
+            <div className="mr-auto flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => adjustPdfZoom(-PDF_ZOOM_STEP)}
+                disabled={pdfZoom <= PDF_ZOOM_MIN}
+                title="Diminuir zoom do PDF"
+                aria-label="Diminuir zoom do PDF"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[3rem] text-center text-xs tabular-nums text-muted-foreground">
+                {Math.round(pdfZoom * 100)}%
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => adjustPdfZoom(PDF_ZOOM_STEP)}
+                disabled={pdfZoom >= PDF_ZOOM_MAX}
+                title="Aumentar zoom do PDF"
+                aria-label="Aumentar zoom do PDF"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
             <div className="mr-auto flex items-center gap-1">
               <Button
                 type="button"
@@ -196,13 +234,9 @@ export function CifraPdfViewer({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {isPdf ? (
-          <iframe
-            src={pdfViewerUrl(signedUrl)}
-            title="Cifra em PDF"
-            className="absolute inset-0 h-full w-full border-0 bg-white dark:bg-zinc-950"
-          />
+          <PdfScrollViewer url={signedUrl} zoom={pdfZoom} className="absolute inset-0 h-full bg-white dark:bg-zinc-950" />
         ) : (
           <div className="absolute inset-0 overflow-auto overscroll-contain bg-zinc-100 [-webkit-overflow-scrolling:touch] dark:bg-zinc-950">
             <div className="flex min-h-full justify-center p-3 sm:p-6">
