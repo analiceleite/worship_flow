@@ -55,7 +55,6 @@ export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerPro
   const renderGenerationRef = useRef(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pageCount, setPageCount] = useState(0)
 
   const renderPdf = useCallback(async () => {
     const wrap = pagesWrapRef.current
@@ -65,7 +64,6 @@ export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerPro
     const gen = ++renderGenerationRef.current
     setLoading(true)
     setError(null)
-    setPageCount(0)
     wrap.innerHTML = ''
 
     try {
@@ -87,12 +85,11 @@ export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerPro
       if (gen !== renderGenerationRef.current) return
 
       const numPages = pdf.numPages
-      setPageCount(numPages)
 
       const rawDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
       const dpr = Math.min(rawDpr, 2)
 
-      const containerW = Math.max(scrollEl.clientWidth - 24, 120)
+      const containerW = Math.max(scrollEl.clientWidth - 12, 120)
 
       for (let pageNum = 1; pageNum <= numPages; pageNum++) {
         if (gen !== renderGenerationRef.current) return
@@ -132,12 +129,7 @@ export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerPro
 
         const pageWrap = document.createElement('div')
         pageWrap.className =
-          'flex justify-center border-b border-zinc-200/80 px-3 pb-6 pt-2 dark:border-zinc-800'
-        const label = document.createElement('div')
-        label.className =
-          'mb-2 w-full max-w-[min(100%,56rem)] text-center text-[11px] font-medium text-muted-foreground'
-        label.textContent = `Página ${pageNum} de ${numPages}`
-        pageWrap.appendChild(label)
+          'flex justify-center border-b border-zinc-200/80 px-2 pb-3 pt-1 dark:border-zinc-800'
         pageWrap.appendChild(canvas)
         wrap.appendChild(pageWrap)
       }
@@ -215,13 +207,7 @@ export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerPro
           {error}
         </div>
       )}
-      {!loading && !error && pageCount > 1 && (
-        <p className="sticky top-0 z-[1] border-b border-border/50 bg-background/95 px-3 py-2 text-center text-xs text-muted-foreground backdrop-blur-sm">
-          {pageCount} páginas — <span className="font-medium text-foreground">deslize para baixo</span> para as
-          próximas
-        </p>
-      )}
-      <div ref={pagesWrapRef} className="min-h-0 bg-zinc-100 py-2 dark:bg-zinc-950" />
+      <div ref={pagesWrapRef} className="min-h-0 bg-zinc-100 dark:bg-zinc-950" />
     </div>
   )
 }
