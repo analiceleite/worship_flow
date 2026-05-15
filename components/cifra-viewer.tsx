@@ -389,8 +389,8 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
                             </Button>
                         </DialogClose>
                     </header>
-                    <div className="min-h-0 flex-1 overflow-hidden bg-zinc-100 dark:bg-zinc-950">
-                        <CifraContent song={song} pdfVariant="fullscreen" className="h-full" />
+                    <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
+                        <CifraContent song={song} pdfVariant="fullscreen" className="min-h-0 flex-1" />
                     </div>
                 </DialogContent>
             </Dialog>

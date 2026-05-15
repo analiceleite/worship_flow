@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils'
 
 export type CifraPdfViewerVariant = 'embedded' | 'fullscreen'
 
-interface CifraPdfViewerProps {  storagePath: string
+interface CifraPdfViewerProps {
+  storagePath: string
   variant?: CifraPdfViewerVariant
   className?: string
   showToolbar?: boolean
@@ -234,9 +235,9 @@ export function CifraPdfViewer({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
         {isPdf ? (
-          <PdfScrollViewer url={signedUrl} zoom={pdfZoom} className="absolute inset-0 h-full bg-white dark:bg-zinc-950" />
+          <PdfScrollViewer url={signedUrl} zoom={pdfZoom} className="min-h-0 flex-1 bg-white dark:bg-zinc-950" />
         ) : (
           <div className="absolute inset-0 overflow-auto overscroll-contain bg-zinc-100 [-webkit-overflow-scrolling:touch] dark:bg-zinc-950">
             <div className="flex min-h-full justify-center p-3 sm:p-6">
