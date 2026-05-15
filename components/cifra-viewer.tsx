@@ -85,15 +85,12 @@ function renderLine(line: string, lineIndex: number) {
 }
 
 export function CifraContent({ song, className, pdfVariant = 'embedded' }: CifraContentProps) {
-    const isMobile = useIsMobile()
-
     if (song.cifra_pdf_path) {
         return (
             <CifraPdfViewer
                 storagePath={song.cifra_pdf_path}
                 variant={pdfVariant}
                 className={cn('h-full w-full', className)}
-                showToolbar={pdfVariant === 'embedded' || (pdfVariant === 'fullscreen' && !isMobile)}
             />
         )
     }

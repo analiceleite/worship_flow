@@ -9,6 +9,10 @@ interface PdfScrollViewerProps {
   url: string
   /** Multiplicador de largura base (1 = encaixa na largura do container). */
   zoom?: number
+  zoomMin?: number
+  zoomMax?: number
+  /** Pinça com dois dedos (touch): atualiza zoom ao soltar. */
+  onZoomChange?: (zoom: number) => void
   className?: string
 }
 
@@ -49,12 +53,109 @@ function waitForNonZeroWidth(el: HTMLElement | null, maxFrames = 24): Promise<vo
  * Usa ArrayBuffer em vez de URL no pdf.js para evitar range requests falhando
  * (comum com URLs assinadas) e só 1 página aparecendo no iPhone.
  */
-export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerProps) {
+export function PdfScrollViewer({
+  url,
+  zoom = 1,
+  zoomMin = 0.75,
+  zoomMax = 2.5,
+  onZoomChange,
+  className,
+}: PdfScrollViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const pinchVisualRef = useRef<HTMLDivElement>(null)
   const pagesWrapRef = useRef<HTMLDivElement>(null)
+  const zoomPropRef = useRef(zoom)
   const renderGenerationRef = useRef(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    zoomPropRef.current = zoom
+  }, [zoom])
+
+  /** Pinça (2 dedos): pré-visualização em CSS; ao soltar reaplica zoom no pdf.js (nitidez). */
+  useEffect(() => {
+    const root = scrollRef.current
+    const visual = pinchVisualRef.current
+    if (!root || !visual || !onZoomChange) return
+
+    let pinchActive = false
+    let startDist = 0
+    let baseZoom = 1
+    let lastMult = 1
+
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+
+    const resetVisual = () => {
+      visual.style.transform = ''
+      visual.style.transformOrigin = ''
+      visual.style.willChange = 'auto'
+    }
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchActive = true
+        startDist = dist(e.touches)
+        baseZoom = zoomPropRef.current
+        lastMult = 1
+        if (startDist >= 24) {
+          visual.style.willChange = 'transform'
+          visual.style.transformOrigin = 'top center'
+        }
+      }
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pinchActive || e.touches.length !== 2 || startDist < 24) return
+      lastMult = dist(e.touches) / startDist
+      visual.style.transformOrigin = 'top center'
+      visual.style.transform = `scale(${lastMult})`
+      e.preventDefault()
+    }
+
+    const finishPinchIfNeeded = () => {
+      if (!pinchActive) return
+      pinchActive = false
+      resetVisual()
+      const mult = lastMult
+      lastMult = 1
+      startDist = 0
+      if (Math.abs(mult - 1) < 0.04) return
+      const raw = baseZoom * mult
+      const next = Math.round(Math.min(zoomMax, Math.max(zoomMin, raw)) * 100) / 100
+      if (Math.abs(next - baseZoom) >= 0.02) {
+        onZoomChange(next)
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!pinchActive) return
+      if (e.touches.length >= 2) return
+      finishPinchIfNeeded()
+    }
+
+    const onTouchCancel = () => {
+      if (!pinchActive) return
+      pinchActive = false
+      resetVisual()
+      lastMult = 1
+      startDist = 0
+    }
+
+    root.addEventListener('touchstart', onTouchStart, { passive: true })
+    root.addEventListener('touchmove', onTouchMove, { passive: false })
+    root.addEventListener('touchend', onTouchEnd, { passive: true })
+    root.addEventListener('touchcancel', onTouchCancel, { passive: true })
+
+    return () => {
+      root.removeEventListener('touchstart', onTouchStart)
+      root.removeEventListener('touchmove', onTouchMove)
+      root.removeEventListener('touchend', onTouchEnd)
+      root.removeEventListener('touchcancel', onTouchCancel)
+      resetVisual()
+    }
+  }, [onZoomChange, zoomMin, zoomMax])
 
   const renderPdf = useCallback(async () => {
     const wrap = pagesWrapRef.current
@@ -207,7 +308,12 @@ export function PdfScrollViewer({ url, zoom = 1, className }: PdfScrollViewerPro
           {error}
         </div>
       )}
-      <div ref={pagesWrapRef} className="min-h-0 bg-zinc-100 dark:bg-zinc-950" />
+      <div
+        ref={pinchVisualRef}
+        className="min-h-0 origin-top bg-zinc-100 dark:bg-zinc-950"
+      >
+        <div ref={pagesWrapRef} className="min-h-0" />
+      </div>
     </div>
   )
 }

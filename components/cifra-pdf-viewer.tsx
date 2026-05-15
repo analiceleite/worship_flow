@@ -23,7 +23,7 @@ const IMAGE_ZOOM_MAX = 2.5
 const IMAGE_ZOOM_STEP = 0.25
 
 const PDF_ZOOM_MIN = 0.75
-const PDF_ZOOM_MAX = 2
+const PDF_ZOOM_MAX = 2.5
 const PDF_ZOOM_STEP = 0.15
 
 export function CifraPdfViewer({
@@ -146,7 +146,7 @@ export function CifraPdfViewer({
       {showToolbar && (
         <div
           className={cn(
-            'flex shrink-0 flex-wrap items-center justify-end gap-1 border-b border-border/60 bg-background/95 px-3 py-2 backdrop-blur-sm',
+            'flex shrink-0 flex-wrap items-center justify-end gap-1 border-b border-border/60 bg-background/95 px-2 py-1.5 backdrop-blur-sm sm:gap-1 sm:px-3 sm:py-2',
             isFullscreen && 'sm:px-4'
           )}
         >
@@ -215,7 +215,7 @@ export function CifraPdfViewer({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 text-xs"
+            className="h-8 gap-1 text-xs sm:gap-1.5"
             onClick={() => void toggleNativeFullscreen()}
             title={isNativeFullscreen ? 'Sair da tela cheia do sistema' : 'Tela cheia do sistema'}
           >
@@ -224,12 +224,12 @@ export function CifraPdfViewer({
             ) : (
               <Maximize2 className="h-4 w-4" />
             )}
-            <span>Tela cheia</span>
+            <span className="hidden sm:inline">Tela cheia</span>
           </Button>
-          <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" asChild>
-            <a href={signedUrl} target="_blank" rel="noopener noreferrer">
+          <Button type="button" variant="ghost" size="sm" className="h-8 gap-1 text-xs sm:gap-1.5" asChild>
+            <a href={signedUrl} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba">
               <ExternalLink className="h-4 w-4" />
-              <span>Abrir em nova aba</span>
+              <span className="hidden sm:inline">Abrir em nova aba</span>
             </a>
           </Button>
         </div>
@@ -237,7 +237,16 @@ export function CifraPdfViewer({
 
       <div className="relative flex min-h-0 flex-1 basis-0 flex-col overflow-hidden">
         {isPdf ? (
-          <PdfScrollViewer url={signedUrl} zoom={pdfZoom} className="min-h-0 flex-1 bg-white dark:bg-zinc-950" />
+          <PdfScrollViewer
+            url={signedUrl}
+            zoom={pdfZoom}
+            zoomMin={PDF_ZOOM_MIN}
+            zoomMax={PDF_ZOOM_MAX}
+            onZoomChange={(z) =>
+              setPdfZoom(Math.round(Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, z)) * 100) / 100)
+            }
+            className="min-h-0 flex-1 bg-white dark:bg-zinc-950"
+          />
         ) : (
           <div className="absolute inset-0 overflow-auto overscroll-contain bg-zinc-100 [-webkit-overflow-scrolling:touch] dark:bg-zinc-950">
             <div className="flex min-h-full justify-center p-3 sm:p-6">
