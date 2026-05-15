@@ -67,8 +67,16 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const YOUTUBE_SEARCH_MAX = 8
 
   useEffect(() => {
+    if (!open) {
+      setSaving(false)
+      setYoutubeSearching(false)
+    }
+  }, [open])
+
+  useEffect(() => {
     if (!open) return
 
+    setSaving(false)
     setFormError(null)
     setCifraFile(null)
     setYoutubeResults([])
@@ -195,10 +203,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (saving) return
     setFormError(null)
 
     if (!title.trim() || !artist.trim()) {
-      setFormError('Informe tÃ­tulo e artista.')
+      setFormError('Informe título e artista.')
       return
     }
 
@@ -254,7 +263,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         songId = saveResult.data.id as string
       }
 
-      if (!songId) throw new Error('Nao foi possivel identificar a musica.')
+      if (!songId) throw new Error('Não foi possível identificar a música.')
 
       if (cifraFile) {
         const path = await uploadCifraFile(supabase, songId, cifraFile)
@@ -274,7 +283,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       onSuccess()
       onOpenChange(false)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao salvar a musica.'
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar a música.'
       setFormError(msg)
     } finally {
       setSaving(false)
@@ -285,7 +294,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92dvh] flex-col overflow-hidden sm:max-w-md">
+      <DialogContent className="flex max-h-[92dvh] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{song ? 'Editar música' : 'Nova música'}</DialogTitle>
           <DialogDescription>
@@ -338,18 +347,20 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
             <Button
               type="button"
               variant="outline"
-              className="h-auto w-full flex-col gap-1 py-4"
+              className="h-auto min-h-[4.5rem] w-full flex-col items-center justify-center gap-2 px-3 py-4 text-center"
               onClick={() => fileInputRef.current?.click()}
             >
-              <FileUp className="h-5 w-5" />
-              <span className="text-sm font-medium">
+              <FileUp className="h-5 w-5 shrink-0" />
+              <span className="w-full min-w-0 text-pretty break-words text-sm font-medium leading-snug">
                 {cifraFile
                   ? cifraFile.name
                   : existingPdfPath && !cifraFile
-                    ? 'Arquivo atual mantido - toque para substituir'
-                    : 'Escolher da galeria ou arquivos PDF, JPG, PNG ou WebP'}
+                    ? 'Arquivo atual mantido — toque para substituir'
+                    : 'Toque para escolher PDF ou foto (galeria ou ficheiros)'}
               </span>
-              <span className="text-xs text-muted-foreground">PDF, JPG, PNG ou WebP - máx. 10 MB</span>
+              <span className="w-full min-w-0 text-pretty break-words text-xs leading-snug text-muted-foreground">
+                PDF, JPG, PNG ou WebP · máx. 10 MB
+              </span>
             </Button>
             {cifraFile && (
               <Button
@@ -493,9 +504,22 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button type="submit" form="song-form" disabled={saving || !canSave}>
-            {saving && <Spinner className="mr-2" />}
-            {song ? 'Salvar' : 'Adicionar'}
+          <Button
+            type="submit"
+            form="song-form"
+            disabled={saving || !canSave}
+            aria-busy={saving}
+          >
+            {saving ? (
+              <>
+                <Spinner className="mr-2 h-4 w-4 shrink-0" />
+                Salvando…
+              </>
+            ) : song ? (
+              'Salvar'
+            ) : (
+              'Adicionar'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
