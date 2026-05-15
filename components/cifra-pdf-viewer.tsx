@@ -22,7 +22,7 @@ const IMAGE_ZOOM_MIN = 0.75
 const IMAGE_ZOOM_MAX = 2.5
 const IMAGE_ZOOM_STEP = 0.25
 
-const PDF_ZOOM_MIN = 0.75
+const PDF_ZOOM_MIN = 0.5
 const PDF_ZOOM_MAX = 2.5
 const PDF_ZOOM_STEP = 0.15
 

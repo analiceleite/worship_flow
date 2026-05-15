@@ -56,7 +56,7 @@ function waitForNonZeroWidth(el: HTMLElement | null, maxFrames = 24): Promise<vo
 export function PdfScrollViewer({
   url,
   zoom = 1,
-  zoomMin = 0.75,
+  zoomMin = 0.5,
   zoomMax = 2.5,
   onZoomChange,
   className,
@@ -169,6 +169,9 @@ export function PdfScrollViewer({
 
     try {
       await waitForNonZeroWidth(scrollEl)
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
 
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
@@ -190,7 +193,10 @@ export function PdfScrollViewer({
       const rawDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
       const dpr = Math.min(rawDpr, 2)
 
-      const containerW = Math.max(scrollEl.clientWidth - 12, 120)
+      const containerW = Math.max(scrollEl.clientWidth - 16, 120)
+      /** Altura visível da região de scroll (encaixa a página inteira no desktop/tablet quando > 0). */
+      const containerH =
+        scrollEl.clientHeight > 48 ? Math.max(scrollEl.clientHeight - 16, 80) : 0
 
       for (let pageNum = 1; pageNum <= numPages; pageNum++) {
         if (gen !== renderGenerationRef.current) return
@@ -198,7 +204,13 @@ export function PdfScrollViewer({
         const page = await pdf.getPage(pageNum)
         const baseViewport = page.getViewport({ scale: 1 })
 
-        let fitScale = containerW / baseViewport.width
+        const fitScaleW = containerW / baseViewport.width
+        let fitScale = fitScaleW
+        if (containerH > 0 && baseViewport.height > 0) {
+          const fitScaleH = containerH / baseViewport.height
+          fitScale = Math.min(fitScaleW, fitScaleH)
+        }
+
         let scale = fitScale * zoom * dpr
         let viewport = page.getViewport({ scale })
 
@@ -260,11 +272,17 @@ export function PdfScrollViewer({
 
     let timeoutId: number | undefined
     let lastW = el.clientWidth
+    let lastH = el.clientHeight
 
     const schedule = () => {
       const w = el.clientWidth
-      if (w > 2 && Math.abs(w - lastW) >= 8) {
+      const h = el.clientHeight
+      if (
+        w > 2 &&
+        (Math.abs(w - lastW) >= 8 || Math.abs(h - lastH) >= 8)
+      ) {
         lastW = w
+        lastH = h
         clearTimeout(timeoutId)
         timeoutId = window.setTimeout(() => void renderPdf(), 120)
       }
