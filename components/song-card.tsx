@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Music, Youtube, FileText, Pencil, Trash2, Copy } from 'lucide-react'
 import { CifraViewer } from '@/components/cifra-viewer'
 import { songHasCifra } from '@/lib/cifra-storage'
+import { openPdfCifraInSystemBrowserFromUserGesture } from '@/lib/open-cifra-pdf-browser'
 
 interface SongCardProps {
   song: Song
@@ -32,27 +33,28 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
     <Card className="group overflow-hidden transition-all hover:shadow-md">
       <CardContent className="p-0">
         {song.youtube_url && (
-          <div className="relative aspect-video bg-muted">
+          <div className="group/thumb relative aspect-video bg-muted">
             <img
               src={`https://img.youtube.com/vi/${getYoutubeId(song.youtube_url)}/mqdefault.jpg`}
-              alt={song.title}
-              className="h-full w-full object-cover"
+              alt=""
+              className="pointer-events-none h-full w-full object-cover"
             />
-            <div className="absolute inset-0 flex items-center justify-center bg-foreground/20 opacity-0 transition-opacity group-hover:opacity-100">
-              <a
-                href={song.youtube_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Abrir no YouTube"
-                aria-label="Abrir no YouTube"
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-lg transition-transform hover:scale-110"
-              >
+            {/* Área clicável inteira — em mobile não existe hover */}
+            <a
+              href={song.youtube_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Abrir no YouTube"
+              aria-label="Abrir no YouTube"
+              className="absolute inset-0 z-10 flex touch-manipulation items-center justify-center bg-foreground/20 opacity-100 transition-colors transition-opacity hover:bg-foreground/30 sm:bg-foreground/0 sm:opacity-0 sm:hover:bg-foreground/20 sm:group-hover/thumb:bg-foreground/20 sm:group-hover/thumb:opacity-100"
+            >
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-lg">
                 <Youtube className="h-7 w-7" />
-              </a>
-            </div>
+              </span>
+            </a>
 
             {canEdit && (onEdit || onDelete) && (
-              <div className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-background/80 p-1 backdrop-blur">
+              <div className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md bg-background/80 p-1 backdrop-blur [&_button]:pointer-events-auto">
                 {onEdit && (
                   <Button
                     variant="ghost"
@@ -160,7 +162,11 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
                 variant="secondary"
                 size="sm"
                 className="flex-1"
-                onClick={() => setCifraOpen(true)}
+                type="button"
+                onClick={() => {
+                  if (openPdfCifraInSystemBrowserFromUserGesture(song)) return
+                  setCifraOpen(true)
+                }}
                 title="Ver cifra no app"
                 aria-label="Ver cifra no app"
               >

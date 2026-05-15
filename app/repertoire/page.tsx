@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Song, Minister, RepertoireItem } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
+import { openPdfCifraInSystemBrowserFromUserGesture } from '@/lib/open-cifra-pdf-browser'
 import { Header } from '@/components/header'
 import { CifraViewer } from '@/components/cifra-viewer'
 import { Button } from '@/components/ui/button'
@@ -941,7 +942,11 @@ export default function RepertorioPage() {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-7 w-7"
-                                                        onClick={() => setSelectedCifraSong(item.song ?? null)}
+                                                        onClick={() => {
+                                                            const s = item.song
+                                                            if (s && openPdfCifraInSystemBrowserFromUserGesture(s)) return
+                                                            setSelectedCifraSong(s ?? null)
+                                                        }}
                                                         title="Ver cifra no app"
                                                         aria-label="Ver cifra no app"
                                                     >
@@ -953,7 +958,7 @@ export default function RepertorioPage() {
                                                     </Button>
                                                 ) : null}
                                                 {item.song?.youtube_url && (
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                                                    <Button variant="ghost" size="icon" className="h-9 w-9 touch-manipulation sm:h-7 sm:w-7" asChild>
                                                         <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
                                                     </Button>
                                                 )}

@@ -17,3 +17,9 @@ export function useIsMobile() {
 
   return !!isMobile
 }
+
+/** Mesma regra que `useIsMobile`, para usar em handlers/gestos (sem esperar o 1º paint). */
+export function isMobileViewportSync(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.innerWidth < MOBILE_BREAKPOINT
+}

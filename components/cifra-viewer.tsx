@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Song } from '@/lib/types'
 import { songHasCifra } from '@/lib/cifra-storage'
 import { CifraPdfViewer } from '@/components/cifra-pdf-viewer'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { useIsMobile, isMobileViewportSync } from '@/hooks/use-mobile'
 import { ExternalLink, Pause, Play, RotateCcw, X } from 'lucide-react'
 import { DialogClose } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -318,9 +318,47 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
 }
 
 export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
+    const pdfSheetRef = useRef<HTMLDivElement | null>(null)
+    const isMobile = useIsMobile()
+
+    /** Desktop: navegador fullscreen (F11-par) em cima do painel PDF; falha silenciosamente se o browser bloquear. */
+    useLayoutEffect(() => {
+        if (!open || !song?.cifra_pdf_path) return
+        if (isMobileViewportSync()) return
+
+        let cancelled = false
+
+        const run = async () => {
+            const el = pdfSheetRef.current
+            if (!el || cancelled) return
+            const anyEl = el as HTMLElement & { webkitRequestFullscreen?: () => void }
+            try {
+                await el.requestFullscreen()
+            } catch {
+                try {
+                    anyEl.webkitRequestFullscreen?.()
+                } catch {
+                    /* CSS fullscreen continua ativo */
+                }
+            }
+        }
+
+        const id = window.requestAnimationFrame(() => {
+            void run()
+        })
+
+        return () => {
+            cancelled = true
+            window.cancelAnimationFrame(id)
+            const el = pdfSheetRef.current
+            if (el && document.fullscreenElement === el) {
+                void document.exitFullscreen().catch(() => {})
+            }
+        }
+    }, [open, song?.cifra_pdf_path, song?.id])
+
     if (!song) return null
 
-    const isMobile = useIsMobile()
     const hasPdfCifra = Boolean(song.cifra_pdf_path)
     const hasTextCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
 
@@ -334,27 +372,24 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
         return (
             <Dialog open={open} onOpenChange={onOpenChange}>
                 <DialogContent
+                    ref={pdfSheetRef}
                     showCloseButton={false}
                     className={cn(
-                        'fixed z-50 flex flex-col gap-0 overflow-hidden p-0',
-                        isMobile
-                            ? 'inset-0 top-0 left-0 h-[100dvh] max-h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 rounded-none border-0 pb-[env(safe-area-inset-bottom)] shadow-none'
-                            : 'inset-auto top-[50%] left-[50%] h-[96vh] max-h-[96vh] w-[min(94vw,1200px)] max-w-[1200px] -translate-x-1/2 -translate-y-1/2 rounded-xl border shadow-2xl'
+                        'fixed inset-0 left-0 top-0 z-50 flex h-[100dvh] max-h-[100dvh] w-screen min-w-0 max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-background p-0 shadow-none sm:max-w-none',
+                        isMobile && 'pb-[env(safe-area-inset-bottom)]'
                     )}
                 >
                     <header
                         className={cn(
                             'flex shrink-0 items-center gap-3 border-b border-border/60 bg-background/95 backdrop-blur-sm',
-                            isMobile
-                                ? 'px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]'
-                                : 'px-5 py-3.5'
+                            isMobile ? 'px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]' : 'px-4 py-2.5 sm:px-5 sm:py-3'
                         )}
                     >
                         <div className="min-w-0 flex-1">
                             <DialogTitle
                                 className={cn(
                                     'truncate text-left leading-tight',
-                                    isMobile ? 'text-base' : 'text-xl'
+                                    isMobile ? 'text-base' : 'text-lg sm:text-xl'
                                 )}
                             >
                                 {song.title}
@@ -367,22 +402,19 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
                             >
                                 {song.artist}
                             </p>
-                            {!isMobile ? (
-                                <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
-                                    Esc para fechar · use a barra abaixo para tela cheia ou nova aba
-                                </p>
-                            ) : null}
+                            <p className="mt-1 hidden text-xs text-muted-foreground md:block">
+                                Esc para fechar · zoom e links na barra do PDF abaixo
+                            </p>
                         </div>
                         <DialogClose asChild>
                             <Button
                                 type="button"
-                                variant={isMobile ? 'outline' : 'secondary'}
-                                size={isMobile ? 'icon' : 'default'}
-                                className={cn('shrink-0', isMobile ? 'h-9 w-9 rounded-full' : 'gap-1.5')}
+                                variant="outline"
+                                size="icon"
+                                className="h-9 w-9 shrink-0 rounded-full"
                                 aria-label="Fechar cifra"
                             >
                                 <X className="h-4 w-4" />
-                                {!isMobile ? <span>Fechar</span> : null}
                             </Button>
                         </DialogClose>
                     </header>

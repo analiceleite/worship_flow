@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { Minister, RepertoireItem } from '@/lib/types'
 import { songHasCifra } from '@/lib/cifra-storage'
+import { openPdfCifraInSystemBrowserFromUserGesture } from '@/lib/open-cifra-pdf-browser'
 
 type TimeSignature = '2/4' | '3/4' | '4/4' | '6/8'
 
@@ -377,6 +378,12 @@ function RepertoirePlayerContent() {
         setCurrentIndex((idx) => (idx + 1) % items.length)
     }, [items.length])
 
+    const openCifraForCurrentSong = useCallback(() => {
+        const song = currentItem?.song
+        if (openPdfCifraInSystemBrowserFromUserGesture(song ?? null)) return
+        setCifraViewerOpen(true)
+    }, [currentItem])
+
     useEffect(() => {
         const savedBpm = window.localStorage.getItem('repertoire-player-bpm')
         if (!savedBpm) return
@@ -508,14 +515,18 @@ function RepertoirePlayerContent() {
                                             variant={currentSongHasPdf ? 'default' : 'outline'}
                                             size={currentSongHasPdf ? 'default' : 'sm'}
                                             className={currentSongHasPdf ? 'w-full sm:w-auto' : undefined}
-                                            onClick={() => setCifraViewerOpen(true)}
+                                            onClick={openCifraForCurrentSong}
                                         >
                                             {currentSongHasPdf ? (
                                                 <Maximize2 className="mr-1.5 h-4 w-4" />
                                             ) : (
                                                 <FileText className="mr-1.5 h-3.5 w-3.5" />
                                             )}
-                                            {currentSongHasPdf ? 'Cifra em tela cheia' : 'Abrir cifra'}
+                                            {currentSongHasPdf
+                                                ? isMobile
+                                                    ? 'Abrir PDF'
+                                                    : 'Cifra em tela cheia'
+                                                : 'Abrir cifra'}
                                         </Button>
                                         {currentItem.song.cipher_url ? (
                                             <Button type="button" variant="ghost" size="sm" asChild>
@@ -688,6 +699,26 @@ function RepertoirePlayerContent() {
                                 )}
                             </div>
 
+                            {currentItem?.song?.youtube_url ? (
+                                <div className="mt-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-11 w-full touch-manipulation gap-2 sm:h-9 sm:w-auto"
+                                        asChild
+                                    >
+                                        <a
+                                            href={currentItem.song.youtube_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            <Youtube className="h-4 w-4 shrink-0" />
+                                            Abrir no YouTube
+                                        </a>
+                                    </Button>
+                                </div>
+                            ) : null}
+
                             <div className="mt-3 flex items-center justify-between gap-2">
                                 <Button
                                     type="button"
@@ -725,13 +756,13 @@ function RepertoirePlayerContent() {
                                         <p className="text-xs text-muted-foreground">Acompanhe a música real com a cifra local e use o metrônomo se quiser.</p>
                                     </div>
                                     {currentItem?.song && songHasCifra(currentItem.song) ? (
-                                        <Button type="button" variant="outline" size="sm" onClick={() => setCifraViewerOpen(true)}>
+                                        <Button type="button" variant="outline" size="sm" onClick={openCifraForCurrentSong}>
                                             {currentSongHasPdf ? (
                                                 <Maximize2 className="mr-1.5 h-3.5 w-3.5" />
                                             ) : (
                                                 <FileText className="mr-1.5 h-3.5 w-3.5" />
                                             )}
-                                            {currentSongHasPdf ? 'Tela cheia' : 'Expandir'}
+                                            {currentSongHasPdf ? (isMobile ? 'Abrir PDF' : 'Tela cheia') : 'Expandir'}
                                         </Button>
                                     ) : null}
                                 </div>
@@ -742,10 +773,10 @@ function RepertoirePlayerContent() {
                                             <Button
                                                 type="button"
                                                 className="h-24 w-full flex-col gap-2 text-base"
-                                                onClick={() => setCifraViewerOpen(true)}
+                                                onClick={openCifraForCurrentSong}
                                             >
                                                 <Maximize2 className="h-6 w-6" />
-                                                Abrir cifra em tela cheia
+                                                Abrir PDF no navegador
                                             </Button>
                                         ) : (
                                             <CifraPanel
@@ -769,33 +800,54 @@ function RepertoirePlayerContent() {
                             <section className="rounded-xl border bg-muted/20 p-3 sm:p-4">
                                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Fila</p>
                                 <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-                                    {items.map((item, idx) => (
-                                        <button
-                                            key={item.id}
-                                            type="button"
-                                            onClick={() => setCurrentIndex(idx)}
-                                            className={[
-                                                'flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
-                                                idx === currentIndex
-                                                    ? 'border-primary bg-primary/10'
-                                                    : 'border-border hover:bg-muted/40',
-                                            ].join(' ')}
-                                        >
-                                            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-semibold text-muted-foreground">
-                                                {idx + 1}
-                                            </span>
-                                            <div className="min-w-0 flex-1">
-                                                <p className="truncate text-sm font-medium text-foreground">{item.song?.title}</p>
-                                                <p className="truncate text-xs text-muted-foreground">{item.song?.artist}</p>
+                                    {items.map((item, idx) => {
+                                        const ytUrlRaw = item.song?.youtube_url
+                                        const ytUrl = typeof ytUrlRaw === 'string' ? ytUrlRaw.trim() : ''
+                                        const ytId = ytUrl ? extractYouTubeVideoId(ytUrl) : null
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                className={[
+                                                    'flex w-full items-stretch overflow-hidden rounded-lg border',
+                                                    idx === currentIndex
+                                                        ? 'border-primary bg-primary/10'
+                                                        : 'border-border hover:bg-muted/40',
+                                                ].join(' ')}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCurrentIndex(idx)}
+                                                    className={[
+                                                        'flex min-w-0 flex-1 touch-manipulation items-center gap-3 px-3 py-2 text-left transition-colors',
+                                                    ].join(' ')}
+                                                >
+                                                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-semibold text-muted-foreground">
+                                                        {idx + 1}
+                                                    </span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-medium text-foreground">
+                                                            {item.song?.title}
+                                                        </p>
+                                                        <p className="truncate text-xs text-muted-foreground">{item.song?.artist}</p>
+                                                    </div>
+                                                    {idx === currentIndex ? (
+                                                        <span className="shrink-0 text-xs font-medium text-primary">agora</span>
+                                                    ) : null}
+                                                </button>
+                                                {ytId ? (
+                                                    <a
+                                                        href={ytUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex touch-manipulation items-center border-l border-border/60 px-3 text-[#FF0000] hover:bg-muted/40 active:bg-muted/60"
+                                                        aria-label="Abrir no YouTube"
+                                                    >
+                                                        <Youtube className="h-5 w-5 shrink-0" />
+                                                    </a>
+                                                ) : null}
                                             </div>
-                                            {!extractYouTubeVideoId(item.song?.youtube_url) ? (
-                                                <Youtube className="h-4 w-4 text-muted-foreground" />
-                                            ) : null}
-                                            {idx === currentIndex && (
-                                                <span className="text-xs font-medium text-primary">agora</span>
-                                            )}
-                                        </button>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             </section>
                         </div>
