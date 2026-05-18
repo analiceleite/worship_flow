@@ -22,7 +22,8 @@ interface SongCardProps {
 export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister = false, duplicateCount = 1 }: SongCardProps) {
   const [cifraOpen, setCifraOpen] = useState(false)
   const hasLocalCifra = songHasCifra(song)
-  const showToneBadge = Boolean(song.cifra_content && song.cifra_content.length > 0)
+  const toneLabel = song.tone?.trim()
+  const showToneBadge = Boolean(toneLabel)
 
   const getYoutubeId = (url: string) => {
     const match = url.match(/(?:youtu\.be\/|youtube\.com(?:\/embed\/|\/v\/|\/watch\?v=|\/watch\?.+&v=))([\w-]{11})/)
@@ -130,8 +131,8 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
               </p>
             </div>
             {showToneBadge ? (
-              <Badge variant="secondary" className="shrink-0 font-mono text-xs">
-                {song.tone}
+              <Badge variant="secondary" className="shrink-0 font-mono text-xs" title="Tom">
+                {toneLabel}
               </Badge>
             ) : null}
           </div>

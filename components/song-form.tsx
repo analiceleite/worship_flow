@@ -1,11 +1,18 @@
 ﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Song, Minister, YouTubeSearchResult } from '@/lib/types'
+import { Song, Minister, YouTubeSearchResult, TONES } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -47,6 +54,7 @@ function youtubeWatchUrl(videoId: string): string {
 export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister }: SongFormProps) {
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
+  const [tone, setTone] = useState<string>('C')
   const [cifraFile, setCifraFile] = useState<File | null>(null)
   const [existingPdfPath, setExistingPdfPath] = useState<string | null>(null)
 
@@ -88,6 +96,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (song) {
       setTitle(song.title || '')
       setArtist(song.artist || '')
+      setTone(song.tone || 'C')
       setExistingPdfPath(song.cifra_pdf_path ?? null)
       setYoutubeUrl(song.youtube_url || '')
       setYoutubeVideoTitle(song.youtube_video_title || '')
@@ -97,6 +106,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
     setTitle('')
     setArtist('')
+    setTone('C')
     setExistingPdfPath(null)
     setYoutubeUrl('')
     setYoutubeVideoTitle('')
@@ -211,6 +221,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       return
     }
 
+    if (!tone.trim()) {
+      setFormError('Selecione o tom da música.')
+      return
+    }
+
     if (!song && !cifraFile) {
       setFormError('Envie o PDF ou a foto da cifra.')
       return
@@ -230,7 +245,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       const basePayload = {
         title: toTitleCase(title),
         artist: toTitleCase(artist),
-        tone: song?.tone ?? 'C',
+        tone: tone.trim(),
         cipher_url: null,
         youtube_url: resolvedYoutube,
         youtube_video_title: youtubeVideoTitle.trim() || null,
@@ -290,7 +305,9 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     }
   }
 
-  const canSave = Boolean(title.trim() && artist.trim() && (song ? hasCifraSource : cifraFile))
+  const canSave = Boolean(
+    title.trim() && artist.trim() && tone.trim() && (song ? hasCifraSource : cifraFile)
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -300,7 +317,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           <DialogDescription>
             {song
               ? 'Atualize os dados, a cifra (PDF/foto) ou o video de referência.'
-              : 'Título, artista e arquivo da cifra. Ideal para cadastro no celular.'}
+              : 'Título, artista, tom e arquivo da cifra. Ideal para cadastro no celular.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -331,6 +348,22 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               required
               autoComplete="off"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tone">Tom</Label>
+            <Select value={tone} onValueChange={setTone} required>
+              <SelectTrigger id="tone" className="w-full font-mono">
+                <SelectValue placeholder="Selecione o tom" />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {TONES.map((t) => (
+                  <SelectItem key={t} value={t} className="font-mono">
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
