@@ -7,7 +7,7 @@ import {
   normalizeCifraClubTone,
   type CifraClubSong,
 } from '@/lib/cifraclub-scraper'
-import { checkCifraClubRateLimit } from '@/lib/cifraclub-rate-limit'
+import { checkCifraClubRateLimit, recordCifraClubImport } from '@/lib/cifraclub-rate-limit'
 
 export type { CifraClubSong }
 
@@ -47,11 +47,15 @@ export async function GET(request: NextRequest) {
 
   const rate = checkCifraClubRateLimit(user.id)
   if (!rate.allowed) {
+    const retryAfterSec = rate.retryAfterSec ?? 3600
     return NextResponse.json(
       {
-        error: `Limite de importações atingido. Tente novamente em ${rate.retryAfterSec ?? 3600} segundos.`,
+        error: `Limite de importações atingido. Tente novamente em cerca de ${Math.max(1, Math.ceil(retryAfterSec / 60))} minutos.`,
       },
-      { status: 429 }
+      {
+        status: 429,
+        headers: { 'Retry-After': String(retryAfterSec) },
+      }
     )
   }
 
@@ -94,6 +98,7 @@ export async function GET(request: NextRequest) {
       version: version || undefined,
       targetTone,
     })
+    recordCifraClubImport(user.id)
     return NextResponse.json(result)
   } catch (err) {
     if (err instanceof CifraClubScrapeError) {

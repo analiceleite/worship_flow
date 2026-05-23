@@ -117,7 +117,8 @@ async function fetchPage(url: string): Promise<{ $: cheerio.CheerioAPI; html: st
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Accept-Language': 'pt-BR,pt;q=0.9',
-      Accept: 'text/html',
+      Accept: 'text/html,application/xhtml+xml',
+      Referer: 'https://www.cifraclub.com.br/',
     },
     cache: 'no-store',
     signal: AbortSignal.timeout(15_000),

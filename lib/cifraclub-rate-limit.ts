@@ -1,5 +1,5 @@
 const WINDOW_MS = 60 * 60 * 1000
-const MAX_REQUESTS = 10
+const MAX_REQUESTS = Number(process.env.CIFRACLUB_RATE_LIMIT_PER_HOUR ?? 30)
 
 interface Entry {
   count: number
@@ -21,7 +21,6 @@ export function checkCifraClubRateLimit(userId: string): { allowed: boolean; ret
 
   const entry = buckets.get(userId)
   if (!entry || now - entry.windowStart >= WINDOW_MS) {
-    buckets.set(userId, { count: 1, windowStart: now })
     return { allowed: true }
   }
 
@@ -30,6 +29,19 @@ export function checkCifraClubRateLimit(userId: string): { allowed: boolean; ret
     return { allowed: false, retryAfterSec }
   }
 
-  entry.count += 1
   return { allowed: true }
+}
+
+/** Conta apenas importações concluídas com sucesso (evita penalizar falhas de rede/bloqueio). */
+export function recordCifraClubImport(userId: string): void {
+  const now = Date.now()
+  prune(now)
+
+  const entry = buckets.get(userId)
+  if (!entry || now - entry.windowStart >= WINDOW_MS) {
+    buckets.set(userId, { count: 1, windowStart: now })
+    return
+  }
+
+  entry.count += 1
 }

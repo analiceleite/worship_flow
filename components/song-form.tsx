@@ -91,7 +91,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const lastYoutubeSearchKeyRef = useRef<string | null>(null)
   const lastImportedUrlRef = useRef<string | null>(null)
   const lastImportedToneRef = useRef<string | null>(null)
+  /** Evita reimportar em loop quando a API falha (ex.: bloqueio no servidor da Vercel). */
+  const lastAutoImportKeyRef = useRef<string | null>(null)
   const importDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const buildImportKey = (url: string, toneValue: string) => `${url}|${toneValue}`
 
   const YOUTUBE_SEARCH_MAX = 8
 
@@ -127,7 +131,14 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         const data = (await res.json().catch(() => ({}))) as CifraClubSong & { error?: string }
 
         if (!res.ok) {
-          setImportError(data.error ?? 'Não foi possível importar. Use a aba PDF ou foto.')
+          if (res.status === 429) {
+            setImportError(
+              data.error ??
+                'Muitas importações em pouco tempo. Aguarde alguns minutos ou use a aba PDF ou foto.'
+            )
+          } else {
+            setImportError(data.error ?? 'Não foi possível importar. Use a aba PDF ou foto.')
+          }
           return false
         }
 
@@ -140,6 +151,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         setImportError('Erro de rede. Tente de novo ou use a aba PDF ou foto.')
         return false
       } finally {
+        lastAutoImportKeyRef.current = buildImportKey(url, toneValue)
         setImportingCifra(false)
       }
     },
@@ -166,6 +178,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     lastYoutubeSearchKeyRef.current = null
     lastImportedUrlRef.current = null
     lastImportedToneRef.current = null
+    lastAutoImportKeyRef.current = null
 
     if (song) {
       setTitle(song.title || '')
@@ -208,8 +221,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     const url = ensureHttps(cipherUrl)
     if (!url || !isCifraClubUrl(url) || importingCifra) return
 
+    const importKey = buildImportKey(url, tone)
+    if (importKey === lastAutoImportKeyRef.current) return
+
     if (importDebounceRef.current) clearTimeout(importDebounceRef.current)
     importDebounceRef.current = setTimeout(() => {
+      if (buildImportKey(url, tone) === lastAutoImportKeyRef.current) return
       if (url === lastImportedUrlRef.current && lastImportedToneRef.current === tone) return
       void importFromUrl(url, tone)
     }, 650)
@@ -295,8 +312,18 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     const url = ensureHttps(cipherUrl)
     if (cifraTab === 'link' && url && isCifraClubUrl(url) && importReady) {
       lastImportedToneRef.current = null
+      lastAutoImportKeyRef.current = null
       void importFromUrl(url, t)
     }
+  }
+
+  const handleRetryImport = () => {
+    const url = ensureHttps(cipherUrl)
+    if (!url || !isCifraClubUrl(url)) return
+    lastAutoImportKeyRef.current = null
+    lastImportedUrlRef.current = null
+    lastImportedToneRef.current = null
+    void importFromUrl(url, tone)
   }
 
   const canSave =
@@ -587,6 +614,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                 onChange={(e) => {
                   setCipherUrl(e.target.value)
                   if (importError) setImportError(null)
+                  lastAutoImportKeyRef.current = null
                 }}
                 placeholder="Cole o link do Cifra Club…"
                 className="h-11"
@@ -600,7 +628,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                 </p>
               )}
               {importError && !importingCifra && (
-                <p className="text-xs text-destructive">{importError}</p>
+                <div className="space-y-2">
+                  <p className="text-xs text-destructive">{importError}</p>
+                  <Button type="button" variant="outline" size="sm" className="h-8" onClick={handleRetryImport}>
+                    Tentar importar de novo
+                  </Button>
+                </div>
               )}
 
               {importReady && (

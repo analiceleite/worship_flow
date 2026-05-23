@@ -1,4 +1,4 @@
-const CACHE_NAME = 'worship-flow-v3'
+const CACHE_NAME = 'worship-flow-v4'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -37,6 +37,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
   if (url.origin !== self.location.origin) {
+    return
+  }
+
+  // APIs autenticadas e dinâmicas não passam pelo service worker
+  if (url.pathname.startsWith('/api/')) {
     return
   }
 
