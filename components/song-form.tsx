@@ -73,6 +73,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const [availableTones, setAvailableTones] = useState<string[]>([])
   const [capoFrets, setCapoFrets] = useState(0)
   const [importingCifra, setImportingCifra] = useState(false)
+  /** Tom sendo buscado no Cifralize (troca de tom); null = importação inicial pelo link. */
+  const [loadingToneForImport, setLoadingToneForImport] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
   const [cifraFile, setCifraFile] = useState<File | null>(null)
@@ -153,6 +155,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       } finally {
         lastAutoImportKeyRef.current = buildImportKey(url, toneValue)
         setImportingCifra(false)
+        setLoadingToneForImport(null)
       }
     },
     [applyImportedCifra]
@@ -175,6 +178,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     setYoutubeSearchError(null)
     setImportError(null)
     setImportingCifra(false)
+    setLoadingToneForImport(null)
     lastYoutubeSearchKeyRef.current = null
     lastImportedUrlRef.current = null
     lastImportedToneRef.current = null
@@ -308,11 +312,14 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const toneChips = availableTones.length > 0 ? availableTones : importReady ? [tone] : []
 
   const handleToneChipClick = (t: string) => {
+    if (importingCifra && loadingToneForImport === t) return
+
     setTone(t)
     const url = ensureHttps(cipherUrl)
     if (cifraTab === 'link' && url && isCifralizeUrl(url) && importReady) {
       lastImportedToneRef.current = null
       lastAutoImportKeyRef.current = null
+      setLoadingToneForImport(t)
       void importFromUrl(url, t)
     }
   }
@@ -326,10 +333,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     void importFromUrl(url, tone)
   }
 
+  const hasYoutube = Boolean(ensureHttps(youtubeUrl))
+
   const canSave =
     cifraTab === 'link'
-      ? Boolean(importReady && title.trim() && artist.trim() && tone.trim())
-      : Boolean(hasPdfSource && title.trim() && artist.trim() && tone.trim())
+      ? Boolean(importReady && title.trim() && artist.trim() && tone.trim() && hasYoutube)
+      : Boolean(hasPdfSource && title.trim() && artist.trim() && tone.trim() && hasYoutube)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -353,6 +362,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
     if (cifraTab === 'file' && !hasPdfSource) {
       setFormError('Envie um PDF ou foto da cifra.')
+      return
+    }
+
+    if (!hasYoutube) {
+      setFormError('Selecione um vídeo de referência no YouTube antes de salvar.')
       return
     }
 
@@ -459,21 +473,50 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     toneChips.length > 0 && cifraTab === 'link' ? (
       <div className="flex flex-wrap gap-1.5">
         <span className="w-full text-xs text-muted-foreground">
-          Tom{required ? ' *' : ''} — escolha o tom da cifra
+          Tom{required ? ' *' : ''} — toque em outro tom para recarregar a cifra
         </span>
-        {toneChips.map((t) => (
-          <Button
-            key={t}
-            type="button"
-            size="sm"
-            variant={tone === t ? 'default' : 'outline'}
-            className="h-7 font-mono text-xs"
-            disabled={importingCifra}
-            onClick={() => handleToneChipClick(t)}
+        {loadingToneForImport && importingCifra && (
+          <div
+            className="flex w-full items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-2 text-xs text-primary"
+            role="status"
+            aria-live="polite"
           >
-            {t}
-          </Button>
-        ))}
+            <Spinner className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Carregando cifra no tom{' '}
+              <strong className="font-mono font-semibold">{loadingToneForImport}</strong>…
+            </span>
+          </div>
+        )}
+        {toneChips.map((t) => {
+          const isActive = tone === t
+          const isLoadingThisTone = importingCifra && loadingToneForImport === t
+          return (
+            <Button
+              key={t}
+              type="button"
+              size="sm"
+              variant={isActive ? 'default' : 'outline'}
+              className={cn(
+                'h-7 font-mono text-xs transition-opacity',
+                importingCifra && loadingToneForImport && !isLoadingThisTone && 'opacity-50',
+                isLoadingThisTone && 'ring-2 ring-primary ring-offset-1'
+              )}
+              disabled={importingCifra}
+              aria-busy={isLoadingThisTone}
+              onClick={() => handleToneChipClick(t)}
+            >
+              {isLoadingThisTone ? (
+                <span className="flex items-center gap-1">
+                  <Spinner className="h-3 w-3" />
+                  {t}
+                </span>
+              ) : (
+                t
+              )}
+            </Button>
+          )
+        })}
         {!tone.trim() && (
           <p className="w-full text-xs text-destructive">Selecione um tom para continuar.</p>
         )}
@@ -499,12 +542,16 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     )
 
   const youtubeBlock = (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+    <div
+      className={cn(
+        'space-y-2 rounded-md border bg-muted/20 p-3',
+        !hasYoutube && 'border-destructive/40'
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
         <Label className="flex items-center gap-1.5 text-sm">
           <Youtube className="h-4 w-4 text-destructive" />
-          Vídeo no YouTube
-          <span className="font-normal text-muted-foreground">(opcional)</span>
+          Vídeo de referência no YouTube <span className="text-destructive">*</span>
         </Label>
         {youtubeUrl && (
           <Badge variant="secondary" className="text-[10px]">
@@ -526,9 +573,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         <>
           <p className="text-xs text-muted-foreground">
             {importReady
-              ? 'Nenhum vídeo veio do Cifralize — busque outra versão abaixo.'
-              : 'Busque uma versão de referência no YouTube.'}
+              ? 'Obrigatório para salvar. Se o Cifralize não trouxe vídeo, busque a versão abaixo.'
+              : 'Obrigatório para salvar. Busque a versão que a equipe usa como referência.'}
           </p>
+          {!hasYoutube && (
+            <p className="text-xs text-destructive">Selecione um vídeo antes de salvar a música.</p>
+          )}
           <div className="flex gap-2">
             <Input
               value={youtubeQuery}
@@ -619,10 +669,10 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                 autoFocus={!song}
                 disabled={importingCifra}
               />
-              {importingCifra && (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              {importingCifra && !loadingToneForImport && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
                   <Spinner className="h-3.5 w-3.5" />
-                  Importando…
+                  Importando cifra do Cifralize…
                 </p>
               )}
               {importError && !importingCifra && (
