@@ -536,7 +536,11 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
                             <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" asChild>
                                 <a href={song.cipher_url} target="_blank" rel="noopener noreferrer">
                                     <ExternalLink className="mr-1.5 h-3 w-3" />
-                                    Abrir no CifraClub
+                                    {song.cipher_url.includes('cifralize.com.br')
+                                      ? 'Abrir no Cifralize'
+                                      : song.cipher_url.includes('cifraclub.com.br')
+                                        ? 'Abrir no Cifra Club'
+                                        : 'Abrir cifra online'}
                                 </a>
                             </Button>
                         </div>

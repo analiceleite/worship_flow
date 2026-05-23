@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Song, Minister, YouTubeSearchResult, TONES } from '@/lib/types'
-import type { CifraClubSong } from '@/lib/cifraclub-scraper'
+import type { ImportedCifra } from '@/lib/cifralize-scraper'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,7 +29,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { CheckCircle2, FileUp, Link2, Search, X, Youtube } from 'lucide-react'
 import { uploadCifraFile, validateCifraFile } from '@/lib/cifra-storage'
 import { buildYoutubeSearchCacheKey } from '@/lib/youtube-search-cache'
-import { isCifraClubUrl } from '@/lib/cifraclub-url'
+import { isCifralizeUrl } from '@/lib/cifralize-url'
 import { cn } from '@/lib/utils'
 
 interface SongFormProps {
@@ -99,9 +99,9 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const YOUTUBE_SEARCH_MAX = 8
 
-  const applyImportedCifra = useCallback((data: CifraClubSong) => {
+  const applyImportedCifra = useCallback((data: ImportedCifra) => {
     setCifraContent(data.cifra)
-    setCipherUrl(data.cifraclub_url)
+    setCipherUrl(data.cipher_url)
     setTone(data.tone)
     setCapoFrets(data.capo_frets ?? 0)
     setAvailableTones(data.available_tones ?? [])
@@ -116,8 +116,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const importFromUrl = useCallback(
     async (urlInput: string, toneValue: string) => {
       const url = ensureHttps(urlInput)
-      if (!url || !isCifraClubUrl(url)) {
-        setImportError('Cole um link válido do Cifra Club.')
+      if (!url || !isCifralizeUrl(url)) {
+        setImportError('Cole um link válido do Cifralize (cifralize.com.br).')
         return false
       }
 
@@ -127,8 +127,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       try {
         const params = new URLSearchParams({ url })
         if (toneValue.trim()) params.set('target_tone', toneValue)
-        const res = await fetch(`/api/cifraclub?${params.toString()}`)
-        const data = (await res.json().catch(() => ({}))) as CifraClubSong & { error?: string }
+        const res = await fetch(`/api/cifra/import?${params.toString()}`)
+        const data = (await res.json().catch(() => ({}))) as ImportedCifra & { error?: string }
 
         if (!res.ok) {
           if (res.status === 429) {
@@ -143,7 +143,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         }
 
         applyImportedCifra(data)
-        setCipherUrl(data.cifraclub_url || url)
+        setCipherUrl(data.cipher_url || url)
         lastImportedUrlRef.current = url
         lastImportedToneRef.current = toneValue
         return true
@@ -219,7 +219,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (!open || cifraTab !== 'link') return
 
     const url = ensureHttps(cipherUrl)
-    if (!url || !isCifraClubUrl(url) || importingCifra) return
+    if (!url || !isCifralizeUrl(url) || importingCifra) return
 
     const importKey = buildImportKey(url, tone)
     if (importKey === lastAutoImportKeyRef.current) return
@@ -310,7 +310,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const handleToneChipClick = (t: string) => {
     setTone(t)
     const url = ensureHttps(cipherUrl)
-    if (cifraTab === 'link' && url && isCifraClubUrl(url) && importReady) {
+    if (cifraTab === 'link' && url && isCifralizeUrl(url) && importReady) {
       lastImportedToneRef.current = null
       lastAutoImportKeyRef.current = null
       void importFromUrl(url, t)
@@ -319,7 +319,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const handleRetryImport = () => {
     const url = ensureHttps(cipherUrl)
-    if (!url || !isCifraClubUrl(url)) return
+    if (!url || !isCifralizeUrl(url)) return
     lastAutoImportKeyRef.current = null
     lastImportedUrlRef.current = null
     lastImportedToneRef.current = null
@@ -426,8 +426,6 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     }
   }
 
-  const previewLines = (cifraContent ?? []).slice(0, 5)
-
   const songDetailsFields = (required?: boolean) => (
     <div className="grid gap-2 sm:grid-cols-2">
       <div className="space-y-1">
@@ -528,7 +526,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         <>
           <p className="text-xs text-muted-foreground">
             {importReady
-              ? 'Nenhum vídeo veio do Cifra Club — busque outra versão abaixo.'
+              ? 'Nenhum vídeo veio do Cifralize — busque outra versão abaixo.'
               : 'Busque uma versão de referência no YouTube.'}
           </p>
           <div className="flex gap-2">
@@ -583,7 +581,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         <DialogHeader>
           <DialogTitle>{song ? 'Editar música' : 'Nova música'}</DialogTitle>
           <DialogDescription>
-            Link do Cifra Club ou arquivo PDF/foto — escolha uma das duas formas.
+            Link do Cifralize ou arquivo PDF/foto — escolha uma das duas formas.
           </DialogDescription>
         </DialogHeader>
 
@@ -616,7 +614,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                   if (importError) setImportError(null)
                   lastAutoImportKeyRef.current = null
                 }}
-                placeholder="Cole o link do Cifra Club…"
+                placeholder="Cole o link do Cifralize…"
                 className="h-11"
                 autoFocus={!song}
                 disabled={importingCifra}
@@ -646,12 +644,6 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                   {toneField(true)}
                   {capoFrets > 0 && (
                     <p className="text-xs text-muted-foreground">Capo: {capoFrets}ª casa</p>
-                  )}
-                  {previewLines.length > 0 && (
-                    <pre className="max-h-20 overflow-y-auto rounded border bg-background/80 p-2 font-mono text-[10px] leading-4 whitespace-pre-wrap text-muted-foreground">
-                      {previewLines.join('\n')}
-                      {(cifraContent?.length ?? 0) > 5 ? '\n…' : ''}
-                    </pre>
                   )}
                 </div>
               )}

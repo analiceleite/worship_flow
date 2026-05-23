@@ -1,5 +1,5 @@
 const WINDOW_MS = 60 * 60 * 1000
-const MAX_REQUESTS = Number(process.env.CIFRACLUB_RATE_LIMIT_PER_HOUR ?? 30)
+const MAX_REQUESTS = Number(process.env.CIFRALIZE_RATE_LIMIT_PER_HOUR ?? 40)
 
 interface Entry {
   count: number
@@ -15,7 +15,7 @@ function prune(now: number) {
   }
 }
 
-export function checkCifraClubRateLimit(userId: string): { allowed: boolean; retryAfterSec?: number } {
+export function checkCifralizeRateLimit(userId: string): { allowed: boolean; retryAfterSec?: number } {
   const now = Date.now()
   prune(now)
 
@@ -32,8 +32,7 @@ export function checkCifraClubRateLimit(userId: string): { allowed: boolean; ret
   return { allowed: true }
 }
 
-/** Conta apenas importações concluídas com sucesso (evita penalizar falhas de rede/bloqueio). */
-export function recordCifraClubImport(userId: string): void {
+export function recordCifralizeImport(userId: string): void {
   const now = Date.now()
   prune(now)
 
