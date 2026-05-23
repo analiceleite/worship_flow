@@ -214,33 +214,21 @@ async function enqueueReminderNotifications(input: {
   if (publishedBimesterError) throw new Error(publishedBimesterError.message)
   if (!publishedBimester) return { queued: 0 }
 
-  const [assignmentsRes, rehearsalsRes] = await Promise.all([
-    admin
-      .from('schedule_assignments')
-      .select(
-        'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
-      )
-      .eq('quarter_id', publishedBimester.id)
-      .eq('event_date', input.targetDate)
-      .not('minister_id', 'is', null),
-    admin
-      .from('schedule_rehearsals')
-      .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
-      .eq('quarter_id', publishedBimester.id)
-      .eq('event_date', input.targetDate),
-  ])
+  const assignmentsRes = await admin
+    .from('schedule_assignments')
+    .select(
+      'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
+    )
+    .eq('quarter_id', publishedBimester.id)
+    .eq('event_date', input.targetDate)
+    .not('minister_id', 'is', null)
 
   if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
-  if (rehearsalsRes.error) throw new Error(rehearsalsRes.error.message)
 
-  const rehearsalsByEvent = new Map<string, RehearsalRow>()
-  for (const rehearsal of (rehearsalsRes.data ?? []) as RehearsalRow[]) {
-    rehearsalsByEvent.set(`${rehearsal.event_date}_${rehearsal.event_type}`, rehearsal)
-  }
-
+  // Lembretes não incluem ensaio: a data do ensaio pode ser dias antes do culto.
   const grouped = groupAssignmentsByMinister(
     (assignmentsRes.data ?? []) as AssignmentWithRelations[],
-    rehearsalsByEvent
+    new Map()
   )
   if (grouped.length === 0) return { queued: 0 }
 
@@ -302,12 +290,21 @@ type EmailTemplateInput = {
   payload: Record<string, unknown>
 }
 
+function formatReminderEventLabel(eventDate: string, eventType: 'thursday' | 'sunday') {
+  return `${formatEventType(eventType)}, ${toPtDate(eventDate)}`
+}
+
 function buildEmailTemplate(input: EmailTemplateInput) {
   const ministerName = String(input.payload.minister_name ?? 'Ministro(a)')
   const bimesterName = String(input.payload.bimester_name ?? input.payload.quarter_name ?? 'Escala')
   const items = Array.isArray(input.payload.items) ? input.payload.items : []
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
   const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
+  const isReminder =
+    input.notificationType === 'reminder_7days' || input.notificationType === 'reminder_1day'
+  const isOneDayReminder = input.notificationType === 'reminder_1day'
+  const isSevenDayReminder = input.notificationType === 'reminder_7days'
+  const targetDate = String(input.payload.target_date ?? '')
 
   const groupedByEvent = new Map<string, {
     eventDate: string
@@ -335,7 +332,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         eventDate: rawEventDate,
         eventType: rawEventType,
         roles: [],
-        rehearsal: toRehearsalSummary(event),
+        rehearsal: isReminder ? null : toRehearsalSummary(event),
       })
     }
 
@@ -353,39 +350,44 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       return 0
     })
 
+  const primaryEvent = sortedEvents[0]
+  const reminderEventLabel =
+    targetDate && primaryEvent
+      ? formatReminderEventLabel(targetDate, primaryEvent.eventType)
+      : targetDate
+        ? toPtDate(targetDate)
+        : ''
+
   const lines = sortedEvents.map((event) => {
     const eventDate = event.eventDate ? toPtDate(event.eventDate) : '-'
     const eventType = formatEventType(event.eventType)
-    const isSingleReminderEvent = input.notificationType !== BIMESTER_PUBLISHED_NOTIFICATION_TYPE && sortedEvents.length === 1
     return {
       header: `${eventDate} • ${eventType}`,
-      compactHeader: eventType,
-      useCompactHeader: isSingleReminderEvent,
       roles: event.roles,
       rehearsal: event.rehearsal,
     }
   })
 
-  const isOneDayReminder = input.notificationType === 'reminder_1day'
-  const textDetailsLabel =
-    isOneDayReminder && lines.length === 1
-      ? 'Funções de amanhã:'
-      : input.notificationType === 'reminder_7days' && lines.length === 1
-        ? 'Funções da próxima escala:'
-        : 'Detalhes:'
+  const textDetailsLabel = isOneDayReminder
+    ? 'Suas funções amanhã:'
+    : isSevenDayReminder
+      ? 'Suas funções neste culto:'
+      : 'Detalhes:'
 
-  const htmlDetailsLabel =
-    isOneDayReminder && lines.length === 1
-      ? 'Funções de amanhã'
-      : input.notificationType === 'reminder_7days' && lines.length === 1
-        ? 'Funções da próxima escala'
-        : 'Detalhes da sua escala'
+  const htmlDetailsLabel = isOneDayReminder
+    ? 'Suas funções amanhã'
+    : isSevenDayReminder
+      ? 'Suas funções neste culto'
+      : 'Detalhes da sua escala'
 
   const itemCards = lines
-    .map(
-      (line) =>
-        `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${line.useCompactHeader ? line.compactHeader : line.header}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.join(', ')}</div>${line.rehearsal ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${line.rehearsal}</div>` : ''}</div>`
-    )
+    .map((line) => {
+      const rehearsalBlock =
+        line.rehearsal && !isReminder
+          ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${line.rehearsal}</div>`
+          : ''
+      return `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${line.header}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.join(', ')}</div>${rehearsalBlock}</div>`
+    })
     .join('')
 
   const emailShell = (content: {
@@ -439,7 +441,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         '',
         'Suas escalas:',
         ...lines.map((line) => {
-          const base = `${line.useCompactHeader ? line.compactHeader : line.header} | Funções: ${line.roles.join(', ')}`
+          const base = `${line.header} | Funções: ${line.roles.join(', ')}`
           return line.rehearsal ? `${base} | Ensaio: ${line.rehearsal}` : base
         }),
         '',
@@ -456,35 +458,49 @@ function buildEmailTemplate(input: EmailTemplateInput) {
     }
   }
 
-  const targetDate = String(input.payload.target_date ?? '')
+  const sevenDayIntro = reminderEventLabel
+    ? `Sua escala é em 7 dias: ${reminderEventLabel}.`
+    : 'Sua escala é em 7 dias.'
+  const sevenDayGuidance =
+    'Use esta semana para se organizar, revisar repertório e combinar com a equipe. Os detalhes do ensaio, quando houver, estão na escala no sistema.'
+
+  const tomorrowIntro = reminderEventLabel
+    ? `Sua escala é amanhã: ${reminderEventLabel}.`
+    : 'Sua escala é amanhã.'
+  const tomorrowGuidance =
+    'Revise suas funções abaixo e chegue preparado(a) para o culto.'
+
   return {
     subject: isOneDayReminder
-      ? 'Lembrete: sua escala é amanhã'
-      : 'Lembrete: sua escala está próxima',
+      ? reminderEventLabel
+        ? `Lembrete: escala amanhã — ${reminderEventLabel}`
+        : 'Lembrete: sua escala é amanhã'
+      : reminderEventLabel
+        ? `Lembrete: escala em 7 dias — ${reminderEventLabel}`
+        : 'Lembrete: sua escala é em 7 dias',
     text: [
       `Olá, ${ministerName}!`,
       '',
-      isOneDayReminder
-        ? 'Sua escala acontece amanhã.'
-        : 'Sua próxima escala está próxima.',
-      isOneDayReminder
-        ? 'Passe esta mensagem em revista e se organize para chegar preparado(a) para sua função.'
-        : 'Não esqueça de ensaiar e se preparar para sua função.',
+      isOneDayReminder ? tomorrowIntro : sevenDayIntro,
+      isOneDayReminder ? tomorrowGuidance : sevenDayGuidance,
       '',
       textDetailsLabel,
-      ...lines.map((line) => {
-        const base = `${line.useCompactHeader ? line.compactHeader : line.header} | Funções: ${line.roles.join(', ')}`
-        return line.rehearsal ? `${base} | Ensaio: ${line.rehearsal}` : base
-      }),
+      ...lines.map((line) => `${line.header} | Funções: ${line.roles.join(', ')}`),
       '',
-      `Veja mais em: ${scheduleUrl}`,
+      `Veja a escala completa em: ${scheduleUrl}`,
     ].join('\n'),
     html: emailShell({
-      eyebrow: isOneDayReminder ? 'Amanhã' : 'Lembrete',
-      title: isOneDayReminder ? 'Sua escala é amanhã' : 'Sua escala está chegando',
+      eyebrow: isOneDayReminder ? 'Escala amanhã' : 'Escala em 7 dias',
+      title: isOneDayReminder
+        ? reminderEventLabel
+          ? `Sua escala é amanhã — ${reminderEventLabel}`
+          : 'Sua escala é amanhã'
+        : reminderEventLabel
+          ? `Sua escala é em 7 dias — ${reminderEventLabel}`
+          : 'Sua escala é em 7 dias',
       message: isOneDayReminder
-        ? `Olá, ${ministerName}. Confira os detalhes abaixo e deixe tudo preparado para servir com tranquilidade.`
-        : `Olá, ${ministerName}. Confira os detalhes abaixo e reserve um tempo para ensaiar com tranquilidade.`,
+        ? `Olá, ${ministerName}. ${tomorrowIntro} ${tomorrowGuidance}`
+        : `Olá, ${ministerName}. ${sevenDayIntro} ${sevenDayGuidance}`,
       accentColor: '#ff3b30',
       accentSoft: '#fff1f0',
       ctaLabel: 'Abrir escala',

@@ -15,7 +15,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScheduleGrid, type ScheduleAssignment, type ScheduleRehearsal, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
-import { AlertCircle, BarChart3, Music2, Settings2, UserCircle2 } from 'lucide-react'
+import { AlertCircle, BarChart3, MessageCircle, Music2, Settings2, UserCircle2 } from 'lucide-react'
+import {
+	buildPublishedScheduleWhatsAppMessage,
+	openScheduleWhatsAppShare,
+} from '@/lib/schedule-whatsapp'
 
 function formatWeekTag(dateStr: string) {
 	return `S${getISOWeek(new Date(`${dateStr}T12:00:00`))}`
@@ -257,6 +261,28 @@ export default function EscalaPage() {
 			.filter(({ isPast }) => !isPast)
 	}, [schedule, viewer?.id])
 
+	const handleShareWhatsApp = useCallback(() => {
+		if (!schedule) return
+
+		const message = buildPublishedScheduleWhatsAppMessage({
+			bimesterName: schedule.bimester.name,
+			roles: schedule.roles,
+			assignments: schedule.assignments,
+			dates: schedule.dates,
+		})
+
+		if (!message) {
+			toast({
+				title: 'Não foi possível montar a mensagem',
+				description: 'Verifique se há datas e o papel de ministro na escala.',
+				variant: 'destructive',
+			})
+			return
+		}
+
+		openScheduleWhatsAppShare(message)
+	}, [schedule, toast])
+
 	const handleSaveRehearsal = useCallback(async (payload: {
 		eventDate: string
 		eventType: 'thursday' | 'sunday'
@@ -386,9 +412,19 @@ export default function EscalaPage() {
 
 									<div className="flex flex-wrap items-center gap-2">
 										<Badge>Publicado</Badge>
-										<Badge variant="outline" className='p-1'>
+										<Badge variant="outline" className="p-1">
 											{assignedCount} {assignedCount === 1 ? 'atribuição' : 'atribuições'} para você.
 										</Badge>
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											className="h-8 gap-1.5"
+											onClick={handleShareWhatsApp}
+										>
+											<MessageCircle className="h-4 w-4 text-[#25D366]" />
+											Enviar no WhatsApp
+										</Button>
 									</div>
 								</div>
 							</CardHeader>
