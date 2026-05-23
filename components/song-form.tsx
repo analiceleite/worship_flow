@@ -626,8 +626,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
             <TabsContent value="file" className="mt-3 space-y-3">
               <p className="text-xs text-muted-foreground">
-                Preencha título, artista e tom, depois envie o arquivo. Em celulares mais antigos,
-                prefira <strong className="font-medium">foto (JPG/PNG)</strong> em vez de PDF.
+                Preencha título, artista e tom, depois envie o arquivo da cifra.
               </p>
               {songDetailsFields(true)}
               {toneField(true)}
