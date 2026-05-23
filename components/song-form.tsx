@@ -30,6 +30,7 @@ import { CheckCircle2, FileUp, Link2, Search, X, Youtube } from 'lucide-react'
 import { uploadCifraFile, validateCifraFile } from '@/lib/cifra-storage'
 import { buildYoutubeSearchCacheKey } from '@/lib/youtube-search-cache'
 import { isCifraClubUrl } from '@/lib/cifraclub-url'
+import { cn } from '@/lib/utils'
 
 interface SongFormProps {
   open: boolean
@@ -64,7 +65,7 @@ function defaultCifraTab(s: Song | null | undefined): 'link' | 'file' {
 export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister }: SongFormProps) {
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
-  const [tone, setTone] = useState<string>('C')
+  const [tone, setTone] = useState('')
   const [cifraTab, setCifraTab] = useState<'link' | 'file'>('link')
 
   const [cipherUrl, setCipherUrl] = useState('')
@@ -120,7 +121,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       setImportError(null)
 
       try {
-        const params = new URLSearchParams({ url, target_tone: toneValue })
+        const params = new URLSearchParams({ url })
+        if (toneValue.trim()) params.set('target_tone', toneValue)
         const res = await fetch(`/api/cifraclub?${params.toString()}`)
         const data = (await res.json().catch(() => ({}))) as CifraClubSong & { error?: string }
 
@@ -168,7 +170,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (song) {
       setTitle(song.title || '')
       setArtist(song.artist || '')
-      setTone(song.tone || 'C')
+      setTone(song.tone || '')
       setExistingPdfPath(song.cifra_pdf_path ?? null)
       setCipherUrl(song.cipher_url ?? '')
       setCifraContent(song.cifra_content ?? null)
@@ -183,7 +185,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
     setTitle('')
     setArtist('')
-    setTone('C')
+    setTone('')
     setExistingPdfPath(null)
     setCipherUrl('')
     setCifraContent(null)
@@ -307,8 +309,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (saving) return
     setFormError(null)
 
-    if (!title.trim() || !artist.trim() || !tone.trim()) {
-      setFormError('Informe título, artista e tom.')
+    if (!title.trim() || !artist.trim()) {
+      setFormError('Informe título e artista.')
+      return
+    }
+
+    if (!tone.trim()) {
+      setFormError('Selecione o tom da música.')
       return
     }
 
@@ -394,11 +401,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const previewLines = (cifraContent ?? []).slice(0, 5)
 
-  const songDetailsFields = (
+  const songDetailsFields = (required?: boolean) => (
     <div className="grid gap-2 sm:grid-cols-2">
       <div className="space-y-1">
         <Label htmlFor="title" className="text-xs">
-          Título
+          Título{required ? ' *' : ''}
         </Label>
         <Input
           id="title"
@@ -410,7 +417,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       </div>
       <div className="space-y-1">
         <Label htmlFor="artist" className="text-xs">
-          Artista
+          Artista{required ? ' *' : ''}
         </Label>
         <Input
           id="artist"
@@ -423,10 +430,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     </div>
   )
 
-  const toneField =
+  const toneField = (required?: boolean) =>
     toneChips.length > 0 && cifraTab === 'link' ? (
       <div className="flex flex-wrap gap-1.5">
-        <span className="w-full text-xs text-muted-foreground">Tom</span>
+        <span className="w-full text-xs text-muted-foreground">
+          Tom{required ? ' *' : ''} — escolha o tom da cifra
+        </span>
         {toneChips.map((t) => (
           <Button
             key={t}
@@ -440,15 +449,18 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
             {t}
           </Button>
         ))}
+        {!tone.trim() && (
+          <p className="w-full text-xs text-destructive">Selecione um tom para continuar.</p>
+        )}
       </div>
     ) : (
       <div className="space-y-1">
         <Label htmlFor="tone" className="text-xs">
-          Tom
+          Tom{required ? ' *' : ''}
         </Label>
-        <Select value={tone} onValueChange={setTone}>
-          <SelectTrigger id="tone" className="font-mono">
-            <SelectValue />
+        <Select value={tone || undefined} onValueChange={setTone}>
+          <SelectTrigger id="tone" className={cn('font-mono', !tone && required && 'border-destructive/60')}>
+            <SelectValue placeholder="Selecione o tom" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
             {TONES.map((t) => (
@@ -597,8 +609,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                     <CheckCircle2 className="h-4 w-4" />
                     Cifra pronta
                   </p>
-                  {songDetailsFields}
-                  {toneField}
+                  {songDetailsFields()}
+                  {toneField(true)}
                   {capoFrets > 0 && (
                     <p className="text-xs text-muted-foreground">Capo: {capoFrets}ª casa</p>
                   )}
@@ -613,6 +625,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
             </TabsContent>
 
             <TabsContent value="file" className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Preencha título, artista e tom, depois envie o arquivo da cifra.
+              </p>
+              {songDetailsFields(true)}
+              {toneField(true)}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -620,24 +637,31 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                 className="sr-only"
                 onChange={handleFileChange}
               />
-              <Button
-                type="button"
-                variant="outline"
-                className="h-auto min-h-[4.5rem] w-full flex-col gap-1 py-4"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <FileUp className="h-5 w-5" />
-                <span className="text-sm font-medium">
-                  {cifraFile
-                    ? cifraFile.name
-                    : existingPdfPath
-                      ? 'Arquivo atual — toque para trocar'
-                      : 'Escolher PDF ou foto'}
-                </span>
-                <span className="text-xs text-muted-foreground">Máx. 10 MB</span>
-              </Button>
-              {songDetailsFields}
-              {toneField}
+              <div className="space-y-1">
+                <Label className="text-xs">Arquivo da cifra *</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn(
+                    'h-auto min-h-[4.5rem] w-full flex-col gap-1 py-4',
+                    !hasPdfSource && 'border-dashed border-destructive/40'
+                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <FileUp className="h-5 w-5" />
+                  <span className="text-sm font-medium">
+                    {cifraFile
+                      ? cifraFile.name
+                      : existingPdfPath
+                        ? 'Arquivo atual — toque para trocar'
+                        : 'Escolher PDF ou foto'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Máx. 10 MB</span>
+                </Button>
+                {!hasPdfSource && (
+                  <p className="text-xs text-destructive">Envie um PDF ou foto da cifra.</p>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
 
