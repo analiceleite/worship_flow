@@ -1,6 +1,12 @@
 import * as cheerio from 'cheerio'
 import { buildCifralizeSongUrl } from '@/lib/cifralize-url'
-import { normalizeCifraClubTone } from '@/lib/cifraclub-scraper'
+import {
+  FLAT_DISPLAY_BY_SHARP,
+  normalizeCifraClubTone,
+  preferDisplayTone,
+  resolveToneInList,
+  tonePitchClass,
+} from '@/lib/cifraclub-scraper'
 
 export interface ImportedCifra {
   artist: string
@@ -103,7 +109,7 @@ function extractCurrentTone($: cheerio.CheerioAPI): string | null {
 
   const headerTone = $('.transpose-btn').first().text()
   const m2 = headerTone.match(/Tom:\s*([A-G][#b]?m?)/i)
-  if (m2) return normalizeCifraClubTone(m[2])
+  if (m2?.[1]) return normalizeCifraClubTone(m2[1])
 
   return null
 }
@@ -197,13 +203,14 @@ export async function searchCifralize(query: string): Promise<CifralizeSearchSon
 
 export async function scrapeCifralize(params: ScrapeCifralizeParams): Promise<ImportedCifra> {
   const { artist, song } = params
-  const targetTone = params.targetTone ? normalizeCifraClubTone(params.targetTone) : null
+  const requestedToneRaw = params.targetTone?.trim() || null
+  const targetTone = requestedToneRaw ? normalizeCifraClubTone(requestedToneRaw) : null
 
-  if (params.targetTone && !targetTone) {
+  if (requestedToneRaw && !targetTone) {
     throw new CifralizeScrapeError('Tom inválido.', 'INVALID_TONE')
   }
 
-  const pageUrl = buildCifralizeSongUrl(artist, song, targetTone)
+  const pageUrl = buildCifralizeSongUrl(artist, song, requestedToneRaw ?? targetTone)
   const html = await fetchHtml(pageUrl)
 
   if (!html) {
@@ -236,24 +243,63 @@ export async function scrapeCifralize(params: ScrapeCifralizeParams): Promise<Im
   const available_tones = extractAvailableTones($)
   const resolvedTone = extractCurrentTone($) ?? targetTone ?? available_tones[0] ?? 'C'
 
-  if (targetTone && available_tones.length > 0 && !available_tones.includes(targetTone)) {
+  const canonicalTarget =
+    targetTone && available_tones.length > 0
+      ? resolveToneInList(requestedToneRaw ?? targetTone, available_tones)
+      : targetTone
+
+  if (targetTone && available_tones.length > 0 && !canonicalTarget) {
     throw new CifralizeScrapeError(
-      `O tom "${targetTone}" não está disponível. Tons: ${available_tones.join(', ')}.`,
+      `O tom "${requestedToneRaw ?? targetTone}" não está disponível. Tons: ${available_tones.join(', ')}.`,
       'INVALID_TONE',
       available_tones
     )
   }
 
+  const toneForDisplay = preferDisplayTone(
+    requestedToneRaw,
+    canonicalTarget ?? resolvedTone
+  )
+
+  const displayTones = expandAvailableTonesForUi(available_tones.length > 0 ? available_tones : [resolvedTone])
+
   return {
     artist: extractArtistName($, artist),
     name: extractTitle($, song),
-    tone: targetTone ?? resolvedTone,
-    available_tones: available_tones.length > 0 ? available_tones : [resolvedTone],
+    tone: toneForDisplay,
+    available_tones: displayTones,
     youtube_url: extractYoutubeUrl(html),
     cipher_url: pageUrl,
     cifra,
     capo_frets: 0,
   }
+}
+
+/** Inclui bemóis equivalentes nos chips (G# e Ab) para bater com a lista TONES do app. */
+function expandAvailableTonesForUi(tones: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+
+  const add = (tone: string) => {
+    const key = `${tonePitchClassKey(tone)}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(tone)
+  }
+
+  for (const tone of tones) {
+    add(tone)
+    const flat = FLAT_DISPLAY_BY_SHARP[tone]
+    if (flat) add(flat)
+  }
+
+  return out
+}
+
+function tonePitchClassKey(tone: string): string {
+  const p = tonePitchClass(tone)
+  if (!p) return tone
+  return `${p.minor ? 'm' : 'M'}:${p.pc}`
 }
 
 /** Resolve artista/música por busca quando não há URL exata. */

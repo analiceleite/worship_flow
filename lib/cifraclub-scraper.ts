@@ -35,10 +35,12 @@ const TONE_ALIASES: Record<string, string> = {
   Db: 'C#',
   Eb: 'D#',
   Gb: 'F#',
+  Ab: 'G#',
   Bb: 'A#',
   Dbm: 'C#m',
   Ebm: 'D#m',
   Gbm: 'F#m',
+  Abm: 'G#m',
   Bbm: 'A#m',
 }
 
@@ -70,6 +72,68 @@ export const normalizeCifraClubTone = (raw: string): string | null => {
   if (!/^[A-G][#b]?m?$/i.test(cleaned)) return null
   const upper = `${cleaned[0].toUpperCase()}${cleaned.slice(1)}`
   return TONE_ALIASES[upper] ?? upper
+}
+
+/** Semitom + modo (maior/menor) para comparar tons enarmônicos (Ab = G#). */
+export function tonePitchClass(tone: string): { pc: number; minor: boolean } | null {
+  const normalized = normalizeCifraClubTone(tone)
+  if (!normalized) return null
+
+  const minor = normalized.endsWith('m') && normalized.length > 1
+  const root = minor ? normalized.slice(0, -1) : normalized
+  const pc = NOTE_INDEX[root]
+  if (pc === undefined) return null
+
+  return { pc, minor }
+}
+
+export function tonesAreEquivalent(a: string, b: string): boolean {
+  const pa = tonePitchClass(a)
+  const pb = tonePitchClass(b)
+  if (!pa || !pb) return false
+  return pa.pc === pb.pc && pa.minor === pb.minor
+}
+
+/** Escolhe o rótulo da lista disponível que corresponde ao tom pedido (ex.: Ab → G#). */
+export function resolveToneInList(target: string, available: string[]): string | null {
+  const normalized = normalizeCifraClubTone(target)
+  if (!normalized) return null
+  if (available.includes(normalized)) return normalized
+
+  for (const candidate of available) {
+    if (tonesAreEquivalent(normalized, candidate)) return candidate
+  }
+
+  return null
+}
+
+export const FLAT_DISPLAY_BY_SHARP: Record<string, string> = {
+  'C#': 'Db',
+  'D#': 'Eb',
+  'F#': 'Gb',
+  'G#': 'Ab',
+  'A#': 'Bb',
+  'C#m': 'Dbm',
+  'D#m': 'Ebm',
+  'F#m': 'Gbm',
+  'G#m': 'Abm',
+  'A#m': 'Bbm',
+}
+
+/** Preferência de exibição: mantém bemol se o usuário pediu equivalente em bemol. */
+export function preferDisplayTone(requested: string | null, canonical: string): string {
+  if (!requested?.trim()) return canonical
+  const reqNorm = normalizeCifraClubTone(requested)
+  if (!reqNorm || !tonesAreEquivalent(requested, canonical)) return canonical
+
+  const reqDisplay = requested.trim()
+  const reqNormFromDisplay = normalizeCifraClubTone(reqDisplay)
+  if (reqNormFromDisplay === reqNorm && /b/.test(reqDisplay)) return reqDisplay
+
+  const flat = FLAT_DISPLAY_BY_SHARP[canonical]
+  if (flat && tonesAreEquivalent(flat, canonical)) return flat
+
+  return canonical
 }
 
 const parseToneRoot = (tone: string | null | undefined): string | null => {

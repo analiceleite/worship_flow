@@ -30,6 +30,7 @@ import { CheckCircle2, FileUp, Link2, Search, X, Youtube } from 'lucide-react'
 import { uploadCifraFile, validateCifraFile } from '@/lib/cifra-storage'
 import { buildYoutubeSearchCacheKey } from '@/lib/youtube-search-cache'
 import { isCifralizeUrl } from '@/lib/cifralize-url'
+import { normalizeCifraClubTone, tonesAreEquivalent } from '@/lib/cifraclub-scraper'
 import { cn } from '@/lib/utils'
 
 interface SongFormProps {
@@ -97,7 +98,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const lastAutoImportKeyRef = useRef<string | null>(null)
   const importDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const buildImportKey = (url: string, toneValue: string) => `${url}|${toneValue}`
+  const buildImportKey = (url: string, toneValue: string) =>
+    `${url}|${normalizeCifraClubTone(toneValue) ?? toneValue}`
 
   const YOUTUBE_SEARCH_MAX = 8
 
@@ -231,7 +233,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (importDebounceRef.current) clearTimeout(importDebounceRef.current)
     importDebounceRef.current = setTimeout(() => {
       if (buildImportKey(url, tone) === lastAutoImportKeyRef.current) return
-      if (url === lastImportedUrlRef.current && lastImportedToneRef.current === tone) return
+      if (
+        url === lastImportedUrlRef.current &&
+        lastImportedToneRef.current &&
+        tonesAreEquivalent(tone, lastImportedToneRef.current)
+      ) {
+        return
+      }
       void importFromUrl(url, tone)
     }, 650)
 
