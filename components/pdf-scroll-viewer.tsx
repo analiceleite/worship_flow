@@ -1,8 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from 'pdfjs-dist'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
+
+if (typeof window !== 'undefined') {
+  GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`
+}
 
 interface PdfScrollViewerProps {
   /** URL assinada ou pública do PDF (GET permitido pelo servidor). */
@@ -173,14 +178,11 @@ export function PdfScrollViewer({
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       })
 
-      const pdfjs = await import('pdfjs-dist')
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
-
       const pdfBytes = await fetchPdfBytes(url)
       if (gen !== renderGenerationRef.current) return
 
       // Cópia: algumas versões do pdf.js alteram o buffer
-      const loadingTask = pdfjs.getDocument({
+      const loadingTask = getDocument({
         data: pdfBytes.slice(),
         disableRange: true,
         disableStream: true,

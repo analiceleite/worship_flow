@@ -9,6 +9,7 @@ import { Song } from '@/lib/types'
 import { songHasCifra } from '@/lib/cifra-storage'
 import { CifraPdfViewer } from '@/components/cifra-pdf-viewer'
 import { useIsMobile, isMobileViewportSync } from '@/hooks/use-mobile'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExternalLink, Pause, Play, RotateCcw, X } from 'lucide-react'
 import { DialogClose } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -84,8 +85,32 @@ function renderLine(line: string, lineIndex: number) {
     )
 }
 
-export function CifraContent({ song, className, pdfVariant = 'embedded' }: CifraContentProps) {
-    if (song.cifra_pdf_path) {
+function CifraTextBlock({ song, className }: { song: Song; className?: string }) {
+    if (!song.cifra_content?.length) return null
+    return (
+        <div className={className ?? 'px-3 py-3 font-mono text-[13px] leading-6 text-foreground sm:text-sm sm:leading-6'}>
+            {song.cifra_content.map((line, idx) => renderLine(line, idx))}
+        </div>
+    )
+}
+
+export function CifraContent({
+    song,
+    className,
+    pdfVariant = 'embedded',
+    mode = 'auto',
+}: CifraContentProps & { mode?: 'auto' | 'text' | 'pdf' }) {
+    const hasTextCifra = Boolean(song.cifra_content && song.cifra_content.length > 0)
+    const hasPdfCifra = Boolean(song.cifra_pdf_path)
+
+    const showText = mode === 'text' || (mode === 'auto' && hasTextCifra)
+    const showPdf = mode === 'pdf' || (mode === 'auto' && !hasTextCifra && hasPdfCifra)
+
+    if (showText) {
+        return <CifraTextBlock song={song} className={className} />
+    }
+
+    if (showPdf && song.cifra_pdf_path) {
         return (
             <CifraPdfViewer
                 storagePath={song.cifra_pdf_path}
@@ -95,20 +120,13 @@ export function CifraContent({ song, className, pdfVariant = 'embedded' }: Cifra
         )
     }
 
-    if (song.cifra_content && song.cifra_content.length > 0) {
-        return (
-            <div className={className ?? 'px-3 py-3 font-mono text-[13px] leading-6 text-foreground sm:text-sm sm:leading-6'}>
-                {song.cifra_content.map((line, idx) => renderLine(line, idx))}
-            </div>
-        )
-    }
-
     return (
         <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             Cifra não disponível para esta música.
         </div>
     )
 }
+
 
 export function CifraPanel({ song, heightClassName, contentClassName }: CifraPanelProps) {
     const rootRef = useRef<HTMLDivElement | null>(null)
@@ -295,19 +313,44 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
             ) : null}
 
             <div ref={rootRef} className="min-h-0 flex-1">
-                {hasPdfCifra ? (
+                {hasTextCifra && hasPdfCifra ? (
+                    <div className={cn('flex h-full min-h-0 flex-col', heightClassName)}>
+                        <Tabs defaultValue="text" className="flex h-full min-h-0 flex-col">
+                            <TabsList className="mb-2 grid w-full shrink-0 grid-cols-2">
+                                <TabsTrigger value="text">Cifra</TabsTrigger>
+                                <TabsTrigger value="pdf">Arquivo</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="text" className="min-h-0 flex-1 overflow-hidden">
+                                <CifraPanel
+                                    song={{ ...song, cifra_pdf_path: null }}
+                                    heightClassName="h-full min-h-[min(55dvh,26rem)] rounded-md border bg-muted/40"
+                                    contentClassName={contentClassName}
+                                />
+                            </TabsContent>
+                            <TabsContent value="pdf" className="min-h-0 flex-1 overflow-hidden">
+                                <CifraContent
+                                    song={song}
+                                    mode="pdf"
+                                    pdfVariant="embedded"
+                                    className="h-full min-h-[min(55dvh,26rem)]"
+                                />
+                            </TabsContent>
+                        </Tabs>
+                    </div>
+                ) : hasPdfCifra ? (
                     <div
                         className={cn(
                             'h-full min-h-[min(70dvh,28rem)] lg:min-h-[min(75dvh,36rem)] xl:min-h-[min(80dvh,42rem)]',
                             heightClassName
                         )}
                     >
-                        <CifraContent song={song} pdfVariant="embedded" className="h-full" />
+                        <CifraContent song={song} pdfVariant="embedded" className="h-full" mode="pdf" />
                     </div>
                 ) : (
                     <ScrollArea className={heightClassName ?? 'h-full rounded-md border bg-muted/40'}>
                         <CifraContent
                             song={song}
+                            mode="text"
                             className={contentClassName ?? 'px-3 py-3 font-mono text-[13px] leading-6 text-foreground sm:text-sm sm:leading-6'}
                         />
                     </ScrollArea>
@@ -368,7 +411,7 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
             ? (song as any).capo
             : null
 
-    if (hasPdfCifra) {
+    if (hasPdfCifra && !hasTextCifra) {
         return (
             <Dialog open={open} onOpenChange={onOpenChange}>
                 <DialogContent
@@ -419,7 +462,7 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
                         </DialogClose>
                     </header>
                     <div className="flex min-h-0 flex-1 basis-0 flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
-                        <CifraContent song={song} pdfVariant="fullscreen" className="min-h-0 flex-1" />
+                        <CifraContent song={song} pdfVariant="fullscreen" className="min-h-0 flex-1" mode="pdf" />
                     </div>
                 </DialogContent>
             </Dialog>
@@ -466,7 +509,30 @@ export function CifraViewer({ song, open, onOpenChange }: CifraViewerProps) {
                 </DialogHeader>
 
                 <div className="min-h-0 flex-1 overflow-hidden">
-                    <CifraPanel song={song} heightClassName="h-full rounded-md border bg-muted/40" />
+                    {hasTextCifra && hasPdfCifra ? (
+                        <Tabs defaultValue="text" className="flex h-full min-h-0 flex-col">
+                            <TabsList className="grid w-full shrink-0 grid-cols-2">
+                                <TabsTrigger value="text">Cifra</TabsTrigger>
+                                <TabsTrigger value="pdf">Arquivo</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="text" className="mt-2 min-h-0 flex-1 overflow-hidden">
+                                <CifraPanel
+                                    song={{ ...song, cifra_pdf_path: null }}
+                                    heightClassName="h-full min-h-[min(60dvh,28rem)] rounded-md border bg-muted/40"
+                                />
+                            </TabsContent>
+                            <TabsContent value="pdf" className="mt-2 min-h-0 flex-1 overflow-hidden">
+                                <CifraContent
+                                    song={song}
+                                    mode="pdf"
+                                    pdfVariant="embedded"
+                                    className="h-full min-h-[min(50dvh,24rem)]"
+                                />
+                            </TabsContent>
+                        </Tabs>
+                    ) : (
+                        <CifraPanel song={song} heightClassName="h-full rounded-md border bg-muted/40" />
+                    )}
                 </div>
             </DialogContent>
         </Dialog>
