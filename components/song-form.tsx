@@ -342,11 +342,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   }
 
   const hasYoutube = Boolean(ensureHttps(youtubeUrl))
+  const youtubeRequired = cifraTab === 'link'
 
   const canSave =
     cifraTab === 'link'
       ? Boolean(importReady && title.trim() && artist.trim() && tone.trim() && hasYoutube)
-      : Boolean(hasPdfSource && title.trim() && artist.trim() && tone.trim() && hasYoutube)
+      : Boolean(hasPdfSource && title.trim() && artist.trim() && tone.trim())
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -373,7 +374,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       return
     }
 
-    if (!hasYoutube) {
+    if (youtubeRequired && !hasYoutube) {
       setFormError('Selecione um vídeo de referência no YouTube antes de salvar.')
       return
     }
@@ -553,13 +554,18 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     <div
       className={cn(
         'space-y-2 rounded-md border bg-muted/20 p-3',
-        !hasYoutube && 'border-destructive/40'
+        youtubeRequired && !hasYoutube && 'border-destructive/40'
       )}
     >
       <div className="flex items-center justify-between gap-2">
         <Label className="flex items-center gap-1.5 text-sm">
           <Youtube className="h-4 w-4 text-destructive" />
-          Vídeo de referência no YouTube <span className="text-destructive">*</span>
+          Vídeo de referência no YouTube
+          {youtubeRequired ? (
+            <span className="text-destructive">*</span>
+          ) : (
+            <span className="font-normal text-muted-foreground">(opcional)</span>
+          )}
         </Label>
         {youtubeUrl && (
           <Badge variant="secondary" className="text-[10px]">
@@ -580,11 +586,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            {importReady
-              ? 'Obrigatório para salvar. Se o Cifralize não trouxe vídeo, busque a versão abaixo.'
-              : 'Obrigatório para salvar. Busque a versão que a equipe usa como referência.'}
+            {youtubeRequired
+              ? importReady
+                ? 'Obrigatório para salvar. Se o Cifralize não trouxe vídeo, busque a versão abaixo.'
+                : 'Obrigatório para salvar. Busque a versão que a equipe usa como referência.'
+              : 'Opcional — útil para ensaio. Músicas autorais podem ficar sem vídeo.'}
           </p>
-          {!hasYoutube && (
+          {youtubeRequired && !hasYoutube && (
             <p className="text-xs text-destructive">Selecione um vídeo antes de salvar a música.</p>
           )}
           <div className="flex gap-2">
