@@ -10,7 +10,7 @@ import { songHasCifra } from '@/lib/cifra-storage'
 import { CifraPdfViewer } from '@/components/cifra-pdf-viewer'
 import { useIsMobile, isMobileViewportSync } from '@/hooks/use-mobile'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ExternalLink, Pause, Play, RotateCcw, X } from 'lucide-react'
+import { ChevronDown, ExternalLink, Pause, Play, RotateCcw, X } from 'lucide-react'
 import { DialogClose } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -132,7 +132,9 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
     const rootRef = useRef<HTMLDivElement | null>(null)
     const frameRef = useRef<number | null>(null)
     const lastTimestampRef = useRef<number | null>(null)
+    const isMobile = useIsMobile()
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(false)
+    const [autoScrollExpanded, setAutoScrollExpanded] = useState(false)
     const [secondsPerScreen, setSecondsPerScreen] = useState(DEFAULT_SECONDS_PER_SCREEN)
 
     const hasPdfCifra = Boolean(song.cifra_pdf_path)
@@ -209,6 +211,7 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
 
     useEffect(() => {
         setAutoScrollEnabled(false)
+        setAutoScrollExpanded(false)
         stopAutoScroll()
         const timeoutId = window.setTimeout(() => {
             const viewport = getViewport()
@@ -264,51 +267,83 @@ export function CifraPanel({ song, heightClassName, contentClassName }: CifraPan
     useEffect(() => stopAutoScroll, [])
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="flex h-full min-h-0 flex-col gap-1">
             {hasTextCifra ? (
-                <div className="flex shrink-0 flex-col gap-3 rounded-md border bg-background px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Autorrolagem</p>
-                        <p className="text-xs text-muted-foreground">Configure o tempo e deixe a cifra descer sozinha.</p>
-                    </div>
-
-                    <div className="flex flex-col gap-3 sm:items-end">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                type="button"
-                                variant={autoScrollEnabled ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => setAutoScrollEnabled((current) => !current)}
-                            >
-                                {autoScrollEnabled ? (
-                                    <Pause className="mr-1.5 h-3.5 w-3.5" />
-                                ) : (
-                                    <Play className="mr-1.5 h-3.5 w-3.5" />
-                                )}
-                                {autoScrollEnabled ? 'Pausar' : 'Iniciar'}
-                            </Button>
-                            <Button type="button" variant="ghost" size="sm" onClick={resetScroll}>
-                                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                                Reiniciar
-                            </Button>
-                        </div>
-
-                        <div className="flex w-full items-center gap-2 sm:w-72">
-                            <span className="shrink-0 text-xs text-muted-foreground">Tempo</span>
-                            <input
-                                type="range"
-                                min={5}
-                                max={300}
-                                step={1}
-                                value={secondsPerScreen}
-                                onChange={(event) => setSecondsPerScreen(Number(event.target.value))}
-                                aria-label="Tempo da autorrolagem da cifra"
-                                title="Tempo da autorrolagem da cifra"
-                                className="h-2 w-full cursor-pointer accent-emerald-500"
+                <div className="shrink-0 rounded-md border bg-background">
+                    <div className="flex items-center gap-1 px-2 py-1.5">
+                        <Button
+                            type="button"
+                            variant={autoScrollEnabled ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-8 shrink-0 px-2.5"
+                            onClick={() => setAutoScrollEnabled((current) => !current)}
+                            aria-label={autoScrollEnabled ? 'Pausar autorrolagem' : 'Iniciar autorrolagem'}
+                        >
+                            {autoScrollEnabled ? (
+                                <Pause className="h-4 w-4" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
+                            <span className="sr-only">{autoScrollEnabled ? 'Pausar' : 'Iniciar'}</span>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={resetScroll}
+                            aria-label="Reiniciar rolagem"
+                        >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                            {autoScrollEnabled ? 'Rolando…' : speedLabel}
+                        </span>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => setAutoScrollExpanded((v) => !v)}
+                            aria-expanded={autoScrollExpanded}
+                            aria-label={autoScrollExpanded ? 'Recolher opções de autorrolagem' : 'Opções de autorrolagem'}
+                        >
+                            <ChevronDown
+                                className={cn('h-4 w-4 transition-transform', autoScrollExpanded && 'rotate-180')}
                             />
-                            <span className="w-28 shrink-0 text-right text-xs text-muted-foreground">{speedLabel}</span>
-                        </div>
+                        </Button>
                     </div>
+
+                    {autoScrollExpanded && (
+                        <div
+                            className={cn(
+                                'space-y-2 border-t px-2 pb-2 pt-2',
+                                isMobile ? 'px-2' : 'px-3'
+                            )}
+                        >
+                            {!isMobile && (
+                                <p className="text-xs text-muted-foreground">
+                                    Ajuste o tempo e deixe a cifra descer sozinha.
+                                </p>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <span className="shrink-0 text-xs text-muted-foreground">Tempo</span>
+                                <input
+                                    type="range"
+                                    min={5}
+                                    max={300}
+                                    step={1}
+                                    value={secondsPerScreen}
+                                    onChange={(event) => setSecondsPerScreen(Number(event.target.value))}
+                                    aria-label="Tempo da autorrolagem da cifra"
+                                    className="h-2 min-w-0 flex-1 cursor-pointer accent-emerald-500"
+                                />
+                                <span className="w-20 shrink-0 text-right text-xs text-muted-foreground sm:w-24">
+                                    {speedLabel}
+                                </span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : null}
 

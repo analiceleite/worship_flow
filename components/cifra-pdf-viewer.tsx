@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { ExternalLink, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 export type CifraPdfViewerVariant = 'embedded' | 'fullscreen'
 
@@ -40,8 +41,10 @@ export function CifraPdfViewer({
   const [imageZoom, setImageZoom] = useState(1)
   const [pdfZoom, setPdfZoom] = useState(1)
 
+  const isMobile = useIsMobile()
   const isFullscreen = variant === 'fullscreen'
   const isPdf = isPdfStoragePath(storagePath)
+  const compactToolbar = isMobile || isFullscreen
 
   useEffect(() => {
     let cancelled = false
@@ -146,8 +149,8 @@ export function CifraPdfViewer({
       {showToolbar && (
         <div
           className={cn(
-            'flex shrink-0 flex-wrap items-center justify-end gap-1 border-b border-border/60 bg-background/95 px-2 py-1.5 backdrop-blur-sm sm:gap-1 sm:px-3 sm:py-2',
-            isFullscreen && 'sm:px-4'
+            'flex shrink-0 flex-wrap items-center justify-end gap-0.5 border-b border-border/60 bg-background/95 backdrop-blur-sm',
+            compactToolbar ? 'px-1.5 py-1' : 'gap-1 px-2 py-1.5 sm:px-3 sm:py-2'
           )}
         >
           {isPdf ? (
@@ -226,12 +229,14 @@ export function CifraPdfViewer({
             )}
             <span className="hidden sm:inline">Tela cheia</span>
           </Button>
-          <Button type="button" variant="ghost" size="sm" className="h-8 gap-1 text-xs sm:gap-1.5" asChild>
-            <a href={signedUrl} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba">
-              <ExternalLink className="h-4 w-4" />
-              <span className="hidden sm:inline">Abrir em nova aba</span>
-            </a>
-          </Button>
+          {!isMobile && (
+            <Button type="button" variant="ghost" size="sm" className="h-8 gap-1 text-xs sm:gap-1.5" asChild>
+              <a href={signedUrl} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba">
+                <ExternalLink className="h-4 w-4" />
+                <span className="hidden sm:inline">Abrir em nova aba</span>
+              </a>
+            </Button>
+          )}
         </div>
       )}
 
