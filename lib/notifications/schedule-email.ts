@@ -34,10 +34,6 @@ type RehearsalRow = {
   rehearsal_place: string | null
 }
 
-function formatEventType(eventType: 'thursday' | 'sunday') {
-  return eventType === 'thursday' ? 'Quinta-feira' : 'Domingo'
-}
-
 function toPtDate(isoDate: string) {
   const [year, month, day] = isoDate.split('-').map(Number)
   const date = new Date(year, (month ?? 1) - 1, day ?? 1)
@@ -47,6 +43,17 @@ function toPtDate(isoDate: string) {
     month: '2-digit',
     year: 'numeric',
   })
+}
+
+function capitalizePt(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return trimmed
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
+/** Ex.: "Domingo, 31/05/2026" — dia da semana uma vez só. */
+function formatEventDateLabel(eventDate: string) {
+  return capitalizePt(toPtDate(eventDate))
 }
 
 function toRehearsalSummary(input: {
@@ -290,12 +297,8 @@ type EmailTemplateInput = {
   payload: Record<string, unknown>
 }
 
-function formatReminderEventLabel(eventDate: string, eventType: 'thursday' | 'sunday') {
-  return `${formatEventType(eventType)}, ${toPtDate(eventDate)}`
-}
-
 function buildEmailTemplate(input: EmailTemplateInput) {
-  const ministerName = String(input.payload.minister_name ?? 'Ministro(a)')
+  const ministerName = String(input.payload.minister_name ?? 'Ministro(a)').trim()
   const bimesterName = String(input.payload.bimester_name ?? input.payload.quarter_name ?? 'Escala')
   const items = Array.isArray(input.payload.items) ? input.payload.items : []
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
@@ -350,23 +353,13 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       return 0
     })
 
-  const primaryEvent = sortedEvents[0]
-  const reminderEventLabel =
-    targetDate && primaryEvent
-      ? formatReminderEventLabel(targetDate, primaryEvent.eventType)
-      : targetDate
-        ? toPtDate(targetDate)
-        : ''
+  const reminderEventLabel = targetDate ? formatEventDateLabel(targetDate) : ''
 
-  const lines = sortedEvents.map((event) => {
-    const eventDate = event.eventDate ? toPtDate(event.eventDate) : '-'
-    const eventType = formatEventType(event.eventType)
-    return {
-      header: `${eventDate} • ${eventType}`,
-      roles: event.roles,
-      rehearsal: event.rehearsal,
-    }
-  })
+  const lines = sortedEvents.map((event) => ({
+    header: event.eventDate ? formatEventDateLabel(event.eventDate) : '-',
+    roles: event.roles,
+    rehearsal: event.rehearsal,
+  }))
 
   const textDetailsLabel = isOneDayReminder
     ? 'Suas funções amanhã:'
