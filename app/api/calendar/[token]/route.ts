@@ -152,9 +152,14 @@ export async function GET(
       const { hour: arrivalHour, minute: arrivalMinute } = parseTime(arrivalTimeStr)
       const { hour: endHour, minute: endMinute } = addMinutesToTime(serviceTimeStr, 90)
 
+      // Collect all roles for this event
+      const roleNames = eventAssignments
+        .map(a => a.role?.name ?? 'Função')
+        .filter((role, index, self) => self.indexOf(role) === index) // Remove duplicates
+
       const eventLabel = firstAssignment.event_type === 'thursday'
-        ? `Escala — Quinta (ensaio ${arrivalTimeStr} / culto ${serviceTimeStr})`
-        : `Escala — Domingo (chegada ${arrivalTimeStr} / culto ${serviceTimeStr})`
+        ? `Escala — Quinta: ${roleNames.join(', ')} (ensaio ${arrivalTimeStr} / culto ${serviceTimeStr})`
+        : `Escala — Domingo: ${roleNames.join(', ')} (chegada ${arrivalTimeStr} / culto ${serviceTimeStr})`
 
       // Generate UID based on assignment date and type
       const uid = eventKey + '@worship-flow'
@@ -177,13 +182,8 @@ END:VALARM`
         })
         .join('\n')
 
-      // Collect all roles for this event
-      const roleNames = eventAssignments
-        .map(a => a.role?.name ?? 'Função')
-        .filter((role, index, self) => self.indexOf(role) === index) // Remove duplicates
-
       const eventType = firstAssignment.event_type === 'thursday' ? 'Ensaio e Culto' : 'Culto'
-      const description = `Ministro: ${minister.name}\nFunções: ${roleNames.join(', ')}\nTipo: ${eventType}`
+      const description = `Ministro: ${minister.name}\\nFunções: ${roleNames.join(', ')}\\nTipo: ${eventType}`
 
       const event = `BEGIN:VEVENT
 UID:${uid}
