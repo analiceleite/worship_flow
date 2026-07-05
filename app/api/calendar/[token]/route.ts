@@ -68,6 +68,7 @@ export async function GET(
       .single()
 
     if (ministerError || !minister) {
+      console.error('Calendar feed error:', { ministerError, minister, token })
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
