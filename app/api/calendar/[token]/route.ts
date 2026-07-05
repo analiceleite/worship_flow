@@ -50,15 +50,24 @@ function getServiceTime(eventType: EventType, quarter: QuarterRow): string {
 
 export async function GET(
   request: Request,
-  { params }: { params: { token: string } }
+  { params }: { params: { token?: string } }
 ) {
   try {
-    const { token } = params
+    let token = params?.token
 
-    console.log('[DEBUG] Calendar feed request:', { token, paramType: typeof token })
+    // Fallback: try to extract token from URL path if params.token is undefined
+    if (!token) {
+      const url = new URL(request.url)
+      const pathMatch = url.pathname.match(/\/api\/calendar\/([a-f0-9\-]+)/)
+      if (pathMatch) {
+        token = pathMatch[1]
+      }
+    }
+
+    console.log('[DEBUG] Calendar feed request:', { token, paramType: typeof token, pathname: new URL(request.url).pathname })
 
     if (!token || typeof token !== 'string') {
-      console.error('[DEBUG] Invalid token format')
+      console.error('[DEBUG] Invalid token format - could not extract token')
       return NextResponse.json({ error: 'Invalid token' }, { status: 400 })
     }
 
