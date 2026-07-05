@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
     const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000'
     const https_url = `${baseUrl}/api/calendar/${token}`
-    const webcal_url = https_url.replace('http://', 'webcal://').replace('https://', 'webcal://')
+    const webcal_url = https_url.replace('http://', 'webcal://').replace('https://', 'webcals://')
 
     return NextResponse.json({
       token,

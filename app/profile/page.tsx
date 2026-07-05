@@ -187,7 +187,7 @@ export default function ProfilePage() {
                           variant="outline"
                           onClick={async () => {
                             const baseUrl = window.location.origin
-                            const webcalUrl = `${baseUrl}/api/calendar/${minister.calendar_token}`.replace('http://', 'webcal://').replace('https://', 'webcal://')
+                            const webcalUrl = `${baseUrl}/api/calendar/${minister.calendar_token}`.replace('http://', 'webcal://').replace('https://', 'webcals://')
                             await navigator.clipboard.writeText(webcalUrl)
                             toast.success('Link copiado!')
                           }}
