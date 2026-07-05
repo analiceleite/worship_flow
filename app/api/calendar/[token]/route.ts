@@ -127,26 +127,37 @@ export async function GET(
       .filter((v: number) => !isNaN(v) && v > 0)
       .sort((a: number, b: number) => b - a)
 
+    // Group assignments by event_date and event_type to handle multiple roles per day
+    const eventMap = new Map<string, AssignmentRow[]>()
+    for (const assignment of assignments) {
+      const key = `${assignment.event_date}_${assignment.event_type}`
+      if (!eventMap.has(key)) {
+        eventMap.set(key, [])
+      }
+      eventMap.get(key)!.push(assignment)
+    }
+
     // Build iCalendar manually since `ics` library has limitations with custom properties
     const events: string[] = []
 
-    for (const assignment of assignments) {
-      const eventDate = assignment.event_date
+    for (const [eventKey, eventAssignments] of eventMap.entries()) {
+      const firstAssignment = eventAssignments[0]
+      const eventDate = firstAssignment.event_date
       const [year, month, day] = eventDate.split('-').map(Number)
 
-      const rehearsal = rehearsalsByEvent.get(`${eventDate}_${assignment.event_type}`)
-      const arrivalTimeStr = rehearsal?.rehearsal_time || getArrivalTime(assignment.event_type, quarter)
-      const serviceTimeStr = getServiceTime(assignment.event_type, quarter)
+      const rehearsal = rehearsalsByEvent.get(eventKey)
+      const arrivalTimeStr = rehearsal?.rehearsal_time || getArrivalTime(firstAssignment.event_type, quarter)
+      const serviceTimeStr = getServiceTime(firstAssignment.event_type, quarter)
 
       const { hour: arrivalHour, minute: arrivalMinute } = parseTime(arrivalTimeStr)
       const { hour: endHour, minute: endMinute } = addMinutesToTime(serviceTimeStr, 90)
 
-      const eventLabel = assignment.event_type === 'thursday'
+      const eventLabel = firstAssignment.event_type === 'thursday'
         ? `Escala — Quinta (ensaio ${arrivalTimeStr} / culto ${serviceTimeStr})`
         : `Escala — Domingo (chegada ${arrivalTimeStr} / culto ${serviceTimeStr})`
 
       // Generate UID based on assignment date and type
-      const uid = `${assignment.event_date}_${assignment.event_type}@worship-flow`
+      const uid = eventKey + '@worship-flow'
 
       // Format dates for iCal (YYYYMMDDTHHMMSS)
       const dtstart = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}T${String(arrivalHour).padStart(2, '0')}${String(arrivalMinute).padStart(2, '0')}00`
@@ -166,9 +177,13 @@ END:VALARM`
         })
         .join('\n')
 
-      const roleName = assignment.role?.name ?? 'Função'
-      const eventType = assignment.event_type === 'thursday' ? 'Ensaio e Culto' : 'Culto'
-      const description = `Ministro: ${minister.name}\nFunção: ${roleName}\nTipo: ${eventType}`
+      // Collect all roles for this event
+      const roleNames = eventAssignments
+        .map(a => a.role?.name ?? 'Função')
+        .filter((role, index, self) => self.indexOf(role) === index) // Remove duplicates
+
+      const eventType = firstAssignment.event_type === 'thursday' ? 'Ensaio e Culto' : 'Culto'
+      const description = `Ministro: ${minister.name}\nFunções: ${roleNames.join(', ')}\nTipo: ${eventType}`
 
       const event = `BEGIN:VEVENT
 UID:${uid}
