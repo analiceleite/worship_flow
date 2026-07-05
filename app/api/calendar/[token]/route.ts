@@ -7,6 +7,7 @@ type AssignmentRow = {
   minister_id: string | null
   event_date: string
   event_type: EventType
+  role: { name: string } | null
 }
 
 type RehearsalRow = {
@@ -75,7 +76,7 @@ export async function GET(
 
     const { data: minister, error: ministerError } = await admin
       .from('ministers')
-      .select('id, name, email, instrument, calendar_feed_enabled, calendar_alarm_offsets_minutes')
+      .select('id, name, email, calendar_feed_enabled, calendar_alarm_offsets_minutes')
       .eq('calendar_token', token)
       .single()
 
@@ -93,7 +94,7 @@ export async function GET(
     const [assignmentsRes, rehearsalsRes, quartersRes] = await Promise.all([
       admin
         .from('schedule_assignments')
-        .select('minister_id, event_date, event_type')
+        .select('minister_id, event_date, event_type, role:schedule_roles(name)')
         .eq('minister_id', minister.id)
         .order('event_date', { ascending: true }),
       admin
@@ -165,7 +166,9 @@ END:VALARM`
         })
         .join('\n')
 
-      const description = `${minister.name}${minister.instrument ? ` - ${minister.instrument}` : ''} - Escala para ${assignment.event_type === 'thursday' ? 'ensaio e culto' : 'culto'}`
+      const roleName = assignment.role?.name ?? 'Função'
+      const eventType = assignment.event_type === 'thursday' ? 'Ensaio e Culto' : 'Culto'
+      const description = `Ministro: ${minister.name}\nFunção: ${roleName}\nTipo: ${eventType}`
 
       const event = `BEGIN:VEVENT
 UID:${uid}
