@@ -55,7 +55,10 @@ export async function GET(
   try {
     const { token } = params
 
+    console.log('[DEBUG] Calendar feed request:', { token, paramType: typeof token })
+
     if (!token || typeof token !== 'string') {
+      console.error('[DEBUG] Invalid token format')
       return NextResponse.json({ error: 'Invalid token' }, { status: 400 })
     }
 
@@ -67,9 +70,11 @@ export async function GET(
       .eq('calendar_token', token)
       .single()
 
+    console.log('[DEBUG] Query result:', { ministerError, ministerFound: !!minister, token })
+
     if (ministerError || !minister) {
-      console.error('Calendar feed error:', { ministerError, minister, token })
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      console.error('[DEBUG] Minister not found:', { error: ministerError, token })
+      return NextResponse.json({ error: 'Not found', debug: ministerError?.message }, { status: 404 })
     }
 
     if (!minister.calendar_feed_enabled) {
