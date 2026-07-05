@@ -154,6 +154,8 @@ export async function GET(
           const trigger = `-PT${offset}M`
           return `BEGIN:VALARM
 TRIGGER:${trigger}
+DURATION:PT15M
+REPEAT:1
 ACTION:DISPLAY
 DESCRIPTION:Lembrete de escala
 END:VALARM`
