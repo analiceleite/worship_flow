@@ -49,6 +49,41 @@ function getServiceTime(eventType: EventType, quarter: QuarterRow): string {
   return eventType === 'thursday' ? quarter.thursday_service_time : quarter.sunday_service_time
 }
 
+// Escapes a TEXT value per RFC 5545 (3.3.11): backslash, then semicolon, then literal newlines.
+// Order matters — escaping backslash first avoids double-escaping the backslashes we just inserted.
+function escapeICalText(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/\r\n|\n|\r/g, '\\n')
+}
+
+// Folds a content line at 75 octets per RFC 5545 (3.1), continuing with CRLF + a leading space.
+// Splits on UTF-8 byte boundaries so multi-byte characters (á, ã, ç, —) are never cut in half.
+function foldLine(line: string): string {
+  const bytes = Buffer.from(line, 'utf8')
+  if (bytes.length <= 75) {
+    return line
+  }
+
+  const chunks: string[] = []
+  let offset = 0
+  let limit = 75
+
+  while (offset < bytes.length) {
+    let end = Math.min(offset + limit, bytes.length)
+    // Back off while we're in the middle of a multi-byte UTF-8 sequence (continuation bytes are 10xxxxxx).
+    while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) {
+      end--
+    }
+    chunks.push(bytes.subarray(offset, end).toString('utf8'))
+    offset = end
+    limit = 74 // subsequent lines start with a folding space, leaving 74 octets for content
+  }
+
+  return chunks.join('\r\n ')
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { token?: string } }
@@ -157,9 +192,10 @@ export async function GET(
         .map(a => a.role?.name ?? 'Função')
         .filter((role, index, self) => self.indexOf(role) === index) // Remove duplicates
 
+      const roleList = roleNames.join(', ')
       const eventLabel = firstAssignment.event_type === 'thursday'
-        ? `Escala — Quinta: ${roleNames.join(', ')} (ensaio ${arrivalTimeStr} / culto ${serviceTimeStr})`
-        : `Escala — Domingo: ${roleNames.join(', ')} (chegada ${arrivalTimeStr} / culto ${serviceTimeStr})`
+        ? `Escala — Quinta: ${roleList} (ensaio ${arrivalTimeStr} / culto ${serviceTimeStr})`
+        : `Escala — Domingo: ${roleList} (chegada ${arrivalTimeStr} / culto ${serviceTimeStr})`
 
       // Generate UID based on assignment date and type
       const uid = eventKey + '@worship-flow'
@@ -168,46 +204,49 @@ export async function GET(
       const dtstart = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}T${String(arrivalHour).padStart(2, '0')}${String(arrivalMinute).padStart(2, '0')}00`
       const dtend = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}T${String(endHour).padStart(2, '0')}${String(endMinute).padStart(2, '0')}00`
 
-      // Build VALARM entries
-      const alarms = alarmOffsets
-        .map((offset: number) => {
-          const trigger = `-PT${offset}M`
-          return `BEGIN:VALARM
-TRIGGER:${trigger}
-DURATION:PT15M
-REPEAT:1
-ACTION:DISPLAY
-DESCRIPTION:Lembrete de escala
-END:VALARM`
-        })
-        .join('\n')
+      // Build VALARM entries (each as an array of content lines)
+      const alarmLines = alarmOffsets.flatMap((offset: number) => [
+        'BEGIN:VALARM',
+        `TRIGGER:-PT${offset}M`,
+        'DURATION:PT15M',
+        'REPEAT:1',
+        'ACTION:DISPLAY',
+        'DESCRIPTION:Lembrete de escala',
+        'END:VALARM',
+      ])
 
       const eventType = firstAssignment.event_type === 'thursday' ? 'Ensaio e Culto' : 'Culto'
-      const description = `Ministro: ${minister.name}\\nFunções: ${roleNames.join(', ')}\\nTipo: ${eventType}`
+      const description = `Ministro: ${escapeICalText(minister.name)}\\nFunções: ${escapeICalText(roleList)}\\nTipo: ${eventType}`
 
-      const event = `BEGIN:VEVENT
-UID:${uid}
-DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z
-DTSTART:${dtstart}
-DTEND:${dtend}
-SUMMARY:${eventLabel}
-DESCRIPTION:${description}
-${alarms}
-END:VEVENT`
+      const eventLines = [
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+        `DTSTART:${dtstart}`,
+        `DTEND:${dtend}`,
+        `SUMMARY:${escapeICalText(eventLabel)}`,
+        `DESCRIPTION:${description}`,
+        ...alarmLines,
+        'END:VEVENT',
+      ]
 
-      events.push(event)
+      events.push(eventLines.map(foldLine).join('\r\n'))
     }
 
-    const icalContent = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Worship Flow//Calendar Feed//EN
-CALSCALE:GREGORIAN
-METHOD:PUBLISH
-X-WR-CALNAME:Escala de Louvor
-X-WR-TIMEZONE:America/Sao_Paulo
-X-WR-CALDESC:Sua escala semanal de louvor
-${events.join('\n')}
-END:VCALENDAR`
+    const calendarLines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Worship Flow//Calendar Feed//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:Escala de Louvor',
+      'X-WR-TIMEZONE:America/Sao_Paulo',
+      'X-WR-CALDESC:Sua escala semanal de louvor',
+    ]
+
+    const icalContent = calendarLines.map(foldLine).join('\r\n') +
+      '\r\n' + events.join('\r\n') +
+      '\r\nEND:VCALENDAR\r\n'
 
     return new NextResponse(icalContent, {
       headers: {
