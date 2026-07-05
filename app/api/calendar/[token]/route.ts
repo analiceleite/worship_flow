@@ -75,7 +75,7 @@ export async function GET(
 
     const { data: minister, error: ministerError } = await admin
       .from('ministers')
-      .select('id, name, email, calendar_feed_enabled, calendar_alarm_offsets_minutes')
+      .select('id, name, email, instrument, calendar_feed_enabled, calendar_alarm_offsets_minutes')
       .eq('calendar_token', token)
       .single()
 
@@ -165,13 +165,15 @@ END:VALARM`
         })
         .join('\n')
 
+      const description = `${minister.name}${minister.instrument ? ` - ${minister.instrument}` : ''} - Escala para ${assignment.event_type === 'thursday' ? 'ensaio e culto' : 'culto'}`
+
       const event = `BEGIN:VEVENT
 UID:${uid}
 DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z
 DTSTART:${dtstart}
 DTEND:${dtend}
 SUMMARY:${eventLabel}
-DESCRIPTION:Escala para ${assignment.event_type === 'thursday' ? 'ensaio e culto' : 'culto'}
+DESCRIPTION:${description}
 ${alarms}
 END:VEVENT`
 
