@@ -132,6 +132,20 @@ export async function POST(request: Request) {
   const requestedEndDate = String(body?.end_date ?? '').trim()
   const useBimonthlyFlow = body?.use_bimonthly_flow !== false
 
+  const thursdayArrivalTime = String(body?.thursday_arrival_time ?? '19:00').trim()
+  const thursdayServiceTime = String(body?.thursday_service_time ?? '20:00').trim()
+  const sundayArrivalTime = String(body?.sunday_arrival_time ?? '16:00').trim()
+  const sundayServiceTime = String(body?.sunday_service_time ?? '18:30').trim()
+
+  const timeRegex = /^\d{2}:\d{2}$/
+  if (!timeRegex.test(thursdayArrivalTime) || !timeRegex.test(thursdayServiceTime) ||
+      !timeRegex.test(sundayArrivalTime) || !timeRegex.test(sundayServiceTime)) {
+    return NextResponse.json(
+      { error: 'Horários devem estar no formato HH:mm' },
+      { status: 400 }
+    )
+  }
+
   const { data: minister, error: ministerError } = await supabase
     .from('ministers')
     .select('id')
@@ -228,6 +242,10 @@ export async function POST(request: Request) {
       start_date: startDate,
       end_date: endDate,
       created_by: minister.id,
+      thursday_arrival_time: thursdayArrivalTime,
+      thursday_service_time: thursdayServiceTime,
+      sunday_arrival_time: sundayArrivalTime,
+      sunday_service_time: sundayServiceTime,
     })
     .select('id, name, start_date, end_date, is_published, created_at')
     .single()

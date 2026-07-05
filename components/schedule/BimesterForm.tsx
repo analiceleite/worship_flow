@@ -58,6 +58,10 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
     const [name, setName] = useState('')
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
+    const [thursdayArrivalTime, setThursdayArrivalTime] = useState('19:00')
+    const [thursdayServiceTime, setThursdayServiceTime] = useState('20:00')
+    const [sundayArrivalTime, setSundayArrivalTime] = useState('16:00')
+    const [sundayServiceTime, setSundayServiceTime] = useState('18:30')
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -116,6 +120,10 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
                     start_date: startDate,
                     end_date: endDate,
                     use_bimonthly_flow: true,
+                    thursday_arrival_time: thursdayArrivalTime,
+                    thursday_service_time: thursdayServiceTime,
+                    sunday_arrival_time: sundayArrivalTime,
+                    sunday_service_time: sundayServiceTime,
                 }),
             })
 
@@ -181,6 +189,56 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
                                 disabled={hasPreviousPeriod}
                                 required
                             />
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="text-sm font-medium">Horários das atividades</div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="thursday-arrival">Quinta - Chegada/Ensaio</Label>
+                                <Input
+                                    id="thursday-arrival"
+                                    type="time"
+                                    value={thursdayArrivalTime}
+                                    onChange={(event) => setThursdayArrivalTime(event.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="thursday-service">Quinta - Culto</Label>
+                                <Input
+                                    id="thursday-service"
+                                    type="time"
+                                    value={thursdayServiceTime}
+                                    onChange={(event) => setThursdayServiceTime(event.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="sunday-arrival">Domingo - Chegada/Ensaio</Label>
+                                <Input
+                                    id="sunday-arrival"
+                                    type="time"
+                                    value={sundayArrivalTime}
+                                    onChange={(event) => setSundayArrivalTime(event.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="sunday-service">Domingo - Culto</Label>
+                                <Input
+                                    id="sunday-service"
+                                    type="time"
+                                    value={sundayServiceTime}
+                                    onChange={(event) => setSundayServiceTime(event.target.value)}
+                                    required
+                                />
+                            </div>
                         </div>
                     </div>
 

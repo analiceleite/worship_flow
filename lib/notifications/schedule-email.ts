@@ -22,7 +22,15 @@ type AssignmentWithRelations = {
   minister_id: string | null
   event_date: string
   event_type: 'thursday' | 'sunday'
-  minister: { id: string; name: string; email: string | null; is_active: boolean } | null
+  minister: {
+    id: string
+    name: string
+    email: string | null
+    is_active: boolean
+    email_reminders_enabled: boolean
+    calendar_feed_enabled: boolean
+    calendar_token: string | null
+  } | null
   role: { name: string } | null
 }
 
@@ -76,7 +84,7 @@ function toRehearsalSummary(input: {
   return parts.length ? parts.join(' - ') : null
 }
 
-function groupAssignmentsByMinister(
+export function groupAssignmentsByMinister(
   assignments: AssignmentWithRelations[],
   rehearsalsByEvent: Map<string, RehearsalRow>
 ) {
@@ -224,7 +232,7 @@ async function enqueueReminderNotifications(input: {
   const assignmentsRes = await admin
     .from('schedule_assignments')
     .select(
-      'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
+      'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active, email_reminders_enabled, calendar_feed_enabled, calendar_token), role:schedule_roles(name)'
     )
     .eq('quarter_id', publishedBimester.id)
     .eq('event_date', input.targetDate)
@@ -237,26 +245,42 @@ async function enqueueReminderNotifications(input: {
     (assignmentsRes.data ?? []) as AssignmentWithRelations[],
     new Map()
   )
+  // Filtrar ministros que desabilitaram lembretes por email
+  .filter((g) => {
+    const minister = (assignmentsRes.data ?? [])
+      .find((a: AssignmentWithRelations) => a.minister_id === g.minister_id)
+      ?.minister
+    return minister?.email_reminders_enabled !== false
+  })
+
   if (grouped.length === 0) return { queued: 0 }
 
-  const rows: QueueRow[] = grouped.map((g) => ({
-    dedupe_key: `${input.notificationType}:${g.minister_id}:${input.targetDate}`,
-    notification_type: input.notificationType,
-    quarter_id: publishedBimester.id,
-    minister_id: g.minister_id,
-    event_date: input.targetDate,
-    status: 'pending',
-    attempts: 0,
-    last_error: null,
-    sent_at: null,
-    payload_json: {
-      bimester_name: publishedBimester.name,
-      minister_name: g.minister_name,
-      minister_email: g.minister_email,
-      target_date: input.targetDate,
-      items: g.items,
-    },
-  }))
+  const rows: QueueRow[] = grouped.map((g) => {
+    const minister = (assignmentsRes.data ?? [])
+      .find((a: AssignmentWithRelations) => a.minister_id === g.minister_id)
+      ?.minister
+
+    return {
+      dedupe_key: `${input.notificationType}:${g.minister_id}:${input.targetDate}`,
+      notification_type: input.notificationType,
+      quarter_id: publishedBimester.id,
+      minister_id: g.minister_id,
+      event_date: input.targetDate,
+      status: 'pending',
+      attempts: 0,
+      last_error: null,
+      sent_at: null,
+      payload_json: {
+        bimester_name: publishedBimester.name,
+        minister_name: g.minister_name,
+        minister_email: g.minister_email,
+        target_date: input.targetDate,
+        items: g.items,
+        calendar_feed_enabled: minister?.calendar_feed_enabled ?? true,
+        calendar_token: minister?.calendar_token ?? null,
+      },
+    }
+  })
 
   const dedupeKeys = rows.map((r) => r.dedupe_key)
   const { data: alreadySent } = await admin
@@ -295,6 +319,8 @@ export async function enqueueReminder1DayNotifications(targetDate: string) {
 type EmailTemplateInput = {
   notificationType: NotificationType
   payload: Record<string, unknown>
+  calendarFeedEnabled?: boolean
+  calendarToken?: string | null
 }
 
 function buildEmailTemplate(input: EmailTemplateInput) {
@@ -303,11 +329,13 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const items = Array.isArray(input.payload.items) ? input.payload.items : []
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
   const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
+  const profileUrl = baseUrl ? `${baseUrl}/profile` : '/profile'
   const isReminder =
     input.notificationType === 'reminder_7days' || input.notificationType === 'reminder_1day'
   const isOneDayReminder = input.notificationType === 'reminder_1day'
   const isSevenDayReminder = input.notificationType === 'reminder_7days'
   const targetDate = String(input.payload.target_date ?? '')
+  const shouldShowCalendarCta = isReminder && input.calendarFeedEnabled && !input.calendarToken
 
   const groupedByEvent = new Map<string, {
     eventDate: string
@@ -416,6 +444,14 @@ function buildEmailTemplate(input: EmailTemplateInput) {
               ${content.ctaLabel}
             </a>
           </div>
+
+          ${shouldShowCalendarCta ? `
+            <div style="margin:20px 0 0;padding:14px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;text-align:center;">
+              <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#0369a1;">Nunca mais esqueça a escala</p>
+              <p style="margin:0 0 10px;font-size:12px;line-height:1.5;color:#075985;">Assine seu calendário automático no Apple Calendar ou Google Calendar para receber as datas da escala diretamente no seu celular.</p>
+              <a href="${profileUrl}" style="display:inline-block;padding:8px 14px;border-radius:6px;background:#0284c7;color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;">Configurar calendário</a>
+            </div>
+          ` : ''}
 
           <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#6b7280;text-align:center;">
             Você está recebendo esta mensagem porque está escalado(a) no sistema Worship Flow.
@@ -634,9 +670,14 @@ export async function processScheduleEmailQueue(batchSize = 50) {
     }
 
     try {
+      const calendarFeedEnabled = Boolean(payload.calendar_feed_enabled ?? true)
+      const calendarToken = payload.calendar_token as string | null
+
       const template = buildEmailTemplate({
         notificationType: row.notification_type as NotificationType,
         payload,
+        calendarFeedEnabled,
+        calendarToken,
       })
 
       const elapsedMs = Date.now() - lastSendAt

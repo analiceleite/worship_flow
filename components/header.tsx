@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3 } from 'lucide-react'
+import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3, Settings } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/lib/routes'
@@ -164,6 +164,12 @@ export function Header() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href="/profile" className="cursor-pointer">
+                      <Settings className="mr-2 h-4 w-4" />
+                      Meu Perfil
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Sair
@@ -259,6 +265,16 @@ export function Header() {
                         </p>
                       </div>
                     </div>
+                    <Link href="/profile" className="block">
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start"
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <Settings className="mr-2 h-5 w-5" />
+                        Meu Perfil
+                      </Button>
+                    </Link>
                     <Button
                       variant="outline"
                       className="w-full justify-start text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"

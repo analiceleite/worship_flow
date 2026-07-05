@@ -8,6 +8,7 @@ export const ROUTES = {
   SCHEDULE_ADMIN_DASHBOARD: '/schedule/admin/dashboard',
   SCHEDULE_ADMIN_BUILDER: '/schedule/admin/builder',
   SCHEDULE_ADMIN_QUARTERS: '/schedule/admin/quarters',
+  PROFILE: '/profile',
   AUTH_LOGIN: '/auth/login',
   AUTH_SET_PASSWORD: '/auth/set-password',
   AUTH_FORGOT_PASSWORD: '/auth/forgot-password',
