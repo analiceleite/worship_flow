@@ -121,7 +121,10 @@ export async function GET(
       return NextResponse.json({ error: 'No quarter found' }, { status: 500 })
     }
 
-    const alarmOffsets = minister.calendar_alarm_offsets_minutes || [720, 60]
+    const alarmOffsets = (minister.calendar_alarm_offsets_minutes || [720, 60])
+      .map((v: unknown) => typeof v === 'string' ? parseInt(v, 10) : v)
+      .filter((v: number) => !isNaN(v) && v > 0)
+      .sort((a: number, b: number) => b - a)
 
     // Build iCalendar manually since `ics` library has limitations with custom properties
     const events: string[] = []
@@ -150,7 +153,7 @@ export async function GET(
 
       // Build VALARM entries
       const alarms = alarmOffsets
-        .map(offset => {
+        .map((offset: number) => {
           const trigger = `-PT${offset}M`
           return `BEGIN:VALARM
 TRIGGER:${trigger}
