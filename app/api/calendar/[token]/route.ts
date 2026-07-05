@@ -251,7 +251,6 @@ export async function GET(
     return new NextResponse(icalContent, {
       headers: {
         'Content-Type': 'text/calendar; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="escala.ics"',
         'Cache-Control': 'no-cache, max-age=300',
       },
     })
