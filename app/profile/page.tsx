@@ -64,10 +64,10 @@ export default function ProfilePage() {
       const response = await fetch('/api/calendar/token', { method: 'POST' })
       if (!response.ok) throw new Error('Failed to generate token')
 
-      const { https_url, webcal_url } = await response.json()
+      const { https_url } = await response.json()
 
-      // Copy webcal link to clipboard
-      await navigator.clipboard.writeText(webcal_url)
+      // Copy https link to clipboard (works with Google Calendar's "From URL" and manual subscription flows)
+      await navigator.clipboard.writeText(https_url)
       toast.success('Link copiado para área de transferência!')
 
       // Refresh minister data
@@ -137,6 +137,14 @@ export default function ProfilePage() {
     return <div className="p-4">Ministro não encontrado</div>
   }
 
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+  const httpsUrl = minister.calendar_token
+    ? `${baseUrl}/api/calendar/${minister.calendar_token}`
+    : ''
+  const webcalUrl = httpsUrl
+    ? httpsUrl.replace('https://', 'webcals://').replace('http://', 'webcal://')
+    : ''
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -180,15 +188,13 @@ export default function ProfilePage() {
                       <p className="text-sm font-medium mb-2 text-foreground">Link da assinatura:</p>
                       <div className="flex gap-2 flex-col sm:flex-row">
                         <code className="flex-1 bg-background p-3 rounded border border-border text-xs overflow-x-auto break-all font-mono text-muted-foreground">
-                          {`webcal://.../${minister.calendar_token.slice(0, 8)}...`}
+                          {httpsUrl}
                         </code>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={async () => {
-                            const baseUrl = window.location.origin
-                            const webcalUrl = `${baseUrl}/api/calendar/${minister.calendar_token}`.replace('http://', 'webcal://').replace('https://', 'webcals://')
-                            await navigator.clipboard.writeText(webcalUrl)
+                            await navigator.clipboard.writeText(httpsUrl)
                             toast.success('Link copiado!')
                           }}
                           className="sm:w-auto w-full"
@@ -196,13 +202,20 @@ export default function ProfilePage() {
                           <Copy className="w-4 h-4" />
                         </Button>
                       </div>
+                      <a
+                        href={webcalUrl}
+                        className="mt-2 inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      >
+                        Ou adicione automaticamente no Apple Calendar (Mac/iOS)
+                      </a>
                     </div>
 
                     <div className="text-sm space-y-2 border-t border-border pt-4">
                       <p className="font-medium text-foreground">Como adicionar:</p>
                       <ul className="list-disc list-inside space-y-1 text-muted-foreground text-xs">
-                        <li><strong>iOS:</strong> Ajustes → Calendário → Contas → Adicionar Assinatura de Calendário</li>
-                        <li><strong>Android:</strong> Google Calendar → Outras agendas (+) → Por URL</li>
+                        <li><strong>macOS (Calendário):</strong> Calendário → Arquivo → Nova Assinatura de Calendário → colar o link</li>
+                        <li><strong>iOS:</strong> Ajustes → Calendário → Contas → Adicionar Conta → Outra → Adicionar Assinatura de Calendário → colar o link</li>
+                        <li><strong>Google Calendar (web ou Android):</strong> Outras agendas (+) → &quot;Por URL&quot; → colar o link acima</li>
                       </ul>
                     </div>
                   </div>
