@@ -27,11 +27,10 @@ Aplicação web completa para gerenciamento de músicas, repertório e escala bi
 - Suporte a eventos especiais nomeados
 
 ### 📧 Notificações por Email
-- Workflow automático diário (GitHub Actions)
-- Lembretes agendados:
-  - 7 dias antes do culto
-  - 1 dia antes do culto
-  - Publicação da escala
+- Workflow automático a cada 15 minutos (GitHub Actions)
+- Lembretes com antecedência configurável por ministro (padrão: 7 dias e 1 dia antes do culto;
+  opcionalmente também 12h/1h/30min antes)
+- Notificação de publicação da escala
 - Fila de processamento de emails assíncrona
 - Interceptação de emails para testes
 
@@ -197,11 +196,15 @@ O repositório inclui um workflow automático em [.github/workflows/schedule-ema
 ### Fluxo
 
 1. ✅ **Publicação de Escala** — Quando admin publica uma escala, notificação é enviada
-2. 📬 **Enfileiração** (11:00 UTC diariamente):
+2. 📬 **Enfileiração** (a cada 15 minutos):
    - Re-enfileira notificações pendentes da escala bimestral publicada
-   - Enfileira lembretes de **7 dias** antes do culto
-   - Enfileira lembretes de **1 dia** antes do culto
+   - Enfileira lembretes por email nas antecedências configuradas por cada ministro no perfil
+     (padrão: **7 dias** e **1 dia** antes; opcionalmente também 12h/1h/30min antes)
 3. 📤 **Processamento** — Emails são enviados via Resend
+
+> O gatilho `schedule` do GitHub Actions é best-effort: execuções muito frequentes (5-15 min)
+> podem atrasar alguns minutos em períodos de alta carga. Lembretes de antecedência curta
+> (ex.: 30 min antes) podem, na prática, chegar um pouco depois do previsto.
 
 ### Configurar no GitHub
 
@@ -224,7 +227,7 @@ Para testar emails sem enviá-los realmente:
 
 ### Rodar Manualmente
 
-- Workflow executa automaticamente diariamente às **11:00 UTC**
+- Workflow executa automaticamente **a cada 15 minutos**
 - Pode ser disparado manualmente em **Actions** → **schedule-email-reminders**
 
 ## 🛠️ Utilitários e Scripts de Dados
@@ -344,7 +347,7 @@ worship_flow/
 │   └── manifest.webmanifest   # PWA manifest
 │
 └── .github/workflows/          # CI/CD
-    └── schedule-email-reminders.yml  # Daily automation
+    └── schedule-email-reminders.yml  # Runs every 15 minutes
 ```
 
 ## 👥 Perfis e Permissões

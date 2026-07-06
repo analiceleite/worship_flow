@@ -2,7 +2,11 @@ name: Schedule Email Reminders
 
 on:
   schedule:
-    - cron: '0 11 * * *'
+    # A cada 15 minutos, para suportar lembretes de antecedência curta (12h/1h/30min).
+    # Atenção: o gatilho "schedule" do GitHub Actions é best-effort — em períodos de alta
+    # carga a execução pode atrasar alguns minutos. Um lembrete de "30 min antes" pode, na
+    # prática, chegar um pouco depois do previsto (nunca antes).
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -62,6 +66,5 @@ jobs:
           }
 
           call_endpoint "/api/notifications/schedule/enqueue-published" '{}'
-          call_endpoint "/api/notifications/schedule/enqueue-reminder-7days" '{}'
-          call_endpoint "/api/notifications/schedule/enqueue-reminder-1day" '{}'
+          call_endpoint "/api/notifications/schedule/enqueue-offset-reminders" '{}'
           call_endpoint "/api/notifications/schedule/process-queue" '{"batchSize": 100}'

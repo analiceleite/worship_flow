@@ -60,7 +60,12 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json()
-    const { calendar_alarm_offsets_minutes, calendar_feed_enabled, email_reminders_enabled } = body
+    const {
+      calendar_alarm_offsets_minutes,
+      calendar_feed_enabled,
+      email_reminders_enabled,
+      email_reminder_offsets_minutes,
+    } = body
 
     const admin = createAdminClient()
 
@@ -90,6 +95,14 @@ export async function PATCH(request: Request) {
 
     if (email_reminders_enabled !== undefined) {
       updateData.email_reminders_enabled = Boolean(email_reminders_enabled)
+    }
+
+    if (email_reminder_offsets_minutes !== undefined) {
+      if (!Array.isArray(email_reminder_offsets_minutes) ||
+          !email_reminder_offsets_minutes.every((v: unknown) => typeof v === 'number' && v > 0)) {
+        return NextResponse.json({ error: 'Invalid email reminder offsets' }, { status: 400 })
+      }
+      updateData.email_reminder_offsets_minutes = email_reminder_offsets_minutes
     }
 
     if (Object.keys(updateData).length === 0) {

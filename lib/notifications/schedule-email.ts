@@ -1,8 +1,14 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ROUTES } from '@/lib/routes'
+import {
+  computeEventArrivalDateTime,
+  BRAZIL_UTC_OFFSET_HOURS,
+  type EventType,
+  type QuarterTimeConfig,
+} from '@/lib/schedule/event-time'
 
 type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped'
-type NotificationType = 'quarter_published' | 'reminder_7days' | 'reminder_1day'
+type NotificationType = 'quarter_published' | 'reminder_7days' | 'reminder_1day' | 'reminder_offset'
 const BIMESTER_PUBLISHED_NOTIFICATION_TYPE: NotificationType = 'quarter_published'
 
 type QueueRow = {
@@ -21,13 +27,14 @@ type QueueRow = {
 type AssignmentWithRelations = {
   minister_id: string | null
   event_date: string
-  event_type: 'thursday' | 'sunday'
+  event_type: EventType
   minister: {
     id: string
     name: string
     email: string | null
     is_active: boolean
     email_reminders_enabled: boolean
+    email_reminder_offsets_minutes: number[] | null
     calendar_feed_enabled: boolean
     calendar_token: string | null
   } | null
@@ -36,7 +43,7 @@ type AssignmentWithRelations = {
 
 type RehearsalRow = {
   event_date: string
-  event_type: 'thursday' | 'sunday'
+  event_type: EventType
   rehearsal_date: string | null
   rehearsal_time: string | null
   rehearsal_place: string | null
@@ -212,75 +219,144 @@ export async function enqueueBimesterPublishedNotifications(input: {
   return { queued: rowsToUpsert.length }
 }
 
-async function enqueueReminderNotifications(input: {
-  targetDate: string
-  notificationType: Extract<NotificationType, 'reminder_7days' | 'reminder_1day'>
-}) {
+// Deve casar com o default da coluna ministers.email_reminder_offsets_minutes (migração 025).
+const DEFAULT_EMAIL_REMINDER_OFFSETS_MINUTES = [10080, 1440] // 7 dias, 1 dia
+// Cobre o maior offset hoje disponível na UI (7 dias) + folga.
+const OFFSET_REMINDER_LOOKAHEAD_DAYS = 8
+
+function normalizeReminderOffsets(raw: unknown): number[] {
+  const offsets = Array.isArray(raw) ? raw : DEFAULT_EMAIL_REMINDER_OFFSETS_MINUTES
+  return offsets
+    .map((v) => (typeof v === 'string' ? parseInt(v, 10) : v))
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0)
+}
+
+function toBrazilDateString(date: Date): string {
+  return new Date(date.getTime() - BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+export async function enqueueOffsetReminderNotifications(input?: { now?: Date }) {
+  const now = input?.now ?? new Date()
   const admin = createAdminClient()
 
-  const { data: publishedBimester, error: publishedBimesterError } = await admin
+  const { data: publishedBimesterRaw, error: publishedBimesterError } = await admin
     .from('schedule_quarters')
-    .select('id, name')
+    .select('id, name, thursday_arrival_time, thursday_service_time, sunday_arrival_time, sunday_service_time')
     .eq('is_published', true)
     .order('start_date', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (publishedBimesterError) throw new Error(publishedBimesterError.message)
-  if (!publishedBimester) return { queued: 0 }
+  if (!publishedBimesterRaw) return { queued: 0 }
 
-  const assignmentsRes = await admin
-    .from('schedule_assignments')
-    .select(
-      'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active, email_reminders_enabled, calendar_feed_enabled, calendar_token), role:schedule_roles(name)'
-    )
-    .eq('quarter_id', publishedBimester.id)
-    .eq('event_date', input.targetDate)
-    .not('minister_id', 'is', null)
+  const publishedBimester = publishedBimesterRaw as QuarterTimeConfig & { id: string; name: string }
+
+  const todayStr = toBrazilDateString(now)
+  const lookaheadEnd = new Date(now.getTime() + OFFSET_REMINDER_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000)
+  const lookaheadEndStr = toBrazilDateString(lookaheadEnd)
+
+  const [assignmentsRes, rehearsalsRes] = await Promise.all([
+    admin
+      .from('schedule_assignments')
+      .select(
+        'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active, email_reminders_enabled, email_reminder_offsets_minutes, calendar_feed_enabled, calendar_token), role:schedule_roles(name)'
+      )
+      .eq('quarter_id', publishedBimester.id)
+      .gte('event_date', todayStr)
+      .lte('event_date', lookaheadEndStr)
+      .not('minister_id', 'is', null),
+    admin
+      .from('schedule_rehearsals')
+      .select('event_date, event_type, rehearsal_time')
+      .eq('quarter_id', publishedBimester.id),
+  ])
 
   if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
+  if (rehearsalsRes.error) throw new Error(rehearsalsRes.error.message)
+
+  const assignments = (assignmentsRes.data ?? []) as AssignmentWithRelations[]
+
+  const rehearsalTimeByEvent = new Map<string, string | null>()
+  for (const r of (rehearsalsRes.data ?? []) as Array<{ event_date: string; event_type: EventType; rehearsal_time: string | null }>) {
+    rehearsalTimeByEvent.set(`${r.event_date}_${r.event_type}`, r.rehearsal_time)
+  }
+
+  // Calcula o instante real de chegada de cada evento distinto uma única vez (reaproveitado entre ministros).
+  const arrivalByEvent = new Map<string, Date>()
+  for (const row of assignments) {
+    const eventKey = `${row.event_date}_${row.event_type}`
+    if (arrivalByEvent.has(eventKey)) continue
+    arrivalByEvent.set(
+      eventKey,
+      computeEventArrivalDateTime({
+        eventDate: row.event_date,
+        eventType: row.event_type,
+        quarter: publishedBimester,
+        rehearsalTimeOverride: rehearsalTimeByEvent.get(eventKey) ?? null,
+      })
+    )
+  }
 
   // Lembretes não incluem ensaio: a data do ensaio pode ser dias antes do culto.
-  const grouped = groupAssignmentsByMinister(
-    (assignmentsRes.data ?? []) as AssignmentWithRelations[],
-    new Map()
-  )
-  // Filtrar ministros que desabilitaram lembretes por email
-  .filter((g) => {
-    const minister = (assignmentsRes.data ?? [])
-      .find((a: AssignmentWithRelations) => a.minister_id === g.minister_id)
-      ?.minister
-    return minister?.email_reminders_enabled !== false
-  })
+  const grouped = groupAssignmentsByMinister(assignments, new Map())
+    // Filtrar ministros que desabilitaram lembretes por email
+    .filter((g) => {
+      const minister = assignments.find((a) => a.minister_id === g.minister_id)?.minister
+      return minister?.email_reminders_enabled !== false
+    })
 
   if (grouped.length === 0) return { queued: 0 }
 
-  const rows: QueueRow[] = grouped.map((g) => {
-    const minister = (assignmentsRes.data ?? [])
-      .find((a: AssignmentWithRelations) => a.minister_id === g.minister_id)
-      ?.minister
+  const rows: QueueRow[] = []
 
-    return {
-      dedupe_key: `${input.notificationType}:${g.minister_id}:${input.targetDate}`,
-      notification_type: input.notificationType,
-      quarter_id: publishedBimester.id,
-      minister_id: g.minister_id,
-      event_date: input.targetDate,
-      status: 'pending',
-      attempts: 0,
-      last_error: null,
-      sent_at: null,
-      payload_json: {
-        bimester_name: publishedBimester.name,
-        minister_name: g.minister_name,
-        minister_email: g.minister_email,
-        target_date: input.targetDate,
-        items: g.items,
-        calendar_feed_enabled: minister?.calendar_feed_enabled ?? true,
-        calendar_token: minister?.calendar_token ?? null,
-      },
+  for (const g of grouped) {
+    const minister = assignments.find((a) => a.minister_id === g.minister_id)?.minister
+    const offsets = normalizeReminderOffsets(minister?.email_reminder_offsets_minutes)
+
+    // Eventos distintos deste ministro (uma ou mais funções no mesmo dia contam como um só evento).
+    const eventsForMinister = new Map<string, { event_date: string; event_type: EventType }>()
+    for (const item of g.items) {
+      eventsForMinister.set(`${item.event_date}_${item.event_type}`, {
+        event_date: item.event_date,
+        event_type: item.event_type,
+      })
     }
-  })
+
+    for (const [eventKey, evt] of eventsForMinister) {
+      const arrival = arrivalByEvent.get(eventKey)
+      if (!arrival || arrival.getTime() <= now.getTime()) continue // evento já começou/passou
+
+      for (const offsetMinutes of offsets) {
+        const triggerAt = arrival.getTime() - offsetMinutes * 60_000
+        if (triggerAt > now.getTime()) continue // ainda não venceu
+
+        rows.push({
+          dedupe_key: `reminder_offset:${g.minister_id}:${eventKey}:${offsetMinutes}`,
+          notification_type: 'reminder_offset',
+          quarter_id: publishedBimester.id,
+          minister_id: g.minister_id,
+          event_date: evt.event_date,
+          status: 'pending',
+          attempts: 0,
+          last_error: null,
+          sent_at: null,
+          payload_json: {
+            bimester_name: publishedBimester.name,
+            minister_name: g.minister_name,
+            minister_email: g.minister_email,
+            target_date: evt.event_date,
+            offset_minutes: offsetMinutes,
+            items: g.items.filter((i) => i.event_date === evt.event_date && i.event_type === evt.event_type),
+            calendar_feed_enabled: minister?.calendar_feed_enabled ?? true,
+            calendar_token: minister?.calendar_token ?? null,
+          },
+        })
+      }
+    }
+  }
+
+  if (rows.length === 0) return { queued: 0 }
 
   const dedupeKeys = rows.map((r) => r.dedupe_key)
   const { data: alreadySent } = await admin
@@ -302,25 +378,40 @@ async function enqueueReminderNotifications(input: {
   return { queued: rowsToUpsert.length }
 }
 
-export async function enqueueReminder7DaysNotifications(targetDate: string) {
-  return enqueueReminderNotifications({
-    targetDate,
-    notificationType: 'reminder_7days',
-  })
-}
-
-export async function enqueueReminder1DayNotifications(targetDate: string) {
-  return enqueueReminderNotifications({
-    targetDate,
-    notificationType: 'reminder_1day',
-  })
-}
-
 type EmailTemplateInput = {
   notificationType: NotificationType
   payload: Record<string, unknown>
   calendarFeedEnabled?: boolean
   calendarToken?: string | null
+}
+
+// Fallback para linhas 'reminder_7days'/'reminder_1day' já enfileiradas antes desta migração
+// (a fila pode ter linhas pendentes no momento do deploy).
+const LEGACY_REMINDER_OFFSET_BY_TYPE: Partial<Record<NotificationType, number>> = {
+  reminder_7days: 10080,
+  reminder_1day: 1440,
+}
+
+function resolveOffsetMinutes(input: EmailTemplateInput): number {
+  if (input.notificationType === 'reminder_offset') {
+    const raw = input.payload.offset_minutes
+    const parsed = typeof raw === 'number' ? raw : Number(raw)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return LEGACY_REMINDER_OFFSET_BY_TYPE[input.notificationType] ?? 1440
+}
+
+function formatOffsetPhrase(minutes: number): string {
+  if (minutes === 1440) return 'amanhã'
+  if (minutes % 1440 === 0) {
+    const days = minutes / 1440
+    return `em ${days} dia${days > 1 ? 's' : ''}`
+  }
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60
+    return `em ${hours} hora${hours > 1 ? 's' : ''}`
+  }
+  return `em ${minutes} minutos`
 }
 
 function buildEmailTemplate(input: EmailTemplateInput) {
@@ -331,9 +422,13 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
   const profileUrl = baseUrl ? `${baseUrl}/profile` : '/profile'
   const isReminder =
-    input.notificationType === 'reminder_7days' || input.notificationType === 'reminder_1day'
-  const isOneDayReminder = input.notificationType === 'reminder_1day'
-  const isSevenDayReminder = input.notificationType === 'reminder_7days'
+    input.notificationType === 'reminder_offset' ||
+    input.notificationType === 'reminder_7days' ||
+    input.notificationType === 'reminder_1day'
+  const offsetMinutes = isReminder ? resolveOffsetMinutes(input) : 0
+  const offsetPhrase = isReminder ? formatOffsetPhrase(offsetMinutes) : ''
+  const isOneDayPhrasing = offsetMinutes === 1440
+  const isLongLeadReminder = isReminder && offsetMinutes >= 10080
   const targetDate = String(input.payload.target_date ?? '')
   const shouldShowCalendarCta = isReminder && input.calendarFeedEnabled && !input.calendarToken
 
@@ -389,17 +484,13 @@ function buildEmailTemplate(input: EmailTemplateInput) {
     rehearsal: event.rehearsal,
   }))
 
-  const textDetailsLabel = isOneDayReminder
-    ? 'Suas funções amanhã:'
-    : isSevenDayReminder
-      ? 'Suas funções neste culto:'
-      : 'Detalhes:'
+  const textDetailsLabel = isReminder
+    ? (isOneDayPhrasing ? 'Suas funções amanhã:' : 'Suas funções neste culto:')
+    : 'Detalhes:'
 
-  const htmlDetailsLabel = isOneDayReminder
-    ? 'Suas funções amanhã'
-    : isSevenDayReminder
-      ? 'Suas funções neste culto'
-      : 'Detalhes da sua escala'
+  const htmlDetailsLabel = isReminder
+    ? (isOneDayPhrasing ? 'Suas funções amanhã' : 'Suas funções neste culto')
+    : 'Detalhes da sua escala'
 
   const itemCards = lines
     .map((line) => {
@@ -487,31 +578,22 @@ function buildEmailTemplate(input: EmailTemplateInput) {
     }
   }
 
-  const sevenDayIntro = reminderEventLabel
-    ? `Sua escala é em 7 dias: ${reminderEventLabel}.`
-    : 'Sua escala é em 7 dias.'
-  const sevenDayGuidance =
-    'Use esta semana para se organizar, revisar repertório e combinar com a equipe. Os detalhes do ensaio, quando houver, estão na escala no sistema.'
-
-  const tomorrowIntro = reminderEventLabel
-    ? `Sua escala é amanhã: ${reminderEventLabel}.`
-    : 'Sua escala é amanhã.'
-  const tomorrowGuidance =
-    'Revise suas funções abaixo e chegue preparado(a) para o culto.'
+  const reminderIntro = reminderEventLabel
+    ? `Sua escala é ${offsetPhrase}: ${reminderEventLabel}.`
+    : `Sua escala é ${offsetPhrase}.`
+  const reminderGuidance = isLongLeadReminder
+    ? 'Use esta semana para se organizar, revisar repertório e combinar com a equipe. Os detalhes do ensaio, quando houver, estão na escala no sistema.'
+    : 'Revise suas funções abaixo e chegue preparado(a) para o culto.'
 
   return {
-    subject: isOneDayReminder
-      ? reminderEventLabel
-        ? `Lembrete: escala amanhã — ${reminderEventLabel}`
-        : 'Lembrete: sua escala é amanhã'
-      : reminderEventLabel
-        ? `Lembrete: escala em 7 dias — ${reminderEventLabel}`
-        : 'Lembrete: sua escala é em 7 dias',
+    subject: reminderEventLabel
+      ? `Lembrete: escala ${offsetPhrase} — ${reminderEventLabel}`
+      : `Lembrete: sua escala é ${offsetPhrase}`,
     text: [
       `Olá, ${ministerName}!`,
       '',
-      isOneDayReminder ? tomorrowIntro : sevenDayIntro,
-      isOneDayReminder ? tomorrowGuidance : sevenDayGuidance,
+      reminderIntro,
+      reminderGuidance,
       '',
       textDetailsLabel,
       ...lines.map((line) => `${line.header} | Funções: ${line.roles.join(', ')}`),
@@ -519,17 +601,11 @@ function buildEmailTemplate(input: EmailTemplateInput) {
       `Veja a escala completa em: ${scheduleUrl}`,
     ].join('\n'),
     html: emailShell({
-      eyebrow: isOneDayReminder ? 'Escala amanhã' : 'Escala em 7 dias',
-      title: isOneDayReminder
-        ? reminderEventLabel
-          ? `Sua escala é amanhã — ${reminderEventLabel}`
-          : 'Sua escala é amanhã'
-        : reminderEventLabel
-          ? `Sua escala é em 7 dias — ${reminderEventLabel}`
-          : 'Sua escala é em 7 dias',
-      message: isOneDayReminder
-        ? `Olá, ${ministerName}. ${tomorrowIntro} ${tomorrowGuidance}`
-        : `Olá, ${ministerName}. ${sevenDayIntro} ${sevenDayGuidance}`,
+      eyebrow: `Escala ${offsetPhrase}`,
+      title: reminderEventLabel
+        ? `Sua escala é ${offsetPhrase} — ${reminderEventLabel}`
+        : `Sua escala é ${offsetPhrase}`,
+      message: `Olá, ${ministerName}. ${reminderIntro} ${reminderGuidance}`,
       accentColor: '#ff3b30',
       accentSoft: '#fff1f0',
       ctaLabel: 'Abrir escala',

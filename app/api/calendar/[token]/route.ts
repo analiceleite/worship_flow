@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-
-type EventType = 'thursday' | 'sunday'
+import {
+  parseTime,
+  addMinutesToTime,
+  getArrivalTime,
+  getServiceTime,
+  type EventType,
+  type QuarterTimeConfig,
+} from '@/lib/schedule/event-time'
 
 type AssignmentRow = {
   minister_id: string | null
@@ -16,37 +22,8 @@ type RehearsalRow = {
   rehearsal_time: string | null
 }
 
-type QuarterRow = {
+type QuarterRow = QuarterTimeConfig & {
   id: string
-  thursday_arrival_time: string
-  thursday_service_time: string
-  sunday_arrival_time: string
-  sunday_service_time: string
-}
-
-function parseTime(timeStr: string): { hour: number; minute: number } {
-  const [hour, minute] = timeStr.split(':').map(Number)
-  return { hour, minute }
-}
-
-function timeToMinutes(timeStr: string): number {
-  const { hour, minute } = parseTime(timeStr)
-  return hour * 60 + minute
-}
-
-function addMinutesToTime(timeStr: string, minutes: number): { hour: number; minute: number } {
-  const totalMinutes = timeToMinutes(timeStr) + minutes
-  const hour = Math.floor(totalMinutes / 60) % 24
-  const minute = totalMinutes % 60
-  return { hour, minute }
-}
-
-function getArrivalTime(eventType: EventType, quarter: QuarterRow): string {
-  return eventType === 'thursday' ? quarter.thursday_arrival_time : quarter.sunday_arrival_time
-}
-
-function getServiceTime(eventType: EventType, quarter: QuarterRow): string {
-  return eventType === 'thursday' ? quarter.thursday_service_time : quarter.sunday_service_time
 }
 
 // Escapes a TEXT value per RFC 5545 (3.3.11): backslash, then semicolon, then literal newlines.

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { enqueueReminder7DaysNotifications } from '@/lib/notifications/schedule-email'
+import { enqueueOffsetReminderNotifications } from '@/lib/notifications/schedule-email'
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET
@@ -10,25 +10,20 @@ function isAuthorized(request: Request) {
   return header === secret || bearer === secret
 }
 
-function getTargetDateISO() {
-  const date = new Date()
-  date.setDate(date.getDate() + 7)
-  return date.toISOString().slice(0, 10)
-}
-
 export async function POST(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await request.json().catch(() => ({}))
-  const targetDate = typeof body?.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.targetDate)
-    ? body.targetDate
-    : getTargetDateISO()
+  // Permite simular "now" em testes manuais (curl), sem depender do horário real do relógio.
+  const nowOverride = typeof body?.now === 'string' && !Number.isNaN(Date.parse(body.now))
+    ? new Date(body.now)
+    : undefined
 
   try {
-    const result = await enqueueReminder7DaysNotifications(targetDate)
-    return NextResponse.json({ ok: true, targetDate, ...result })
+    const result = await enqueueOffsetReminderNotifications({ now: nowOverride })
+    return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro ao enfileirar lembretes'
     return NextResponse.json({ error: message }, { status: 500 })

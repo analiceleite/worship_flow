@@ -19,6 +19,14 @@ const ALARM_OPTIONS = [
   { value: 30, label: '30 minutos antes' },
 ]
 
+const EMAIL_REMINDER_OPTIONS = [
+  { value: 10080, label: '7 dias antes' },
+  { value: 1440, label: '1 dia antes' },
+  { value: 720, label: '12 horas antes' },
+  { value: 60, label: '1 hora antes' },
+  { value: 30, label: '30 minutos antes' },
+]
+
 export default function ProfilePage() {
   const router = useRouter()
   const supabase = createClient()
@@ -29,6 +37,7 @@ export default function ProfilePage() {
   const [calendarFeedEnabled, setCalendarFeedEnabled] = useState(true)
   const [emailRemindersEnabled, setEmailRemindersEnabled] = useState(true)
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([720, 60])
+  const [selectedEmailReminders, setSelectedEmailReminders] = useState<number[]>([10080, 1440])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -51,6 +60,7 @@ export default function ProfilePage() {
         setCalendarFeedEnabled(data.calendar_feed_enabled ?? true)
         setEmailRemindersEnabled(data.email_reminders_enabled ?? true)
         setSelectedAlarms(data.calendar_alarm_offsets_minutes || [720, 60])
+        setSelectedEmailReminders(data.email_reminder_offsets_minutes || [10080, 1440])
       }
       setLoading(false)
     }
@@ -95,6 +105,14 @@ export default function ProfilePage() {
     )
   }
 
+  const handleEmailReminderToggle = (value: number) => {
+    setSelectedEmailReminders(prev =>
+      prev.includes(value)
+        ? prev.filter(v => v !== value)
+        : [...prev, value]
+    )
+  }
+
   const handleSavePreferences = async () => {
     setSaving(true)
     try {
@@ -105,6 +123,7 @@ export default function ProfilePage() {
           calendar_alarm_offsets_minutes: selectedAlarms,
           calendar_feed_enabled: calendarFeedEnabled,
           email_reminders_enabled: emailRemindersEnabled,
+          email_reminder_offsets_minutes: selectedEmailReminders,
         }),
       })
 
@@ -140,9 +159,6 @@ export default function ProfilePage() {
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const httpsUrl = minister.calendar_token
     ? `${baseUrl}/api/calendar/${minister.calendar_token}`
-    : ''
-  const webcalUrl = httpsUrl
-    ? httpsUrl.replace('https://', 'webcals://').replace('http://', 'webcal://')
     : ''
 
   return (
@@ -202,12 +218,6 @@ export default function ProfilePage() {
                           <Copy className="w-4 h-4" />
                         </Button>
                       </div>
-                      <a
-                        href={webcalUrl}
-                        className="mt-2 inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                      >
-                        Ou adicione automaticamente no Apple Calendar (Mac/iOS)
-                      </a>
                     </div>
 
                     <div className="text-sm space-y-2 border-t border-border pt-4">
@@ -251,6 +261,23 @@ export default function ProfilePage() {
                           </div>
                         ))}
                       </div>
+                      <div className="mt-3 rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-muted-foreground space-y-1">
+                        <p>
+                          <strong>Apple Calendar (iOS/macOS):</strong> os alarmes acima são aplicados automaticamente
+                          em cada evento assim que você assina o calendário.
+                        </p>
+                        <p>
+                          <strong>Google Calendar:</strong> os alarmes acima <strong>não funcionam</strong> — o Google
+                          ignora os alertas vindos do feed e usa este calendário só para visualização. Para ser
+                          avisado lá, configure manualmente uma vez: abra o calendário assinado no Google Calendar →
+                          menu (⋮) → &quot;Configurações e compartilhamento&quot; → &quot;Notificações de eventos&quot;
+                          → escolha uma antecedência (vale para todos os eventos futuros deste calendário).
+                        </p>
+                        <p>
+                          Por isso, para garantir o aviso independente do app que você usa, mantenha os{' '}
+                          <strong>lembretes por e-mail</strong> abaixo ativados.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -293,7 +320,7 @@ export default function ProfilePage() {
                 <Label className="text-sm font-medium block mb-1">Receber lembretes de escala</Label>
                 <p className="text-xs text-muted-foreground">
                   {emailRemindersEnabled
-                    ? 'Você receberá emails 7 dias e 1 dia antes da escala'
+                    ? 'Você receberá emails nas antecedências escolhidas abaixo. Funciona em qualquer app, independente do calendário assinado.'
                     : 'Você não receberá lembretes por email'}
                 </p>
               </div>
@@ -302,6 +329,26 @@ export default function ProfilePage() {
                 onCheckedChange={setEmailRemindersEnabled}
               />
             </div>
+
+            {emailRemindersEnabled && (
+              <div className="border-t border-border pt-4">
+                <Label className="text-sm font-medium mb-3 block">Quando enviar os lembretes por email</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
+                  {EMAIL_REMINDER_OPTIONS.map(option => (
+                    <div key={option.value} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`email-reminder-${option.value}`}
+                        checked={selectedEmailReminders.includes(option.value)}
+                        onCheckedChange={() => handleEmailReminderToggle(option.value)}
+                      />
+                      <Label htmlFor={`email-reminder-${option.value}`} className="cursor-pointer text-sm">
+                        {option.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
