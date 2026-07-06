@@ -68,3 +68,4 @@ jobs:
           call_endpoint "/api/notifications/schedule/enqueue-published" '{}'
           call_endpoint "/api/notifications/schedule/enqueue-offset-reminders" '{}'
           call_endpoint "/api/notifications/schedule/process-queue" '{"batchSize": 100}'
+          call_endpoint "/api/google-calendar/sync" '{}'

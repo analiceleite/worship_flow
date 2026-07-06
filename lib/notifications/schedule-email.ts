@@ -35,8 +35,6 @@ type AssignmentWithRelations = {
     is_active: boolean
     email_reminders_enabled: boolean
     email_reminder_offsets_minutes: number[] | null
-    calendar_feed_enabled: boolean
-    calendar_token: string | null
   } | null
   role: { name: string } | null
 }
@@ -260,7 +258,7 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
     admin
       .from('schedule_assignments')
       .select(
-        'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active, email_reminders_enabled, email_reminder_offsets_minutes, calendar_feed_enabled, calendar_token), role:schedule_roles(name)'
+        'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active, email_reminders_enabled, email_reminder_offsets_minutes), role:schedule_roles(name)'
       )
       .eq('quarter_id', publishedBimester.id)
       .gte('event_date', todayStr)
@@ -348,8 +346,6 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
             target_date: evt.event_date,
             offset_minutes: offsetMinutes,
             items: g.items.filter((i) => i.event_date === evt.event_date && i.event_type === evt.event_type),
-            calendar_feed_enabled: minister?.calendar_feed_enabled ?? true,
-            calendar_token: minister?.calendar_token ?? null,
           },
         })
       }
@@ -381,8 +377,6 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
 type EmailTemplateInput = {
   notificationType: NotificationType
   payload: Record<string, unknown>
-  calendarFeedEnabled?: boolean
-  calendarToken?: string | null
 }
 
 // Fallback para linhas 'reminder_7days'/'reminder_1day' já enfileiradas antes desta migração
@@ -420,7 +414,6 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const items = Array.isArray(input.payload.items) ? input.payload.items : []
   const baseUrl = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
   const scheduleUrl = baseUrl ? `${baseUrl}${ROUTES.SCHEDULE}` : ROUTES.SCHEDULE
-  const profileUrl = baseUrl ? `${baseUrl}/profile` : '/profile'
   const isReminder =
     input.notificationType === 'reminder_offset' ||
     input.notificationType === 'reminder_7days' ||
@@ -430,7 +423,6 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const isOneDayPhrasing = offsetMinutes === 1440
   const isLongLeadReminder = isReminder && offsetMinutes >= 10080
   const targetDate = String(input.payload.target_date ?? '')
-  const shouldShowCalendarCta = isReminder && input.calendarFeedEnabled && !input.calendarToken
 
   const groupedByEvent = new Map<string, {
     eventDate: string
@@ -535,14 +527,6 @@ function buildEmailTemplate(input: EmailTemplateInput) {
               ${content.ctaLabel}
             </a>
           </div>
-
-          ${shouldShowCalendarCta ? `
-            <div style="margin:20px 0 0;padding:14px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;text-align:center;">
-              <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#0369a1;">Nunca mais esqueça a escala</p>
-              <p style="margin:0 0 10px;font-size:12px;line-height:1.5;color:#075985;">Assine seu calendário automático no Apple Calendar ou Google Calendar para receber as datas da escala diretamente no seu celular.</p>
-              <a href="${profileUrl}" style="display:inline-block;padding:8px 14px;border-radius:6px;background:#0284c7;color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;">Configurar calendário</a>
-            </div>
-          ` : ''}
 
           <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#6b7280;text-align:center;">
             Você está recebendo esta mensagem porque está escalado(a) no sistema Worship Flow.
@@ -746,14 +730,9 @@ export async function processScheduleEmailQueue(batchSize = 50) {
     }
 
     try {
-      const calendarFeedEnabled = Boolean(payload.calendar_feed_enabled ?? true)
-      const calendarToken = payload.calendar_token as string | null
-
       const template = buildEmailTemplate({
         notificationType: row.notification_type as NotificationType,
         payload,
-        calendarFeedEnabled,
-        calendarToken,
       })
 
       const elapsedMs = Date.now() - lastSendAt

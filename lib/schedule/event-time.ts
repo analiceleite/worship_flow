@@ -37,13 +37,13 @@ export function getServiceTime(eventType: EventType, quarter: QuarterTimeConfig)
 export const BRAZIL_UTC_OFFSET_HOURS = 3
 
 /** Converts a local (America/Sao_Paulo) date+time into the equivalent UTC instant. */
-function buildLocalDateTimeUtc(eventDate: string, timeStr: string): Date {
+export function buildLocalDateTimeUtc(eventDate: string, timeStr: string): Date {
   const [year, month, day] = eventDate.split('-').map(Number)
   const { hour, minute } = parseTime(timeStr)
   return new Date(Date.UTC(year, month - 1, day, hour + BRAZIL_UTC_OFFSET_HOURS, minute, 0))
 }
 
-/** Real UTC instant when ministers should arrive, honoring rehearsal_time overrides (mirrors the ICS DTSTART logic). */
+/** Real UTC instant when ministers should arrive, honoring rehearsal_time overrides. */
 export function computeEventArrivalDateTime(input: {
   eventDate: string
   eventType: EventType

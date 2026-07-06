@@ -5,6 +5,7 @@ import {
   enqueueBimesterPublishedNotifications,
   processScheduleEmailQueue,
 } from '@/lib/notifications/schedule-email'
+import { reconcileMinistersForQuarter } from '@/lib/google-calendar/reconcile'
 
 export async function PATCH(
   request: Request,
@@ -70,6 +71,12 @@ export async function PATCH(
     } catch (enqueueError) {
       console.error('Erro ao enfileirar notificações de escala:', enqueueError)
     }
+  }
+
+  try {
+    await reconcileMinistersForQuarter(data.id)
+  } catch (syncError) {
+    console.error('Erro ao sincronizar Google Calendar após publicação/despublicação:', syncError)
   }
 
   return NextResponse.json({ quarter: data, notifications })

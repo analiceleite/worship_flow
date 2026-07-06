@@ -1,54 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { randomUUID } from 'crypto'
-
-export async function POST(request: Request) {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const admin = createAdminClient()
-
-    const { data: minister } = await admin
-      .from('ministers')
-      .select('id, calendar_token')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!minister) {
-      return NextResponse.json({ error: 'Minister not found' }, { status: 404 })
-    }
-
-    const token = randomUUID()
-
-    const { error: updateError } = await admin
-      .from('ministers')
-      .update({ calendar_token: token })
-      .eq('id', minister.id)
-
-    if (updateError) {
-      return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 })
-    }
-
-    const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000'
-    const https_url = `${baseUrl}/api/calendar/${token}`
-    const webcal_url = https_url.replace('http://', 'webcal://').replace('https://', 'webcals://')
-
-    return NextResponse.json({
-      token,
-      https_url,
-      webcal_url,
-    })
-  } catch (error) {
-    console.error('Error generating calendar token:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
+import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
 
 export async function PATCH(request: Request) {
   try {
@@ -62,7 +15,6 @@ export async function PATCH(request: Request) {
     const body = await request.json()
     const {
       calendar_alarm_offsets_minutes,
-      calendar_feed_enabled,
       email_reminders_enabled,
       email_reminder_offsets_minutes,
     } = body
@@ -87,10 +39,6 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Invalid alarm offsets' }, { status: 400 })
       }
       updateData.calendar_alarm_offsets_minutes = calendar_alarm_offsets_minutes
-    }
-
-    if (calendar_feed_enabled !== undefined) {
-      updateData.calendar_feed_enabled = Boolean(calendar_feed_enabled)
     }
 
     if (email_reminders_enabled !== undefined) {
@@ -118,9 +66,17 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 })
     }
 
+    if (calendar_alarm_offsets_minutes !== undefined) {
+      try {
+        await reconcileMinisterCalendar(minister.id) // no-op se não conectado ao Google Calendar
+      } catch (syncError) {
+        console.error('Erro ao sincronizar alarmes no Google Calendar:', syncError)
+      }
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error updating calendar preferences:', error)
+    console.error('Error updating preferences:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
