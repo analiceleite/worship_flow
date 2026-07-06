@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
 
 interface AssignmentPayload {
   id?: string
@@ -34,11 +35,24 @@ export async function PATCH(request: Request) {
   const adminSupabase = createAdminClient()
 
   let assignmentId = payload.id
+  let previousMinisterId: string | null = null
 
-  if (!assignmentId) {
+  if (assignmentId) {
+    const { data: existingById, error: existingByIdError } = await adminSupabase
+      .from('schedule_assignments')
+      .select('minister_id')
+      .eq('id', assignmentId)
+      .maybeSingle()
+
+    if (existingByIdError) {
+      return NextResponse.json({ error: existingByIdError.message }, { status: 500 })
+    }
+
+    previousMinisterId = existingById?.minister_id ?? null
+  } else {
     const { data: existing, error: existingError } = await adminSupabase
       .from('schedule_assignments')
-      .select('id')
+      .select('id, minister_id')
       .eq('quarter_id', payload.quarter_id as string)
       .eq('role_id', payload.role_id as string)
       .eq('event_date', payload.event_date as string)
@@ -51,6 +65,7 @@ export async function PATCH(request: Request) {
 
     if (existing?.id) {
       assignmentId = existing.id
+      previousMinisterId = existing.minister_id ?? null
     }
   }
 
@@ -104,6 +119,18 @@ export async function PATCH(request: Request) {
       { error: assignmentError?.message ?? 'Falha ao retornar a célula atualizada' },
       { status: 500 }
     )
+  }
+
+  const newMinisterId = payload.minister_id ?? null
+  const affectedMinisterIds = new Set(
+    [newMinisterId, previousMinisterId].filter((v): v is string => v !== null)
+  )
+  for (const id of affectedMinisterIds) {
+    try {
+      await reconcileMinisterCalendar(id)
+    } catch (syncError) {
+      console.error('Erro ao sincronizar Google Calendar após edição de célula:', syncError)
+    }
   }
 
   return NextResponse.json({ assignment })

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
 
 interface ApplyItem {
     assignment_id: string
@@ -64,6 +65,7 @@ export async function POST(
 
     let updatedCount = 0
     let skippedCount = 0
+    const affectedMinisterIds = new Set<string>()
 
     for (const item of items) {
         const assignment = assignmentMap.get(item.assignment_id)
@@ -96,7 +98,18 @@ export async function POST(
             return NextResponse.json({ error: updateError.message }, { status: 500 })
         }
 
+        if (assignment.minister_id) affectedMinisterIds.add(assignment.minister_id)
+        if (nextMinisterId) affectedMinisterIds.add(nextMinisterId)
+
         updatedCount += 1
+    }
+
+    for (const ministerId of affectedMinisterIds) {
+        try {
+            await reconcileMinisterCalendar(ministerId)
+        } catch (syncError) {
+            console.error('Erro ao sincronizar Google Calendar após aplicação em lote:', syncError)
+        }
     }
 
     return NextResponse.json({
