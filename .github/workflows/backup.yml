@@ -1,0 +1,105 @@
+name: Backup Diário
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup rclone
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+
+      - name: Install pg_dump
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+
+      - name: Database dump
+        run: |
+          pg_dump \
+            --dbname="${{ secrets.SUPABASE_DB_URL }}" \
+            --format=custom \
+            --compress=9 \
+            --file="worship-flow-$(date +%F).dump" \
+            --no-owner \
+            --no-acl \
+            --exclude-schema='supabase_migrations'
+
+      - name: Validate dump
+        run: |
+          pg_restore --list "worship-flow-$(date +%F).dump" > /dev/null \
+            && echo "✅ Dump válido" \
+            || (echo "❌ Dump corrompido" && exit 1)
+
+      - name: Backup Storage (cifras)
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p storage-backup
+
+          LIST=$(curl -s -X POST \
+            -H "apikey: ${SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SERVICE_KEY}" \
+            "${SUPABASE_URL}/storage/v1/object/list/cifras" \
+            -d '{}')
+
+          echo "$LIST" | jq -r '.[].name' 2>/dev/null | while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            echo "Baixando: $file"
+            curl -s -o "storage-backup/$file" \
+              -H "apikey: ${SERVICE_KEY}" \
+              -H "Authorization: Bearer ${SERVICE_KEY}" \
+              "${SUPABASE_URL}/storage/v1/object/cifras/$file"
+          done
+
+          if [ -n "$(ls -A storage-backup/ 2>/dev/null)" ]; then
+            tar -czf "cifras-$(date +%F).tar.gz" storage-backup/
+            echo "✅ Storage backup criado"
+          else
+            echo "ℹ️ Nenhum arquivo no bucket cifras"
+          fi
+
+      - name: Upload to Google Drive
+        run: |
+          rclone copy "worship-flow-$(date +%F).dump" "gdrive:/worship-flow-backups/"
+          if [ -f "cifras-$(date +%F).tar.gz" ]; then
+            rclone copy "cifras-$(date +%F).tar.gz" "gdrive:/worship-flow-backups/"
+          fi
+          echo "✅ Upload concluído"
+
+      - name: Calcular métricas
+        id: metrics
+        run: |
+          DB_SIZE=$(stat -c%s "worship-flow-$(date +%F).dump" 2>/dev/null || echo 0)
+          CIFRA_SIZE=$(stat -c%s "cifras-$(date +%F).tar.gz" 2>/dev/null || echo 0)
+          TOTAL=$((DB_SIZE + CIFRA_SIZE))
+          echo "total_bytes=$TOTAL" >> "$GITHUB_OUTPUT"
+
+      - name: Notificar Telegram
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          TOTAL_BYTES: ${{ steps.metrics.outputs.total_bytes }}
+        run: |
+          if [ "$STATUS" = "success" ]; then
+            TOTAL_MB=$((TOTAL_BYTES / 1048576))
+            MSG="✅ *Backup Worship Flow concluído*%0A📅 $(date +%F)%0A📦 ${TOTAL_MB:-0}MB enviados ao Drive%0A🕐 $(date '+%H:%M UTC')"
+          else
+            MSG="❌ *Backup Worship Flow FALHOU*%0A📅 $(date +%F)%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=$MSG" \
+            -d "parse_mode=Markdown"
