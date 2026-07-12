@@ -18,24 +18,23 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
 
-      - name: Install psql client
+      - name: Install PostgreSQL client tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-common postgresql-client-16
+          sudo apt-get install -y -qq postgresql-client-16 lsb-release curl gnupg
 
       - name: Detect server version and install matching pg_dump
         run: |
           SERVER_VER=$(psql "${{ secrets.SUPABASE_DB_URL }}" -t -A -c "SHOW server_version;" | cut -d. -f1)
           echo "Server PostgreSQL version: $SERVER_VER"
 
-          INSTALLED=$(pg_dump --version | grep -oP '\d+')
-          echo "Client pg_dump version: $INSTALLED"
-
-          if [ "$SERVER_VER" != "$INSTALLED" ]; then
-            echo "Installing postgresql-client-$SERVER_VER..."
+          if [ "$SERVER_VER" != "16" ]; then
+            sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+            sudo apt-get update -qq
             sudo apt-get install -y -qq "postgresql-client-$SERVER_VER"
           else
-            echo "Versions match, no changes needed"
+            echo "Server and client versions match (16)"
           fi
 
       - name: Database dump
