@@ -103,8 +103,14 @@ jobs:
           TOTAL_BYTES: ${{ steps.metrics.outputs.total_bytes }}
         run: |
           if [ "$STATUS" = "success" ]; then
-            TOTAL_MB=$((TOTAL_BYTES / 1048576))
-            MSG="✅ Backup Worship Flow concluido%0A📅 $(date +%F)%0A📦 ${TOTAL_MB:-0}MB enviados ao Drive%0A🕐 $(date '+%H:%M UTC')"
+            if [ $TOTAL_BYTES -gt 1048576 ]; then
+              SIZE="$((TOTAL_BYTES / 1048576))MB"
+            elif [ $TOTAL_BYTES -gt 1024 ]; then
+              SIZE="$((TOTAL_BYTES / 1024))KB"
+            else
+              SIZE="${TOTAL_BYTES}B"
+            fi
+            MSG="✅ Backup Worship Flow concluido%0A📅 $(date +%F)%0A📦 ${SIZE} enviados ao Drive%0A🕐 $(date '+%H:%M UTC')"
           else
             MSG="❌ Backup Worship Flow FALHOU%0A📅 $(date +%F)%0A🔗 $(echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | sed 's/_/%5F/g; s/*/%2A/g; s/(/%28/g; s/)/%29/g')"
           fi
