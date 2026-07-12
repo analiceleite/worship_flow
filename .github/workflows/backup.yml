@@ -59,8 +59,7 @@ jobs:
             -d '{}')
 
           # Verifica se a resposta é um array válido
-          echo "$LIST" | jq -e 'if type == "array" then true else false end' > /dev/null 2>&1
-          if [ $? -eq 0 ]; then
+          if echo "$LIST" | jq -e 'if type == "array" then true else false end' > /dev/null 2>&1; then
             echo "$LIST" | jq -r '.[].name // empty' 2>/dev/null | while IFS= read -r file; do
               [ -z "$file" ] && continue
               echo "Baixando: $file"
