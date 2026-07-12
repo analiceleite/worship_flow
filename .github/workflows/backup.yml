@@ -110,9 +110,9 @@ jobs:
             else
               SIZE="${TOTAL_BYTES}B"
             fi
-            MSG="✅ Backup Worship Flow concluido%0A📅 $(date +%F)%0A📦 ${SIZE} enviados ao Drive%0A🕐 $(date '+%H:%M UTC')"
+            MSG="✅ Backup Worship Flow concluido%0A📅 $(TZ=America/Sao_Paulo date +%d/%m/%Y)%0A📦 ${SIZE} enviados ao Drive%0A🕐 $(TZ=America/Sao_Paulo date '+%H:%M') BRT"
           else
-            MSG="❌ Backup Worship Flow FALHOU%0A📅 $(date +%F)%0A🔗 $(echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | sed 's/_/%5F/g; s/*/%2A/g; s/(/%28/g; s/)/%29/g')"
+            MSG="❌ Backup Worship Flow FALHOU%0A📅 $(TZ=America/Sao_Paulo date +%d/%m/%Y)%0A🔗 $(echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | sed 's/_/%5F/g; s/*/%2A/g; s/(/%28/g; s/)/%29/g')"
           fi
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
