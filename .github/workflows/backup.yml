@@ -18,28 +18,19 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
 
-      - name: Install PostgreSQL client tools
+      - name: Install pg_dump 17 (matching server version)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-16 lsb-release curl gnupg
+          sudo apt-get install -y -qq lsb-release curl gnupg
 
-      - name: Detect server version and install matching pg_dump
-        run: |
-          SERVER_VER=$(psql "${{ secrets.SUPABASE_DB_URL }}" -t -A -c "SHOW server_version;" | cut -d. -f1)
-          echo "Server PostgreSQL version: $SERVER_VER"
-
-          if [ "$SERVER_VER" != "16" ]; then
-            sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-            curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq "postgresql-client-$SERVER_VER"
-          else
-            echo "Server and client versions match (16)"
-          fi
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
 
       - name: Database dump
         run: |
-          pg_dump \
+          /usr/lib/postgresql/17/bin/pg_dump \
             --dbname="${{ secrets.SUPABASE_DB_URL }}" \
             --format=custom \
             --compress=9 \
@@ -50,7 +41,7 @@ jobs:
 
       - name: Validate dump
         run: |
-          pg_restore --list "worship-flow-$(date +%F).dump" > /dev/null \
+          /usr/lib/postgresql/17/bin/pg_restore --list "worship-flow-$(date +%F).dump" > /dev/null \
             && echo "✅ Dump válido" \
             || (echo "❌ Dump corrompido" && exit 1)
 
