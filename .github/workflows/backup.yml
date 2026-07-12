@@ -56,8 +56,9 @@ jobs:
           LIST=$(curl -s -X POST \
             -H "apikey: ${SERVICE_KEY}" \
             -H "Authorization: Bearer ${SERVICE_KEY}" \
+            -H "Content-Type: application/json" \
             "${SUPABASE_URL}/storage/v1/object/list/cifras" \
-            -d '{}')
+            -d '{"prefix":"","limit":100}')
 
           # Verifica se a resposta é um array válido
           if echo "$LIST" | jq -e 'if type == "array" then true else false end' > /dev/null 2>&1; then
