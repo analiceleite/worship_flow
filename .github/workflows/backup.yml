@@ -50,8 +50,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          set -euo pipefail
-
           mkdir -p storage-backup
 
           LIST=$(curl -s -X POST \
@@ -60,16 +58,22 @@ jobs:
             "${SUPABASE_URL}/storage/v1/object/list/cifras" \
             -d '{}')
 
-          echo "$LIST" | jq -r '.[].name' 2>/dev/null | while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            echo "Baixando: $file"
-            curl -s -o "storage-backup/$file" \
-              -H "apikey: ${SERVICE_KEY}" \
-              -H "Authorization: Bearer ${SERVICE_KEY}" \
-              "${SUPABASE_URL}/storage/v1/object/cifras/$file"
-          done
+          # Verifica se a resposta é um array válido
+          echo "$LIST" | jq -e 'if type == "array" then true else false end' > /dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "$LIST" | jq -r '.[].name // empty' 2>/dev/null | while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              echo "Baixando: $file"
+              curl -s -o "storage-backup/$file" \
+                -H "apikey: ${SERVICE_KEY}" \
+                -H "Authorization: Bearer ${SERVICE_KEY}" \
+                "${SUPABASE_URL}/storage/v1/object/cifras/$file"
+            done
+          else
+            echo "ℹ️ Resposta inesperada da API (bucket vazio ou erro): $(echo "$LIST" | head -c 200)"
+          fi
 
-          if [ -n "$(ls -A storage-backup/ 2>/dev/null)" ]; then
+          if [ -d storage-backup ] && [ -n "$(ls -A storage-backup/ 2>/dev/null)" ]; then
             tar -czf "cifras-$(date +%F).tar.gz" storage-backup/
             echo "✅ Storage backup criado"
           else
