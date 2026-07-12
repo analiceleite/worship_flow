@@ -18,10 +18,25 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
 
-      - name: Install pg_dump
+      - name: Install psql client
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-16
+          sudo apt-get install -y -qq postgresql-client-common postgresql-client-16
+
+      - name: Detect server version and install matching pg_dump
+        run: |
+          SERVER_VER=$(psql "${{ secrets.SUPABASE_DB_URL }}" -t -A -c "SHOW server_version;" | cut -d. -f1)
+          echo "Server PostgreSQL version: $SERVER_VER"
+
+          INSTALLED=$(pg_dump --version | grep -oP '\d+')
+          echo "Client pg_dump version: $INSTALLED"
+
+          if [ "$SERVER_VER" != "$INSTALLED" ]; then
+            echo "Installing postgresql-client-$SERVER_VER..."
+            sudo apt-get install -y -qq "postgresql-client-$SERVER_VER"
+          else
+            echo "Versions match, no changes needed"
+          fi
 
       - name: Database dump
         run: |
@@ -95,11 +110,10 @@ jobs:
         run: |
           if [ "$STATUS" = "success" ]; then
             TOTAL_MB=$((TOTAL_BYTES / 1048576))
-            MSG="✅ *Backup Worship Flow concluído*%0A📅 $(date +%F)%0A📦 ${TOTAL_MB:-0}MB enviados ao Drive%0A🕐 $(date '+%H:%M UTC')"
+            MSG="✅ Backup Worship Flow concluido%0A📅 $(date +%F)%0A📦 ${TOTAL_MB:-0}MB enviados ao Drive%0A🕐 $(date '+%H:%M UTC')"
           else
-            MSG="❌ *Backup Worship Flow FALHOU*%0A📅 $(date +%F)%0A🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            MSG="❌ Backup Worship Flow FALHOU%0A📅 $(date +%F)%0A🔗 $(echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | sed 's/_/%5F/g; s/*/%2A/g; s/(/%28/g; s/)/%29/g')"
           fi
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=$MSG" \
-            -d "parse_mode=Markdown"
+            -d "text=$MSG"
