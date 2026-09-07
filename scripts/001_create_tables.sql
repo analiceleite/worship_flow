@@ -93,6 +93,7 @@ CREATE TABLE public.songs (
   tone text DEFAULT 'C'::text,
   youtube_url text,
   cipher_url text,
+  available_tones text[] DEFAULT '{}'::text[],
   created_at timestamp with time zone DEFAULT now(),
   capo_frets integer DEFAULT 0,
   minister_id uuid,

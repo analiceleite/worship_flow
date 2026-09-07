@@ -68,6 +68,24 @@ function isSupportedCifraUrl(url: string): boolean {
   return isCifraClubUrl(url) || isCifralizeUrl(url)
 }
 
+function toneOptionsForMode(tone: string): string[] {
+  const normalized = normalizeCifraClubTone(tone) ?? tone.trim()
+  if (!normalized) return []
+
+  const isMinor = normalized.endsWith('m') && normalized.length > 1
+  const options = TONES.filter((item) => {
+    const itemIsMinor = item.endsWith('m') && item.length > 1
+    return itemIsMinor === isMinor
+  })
+
+  return options.includes(normalized as typeof TONES[number]) ? [...options] : [normalized, ...options]
+}
+
+function savedToneOptionsFor(song: Song): string[] {
+  if (song.available_tones?.length) return song.available_tones
+  return isSupportedCifraUrl(song.cipher_url ?? '') ? toneOptionsForMode(song.tone || '') : []
+}
+
 function cifraSourceLabel(url: string): string {
   if (isCifraClubUrl(url)) return 'CifraClub'
   if (isCifralizeUrl(url)) return 'Cifralize'
@@ -83,6 +101,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const [cipherUrl, setCipherUrl] = useState('')
   const [cifraContent, setCifraContent] = useState<string[] | null>(null)
   const [availableTones, setAvailableTones] = useState<string[]>([])
+  const [cifraContentKey, setCifraContentKey] = useState<string | null>(null)
   const [capoFrets, setCapoFrets] = useState(0)
   const [importingCifra, setImportingCifra] = useState(false)
   /** Tom sendo buscado na fonte da cifra (troca de tom); null = importação inicial pelo link. */
@@ -105,6 +124,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const lastYoutubeSearchKeyRef = useRef<string | null>(null)
   const lastImportedUrlRef = useRef<string | null>(null)
   const lastImportedToneRef = useRef<string | null>(null)
+  const currentCipherUrlRef = useRef('')
+  const currentToneRef = useRef('')
   /** Evita reimportar em loop quando a API falha (ex.: bloqueio no servidor da Vercel). */
   const lastAutoImportKeyRef = useRef<string | null>(null)
   const importDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -114,9 +135,18 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const YOUTUBE_SEARCH_MAX = 8
 
+  useEffect(() => {
+    currentCipherUrlRef.current = cipherUrl
+  }, [cipherUrl])
+
+  useEffect(() => {
+    currentToneRef.current = tone
+  }, [tone])
+
   const applyImportedCifra = useCallback((data: ImportedCifra) => {
     setCifraContent(data.cifra)
     setCipherUrl(data.cipher_url)
+    setCifraContentKey(buildImportKey(data.cipher_url, data.tone))
     setTone(data.tone)
     setCapoFrets(data.capo_frets ?? 0)
     setAvailableTones(data.available_tones ?? [])
@@ -154,6 +184,19 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           } else {
             setImportError(data.error ?? 'Não foi possível importar. Use a aba PDF ou foto.')
           }
+          return false
+        }
+
+        const currentUrl = ensureHttps(currentCipherUrlRef.current)
+        const currentTone = currentToneRef.current.trim()
+        const requestedTone = toneValue.trim()
+
+        if (currentUrl !== url || currentTone !== requestedTone) {
+          return false
+        }
+
+        if (requestedTone && !tonesAreEquivalent(data.tone, requestedTone)) {
+          setImportError(`A cifra retornou em ${data.tone}, mas o tom solicitado foi ${requestedTone}. Tente importar novamente.`)
           return false
         }
 
@@ -204,8 +247,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       setExistingPdfPath(song.cifra_pdf_path ?? null)
       setCipherUrl(song.cipher_url ?? '')
       setCifraContent(song.cifra_content ?? null)
+      setCifraContentKey(
+        song.cifra_content?.length && song.cipher_url
+          ? buildImportKey(song.cipher_url, song.tone || '')
+          : null
+      )
       setCapoFrets(song.capo_frets ?? 0)
-      setAvailableTones([])
+      setAvailableTones(savedToneOptionsFor(song))
       setCifraTab(defaultCifraTab(song))
       setYoutubeUrl(song.youtube_url || '')
       setYoutubeVideoTitle(song.youtube_video_title || '')
@@ -219,6 +267,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     setExistingPdfPath(null)
     setCipherUrl('')
     setCifraContent(null)
+    setCifraContentKey(null)
     setCapoFrets(0)
     setAvailableTones([])
     setCifraTab('link')
@@ -336,6 +385,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     setTone(t)
     const url = ensureHttps(cipherUrl)
     if (cifraTab === 'link' && url && isSupportedCifraUrl(url) && importReady) {
+      setCifraContent(null)
+      setCifraContentKey(null)
       lastImportedToneRef.current = null
       lastAutoImportKeyRef.current = null
       setLoadingToneForImport(t)
@@ -354,10 +405,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const hasYoutube = Boolean(ensureHttps(youtubeUrl))
   const youtubeRequired = cifraTab === 'link'
+  const currentCifraContentKey = buildImportKey(ensureHttps(cipherUrl), tone)
+  const hasCurrentTextCifra = hasTextCifra && cifraContentKey === currentCifraContentKey
 
   const canSave =
     cifraTab === 'link'
-      ? Boolean(importReady && title.trim() && artist.trim() && tone.trim() && hasYoutube)
+      ? Boolean(!importingCifra && hasCurrentTextCifra && title.trim() && artist.trim() && tone.trim() && hasYoutube)
       : Boolean(hasPdfSource && title.trim() && artist.trim() && tone.trim())
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -377,6 +430,16 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
     if (cifraTab === 'link' && !hasTextCifra) {
       setFormError('Importe a cifra pelo link antes de salvar.')
+      return
+    }
+
+    if (cifraTab === 'link' && !hasCurrentTextCifra) {
+      setFormError('Reimporte a cifra no tom selecionado antes de salvar.')
+      return
+    }
+
+    if (cifraTab === 'link' && importingCifra) {
+      setFormError('Aguarde a importação da cifra terminar antes de salvar.')
       return
     }
 
@@ -409,12 +472,15 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       if (cifraTab === 'link' && hasTextCifra) {
         basePayload.cifra_content = cifraContent
         basePayload.cipher_url = resolvedCipherUrl
+        basePayload.available_tones = availableTones.length ? availableTones : toneOptionsForMode(tone)
       } else if (cifraTab === 'file') {
         basePayload.cifra_content = song?.cifra_content ?? null
         basePayload.cipher_url = song?.cipher_url ?? null
+        basePayload.available_tones = []
       } else if (song) {
         basePayload.cifra_content = song.cifra_content
         basePayload.cipher_url = song.cipher_url
+        basePayload.available_tones = song.available_tones ?? []
       }
 
       let songId = song?.id
@@ -429,8 +495,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       }
 
       let saveResult = await performSave(basePayload)
-      if (saveResult.error && /youtube_video_title|cifra_pdf_path/i.test(saveResult.error.message ?? '')) {
-        const { youtube_video_title, ...rest } = basePayload
+      if (saveResult.error && /youtube_video_title|cifra_pdf_path|available_tones/i.test(saveResult.error.message ?? '')) {
+        const { youtube_video_title, available_tones, ...rest } = basePayload
         saveResult = await performSave(rest)
       }
 

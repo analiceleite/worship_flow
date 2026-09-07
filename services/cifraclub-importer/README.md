@@ -34,6 +34,27 @@ curl -X POST http://localhost:3010/import \
 - `RATE_LIMIT_WINDOW_MS`: janela do rate limit por IP. Padrao: 10 minutos.
 - `RATE_LIMIT_MAX`: maximo de chamadas por IP dentro da janela. Padrao: 30.
 
+## Deploy no Render Free
+
+Este repositorio inclui um `render.yaml` na raiz para criar o servico Docker a partir de
+`services/cifraclub-importer`.
+
+1. No Render, clique em **New** -> **Blueprint**.
+2. Conecte este repositorio GitHub.
+3. Confirme o servico `worship-flow-cifraclub-importer` com plano **Free**.
+4. Em **Environment**, defina `CIFRACLUB_IMPORTER_TOKEN` com um valor secreto forte.
+5. Aguarde o deploy e teste `https://<seu-servico>.onrender.com/health`.
+
+Depois configure o Worship Flow com:
+
+```env
+CIFRACLUB_IMPORTER_URL=https://<seu-servico>.onrender.com
+CIFRACLUB_IMPORTER_TOKEN=<mesmo-token-do-render>
+```
+
+No plano Free o servico pode dormir apos inatividade; a primeira importacao depois de um tempo
+pode demorar mais.
+
 ## Contrato
 
 Retorna JSON normalizado para o Worship Flow:

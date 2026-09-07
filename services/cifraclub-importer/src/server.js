@@ -52,6 +52,9 @@ const NOTE_INDEX = {
   B: 11,
 }
 
+const NOTES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+const NOTES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+
 const SELECTORS = {
   pageRoot: 'main#chordPage',
   title: 'main#chordPage h1, h1.t1, h1',
@@ -120,6 +123,53 @@ function semitoneDistance(fromTone, toTone) {
   const to = tonePitchClass(toTone)
   if (!from || !to || from.minor !== to.minor) return null
   return (to.pc - from.pc + 12) % 12
+}
+
+function parseToneRoot(tone) {
+  const match = String(tone || '').match(/^([A-G](?:#|b)?)/)
+  return match ? match[1] : null
+}
+
+function transposeRoot(root, semitones) {
+  const idx = NOTE_INDEX[root]
+  if (idx === undefined) return root
+
+  const next = (idx + semitones + 120) % 12
+  return root.includes('b') ? NOTES_FLAT[next] : NOTES_SHARP[next]
+}
+
+function transposeChordSymbol(symbol, semitones) {
+  const [main, bass] = symbol.split('/')
+  const transposePart = (part) => {
+    const match = part.match(/^([A-G](?:#|b)?)(.*)$/)
+    if (!match) return part
+    return `${transposeRoot(match[1], semitones)}${match[2]}`
+  }
+
+  return bass ? `${transposePart(main)}/${transposePart(bass)}` : transposePart(main)
+}
+
+function transposeCifraLines(lines, fromTone, toTone) {
+  const fromRoot = parseToneRoot(fromTone)
+  const toRoot = parseToneRoot(toTone)
+  if (!fromRoot || !toRoot || fromRoot === toRoot) return lines
+
+  const fromIdx = NOTE_INDEX[fromRoot]
+  const toIdx = NOTE_INDEX[toRoot]
+  if (fromIdx === undefined || toIdx === undefined) return lines
+
+  const semitones = toIdx - fromIdx
+  const chordRe = /([A-G](?:#{1,2}|b{1,2})?(?:m|maj|min|sus|add|dim|aug|\+|°)?(?:\d+[A-Za-z+#-]*)?(?:\([^)]*\))?(?:\/[A-G](?:#{1,2}|b{1,2})?)?)(?=[\s,.;:!?\)\]\}]|$)/g
+  const isChordLine = (line) => {
+    const withoutSections = line.replace(/\[[^\]]+\]/g, '')
+    const withoutChords = withoutSections.replace(chordRe, '')
+    return withoutChords.replace(/[\s,.;:!?\-–—|/()]+/g, '').length === 0
+  }
+
+  return lines.map((line) => {
+    if (!isChordLine(line)) return line
+    return line.replace(chordRe, (token) => transposeChordSymbol(token, semitones))
+  })
 }
 
 function json(res, status, body) {
@@ -269,10 +319,12 @@ async function currentToneFromPage(page) {
 }
 
 async function clickTransposeControl(page, selector, step) {
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    await page.waitForSelector(selector, { timeout: 1000 }).catch(() => undefined)
     const clicked = await page.evaluate((buttonSelector) => {
-      const button = document.querySelector(buttonSelector)
-      if (!(button instanceof HTMLButtonElement) || button.disabled) return false
+      const button = Array.from(document.querySelectorAll(buttonSelector))
+        .find((el) => el instanceof HTMLButtonElement && !el.disabled)
+      if (!(button instanceof HTMLButtonElement)) return false
       button.click()
       return true
     }, selector)
@@ -282,7 +334,7 @@ async function clickTransposeControl(page, selector, step) {
       return
     }
 
-    await page.waitForTimeout(150 * attempt)
+    await page.waitForTimeout(250 * attempt)
   }
 
   throw new ImporterError('Controle de transposicao nao encontrado no CifraClub.', 'NO_TRANSPOSE_CONTROL', 404)
@@ -297,6 +349,21 @@ async function waitForToneChange(page, previousTone) {
       },
       { selector: SELECTORS.currentTone, previous: previousTone },
       { timeout: 3000 }
+    )
+    .catch(() => undefined)
+}
+
+async function waitForCifraTextChange(page, previousText) {
+  if (!previousText) return
+
+  await page
+    .waitForFunction(
+      ({ selector, previous }) => {
+        const text = document.querySelector(selector)?.textContent || ''
+        return text.trim().length > 0 && text !== previous
+      },
+      { selector: SELECTORS.cifra, previous: previousText },
+      { timeout: 5000 }
     )
     .catch(() => undefined)
 }
@@ -330,7 +397,15 @@ async function transposeToTone(page, targetTone) {
 
   for (let i = 0; i < steps; i += 1) {
     const previousTone = await textFromFirstLocator(page, SELECTORS.currentTone)
-    await clickTransposeControl(page, selector, i + 1)
+    try {
+      await clickTransposeControl(page, selector, i + 1)
+    } catch (err) {
+      if (err instanceof ImporterError && err.code === 'NO_TRANSPOSE_CONTROL') {
+        logEvent('transpose_control_missing', { from_tone: currentTone, to_tone: requestedTone })
+        return null
+      }
+      throw err
+    }
     await waitForToneChange(page, previousTone)
     await page.waitForTimeout(150)
   }
@@ -398,7 +473,9 @@ async function extractFromPage(page, sourceUrl, targetTone) {
   logEvent('navigation_ok', { url: page.url() })
 
   const initialTone = await currentToneFromPage(page)
+  const initialCifraText = targetTone ? await textFromFirstLocator(page, SELECTORS.cifra) : ''
   const importedTone = targetTone ? await transposeToTone(page, targetTone) : initialTone
+  if (targetTone) await waitForCifraTextChange(page, initialCifraText)
   await waitForCifra(page)
 
   const metadata = await extractPageMetadata(page)
@@ -407,7 +484,10 @@ async function extractFromPage(page, sourceUrl, targetTone) {
     throw new ImporterError('Nao foi possivel extrair a cifra.', 'NO_CIFRA', 404)
   }
 
-  const finalTone = importedTone || (await currentToneFromPage(page)) || 'C'
+  const finalTone = importedTone || normalizeTone(targetTone) || (await currentToneFromPage(page)) || 'C'
+  const cifra = importedTone || !initialTone || !targetTone
+    ? metadata.cifra
+    : transposeCifraLines(metadata.cifra, initialTone, finalTone)
   const inferred = inferNamesFromUrl(page.url())
 
   return {
@@ -417,7 +497,7 @@ async function extractFromPage(page, sourceUrl, targetTone) {
     available_tones: availableTonesForMode(finalTone),
     youtube_url: metadata.youtube_url,
     cipher_url: page.url().split('?')[0],
-    cifra: metadata.cifra,
+    cifra,
     capo_frets: capoFretsFromText(metadata.capo_text),
     source: 'cifraclub',
   }

@@ -19,6 +19,7 @@ export interface Song {
   youtube_url: string | null
   youtube_video_title?: string | null
   cifra_content: string[] | null
+  available_tones?: string[] | null
   cifra_pdf_path?: string | null
   capo_frets?: number | null
   minister_id: string

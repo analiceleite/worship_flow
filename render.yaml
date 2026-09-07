@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: worship-flow-cifraclub-importer
+    runtime: docker
+    plan: free
+    rootDir: services/cifraclub-importer
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: CIFRACLUB_IMPORTER_TOKEN
+        sync: false
+      - key: IMPORT_TIMEOUT_MS
+        value: 30000
+      - key: RATE_LIMIT_MAX
+        value: 30
