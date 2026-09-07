@@ -142,13 +142,20 @@ export async function middleware(request: NextRequest) {
     }
 
     if (request.nextUrl.pathname === ROUTES.HOME) {
-      const target = minister.role === 'admin' ? ROUTES.SCHEDULE_ADMIN_DASHBOARD : ROUTES.SONGS
+      const target = minister.role === 'admin'
+        ? ROUTES.SCHEDULE_ADMIN_DASHBOARD
+        : minister.role === 'midia'
+          ? ROUTES.REPERTOIRE
+          : ROUTES.SONGS
       return NextResponse.redirect(new URL(target, request.url))
     }
 
-    // 'midia' users: só permitem acessar repertório
+    // 'midia' users: só permitem acessar repertório e perfil
     if (minister.role === 'midia') {
-      const allowed = request.nextUrl.pathname.startsWith(ROUTES.REPERTOIRE) || isPublicRoute
+      const allowed =
+        request.nextUrl.pathname.startsWith(ROUTES.REPERTOIRE) ||
+        request.nextUrl.pathname.startsWith(ROUTES.PROFILE) ||
+        isPublicRoute
       if (!allowed) return NextResponse.redirect(new URL(ROUTES.REPERTOIRE, request.url))
     }
   }
@@ -162,7 +169,11 @@ export async function middleware(request: NextRequest) {
       .single()
 
     if (minister?.is_active) {
-      const target = minister.role === 'admin' ? ROUTES.SCHEDULE_ADMIN_DASHBOARD : ROUTES.SONGS
+      const target = minister.role === 'admin'
+        ? ROUTES.SCHEDULE_ADMIN_DASHBOARD
+        : minister.role === 'midia'
+          ? ROUTES.REPERTOIRE
+          : ROUTES.SONGS
       return NextResponse.redirect(new URL(target, request.url))
     }
   }

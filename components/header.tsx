@@ -103,7 +103,7 @@ export function Header() {
   const visibleNavigation = navigation.filter(item =>
     // Admin-only pages only visible to admin
     (!item.adminOnly || userRole === 'admin')
-    // 'midia' users should only see the Repertório page
+    // 'midia' users should only see the Repertório page in primary navigation
     && (userRole !== 'midia' || item.href === ROUTES.REPERTOIRE)
   )
 
