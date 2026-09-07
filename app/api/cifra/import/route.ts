@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const retryAfterSec = rate.retryAfterSec ?? 3600
     return NextResponse.json(
       {
-        error: `Limite de importações atingido. Tente novamente em cerca de ${Math.max(1, Math.ceil(retryAfterSec / 60))} minutos ou use PDF/foto.`,
+        error: `Limite de importações atingido. Tente novamente em cerca de ${Math.max(1, Math.ceil(retryAfterSec / 60))} minutos ou use PDF.`,
       },
       {
         status: 429,
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           {
             error:
-              'URL inválida. Cole um link do CifraClub ou Cifralize, ou use a aba PDF ou foto.',
+              'URL inválida. Cole um link do CifraClub ou Cifralize, ou use a aba PDF.',
           },
           { status: 400 }
         )

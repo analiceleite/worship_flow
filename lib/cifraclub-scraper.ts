@@ -309,7 +309,7 @@ export async function scrapeCifraClub(params: ScrapeCifraClubParams): Promise<Ci
 
   if (isLikelyBlockedPage(baseHtml, $base)) {
     throw new CifraClubScrapeError(
-      'O Cifra Club bloqueou o acesso automático. Use a aba PDF ou foto da cifra.',
+      'O Cifra Club bloqueou o acesso automático. Use a aba PDF da cifra.',
       'BLOCKED'
     )
   }

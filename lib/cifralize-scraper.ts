@@ -215,14 +215,14 @@ export async function scrapeCifralize(params: ScrapeCifralizeParams): Promise<Im
 
   if (!html) {
     throw new CifralizeScrapeError(
-      'Música não encontrada no Cifralize. Use a aba PDF ou foto.',
+      'Música não encontrada no Cifralize. Use a aba PDF.',
       'NOT_FOUND'
     )
   }
 
   if (html.includes('Página Não Encontrada') || html.includes('display-1">404')) {
     throw new CifralizeScrapeError(
-      'Música não encontrada no Cifralize. Use a aba PDF ou foto.',
+      'Música não encontrada no Cifralize. Use a aba PDF.',
       'NOT_FOUND'
     )
   }
@@ -232,7 +232,7 @@ export async function scrapeCifralize(params: ScrapeCifralizeParams): Promise<Im
 
   if (!chordsHtml?.trim()) {
     throw new CifralizeScrapeError(
-      'Cifra indisponível no Cifralize para este link. Use a aba PDF ou foto.',
+      'Cifra indisponível no Cifralize para este link. Use a aba PDF.',
       'NO_CIFRA'
     )
   }
@@ -307,7 +307,7 @@ export async function scrapeCifralizeBySearch(query: string, targetTone?: string
   const results = await searchCifralize(query)
   if (results.length === 0) {
     throw new CifralizeScrapeError(
-      'Música não encontrada no Cifralize. Use a aba PDF ou foto.',
+      'Música não encontrada no Cifralize. Use a aba PDF.',
       'NOT_IN_CATALOG'
     )
   }

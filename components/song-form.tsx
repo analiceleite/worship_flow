@@ -179,10 +179,10 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           if (res.status === 429) {
             setImportError(
               data.error ??
-                'Muitas importações em pouco tempo. Aguarde alguns minutos ou use a aba PDF ou foto.'
+                'Muitas importações em pouco tempo. Aguarde alguns minutos ou use a aba PDF.'
             )
           } else {
-            setImportError(data.error ?? 'Não foi possível importar. Use a aba PDF ou foto.')
+            setImportError(data.error ?? 'Não foi possível importar. Use a aba PDF.')
           }
           return false
         }
@@ -206,7 +206,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         lastImportedToneRef.current = toneValue
         return true
       } catch {
-        setImportError('Erro de rede. Tente de novo ou use a aba PDF ou foto.')
+        setImportError('Erro de rede. Tente de novo ou use a aba PDF.')
         return false
       } finally {
         lastAutoImportKeyRef.current = buildImportKey(url, toneValue)
@@ -385,7 +385,6 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     setTone(t)
     const url = ensureHttps(cipherUrl)
     if (cifraTab === 'link' && url && isSupportedCifraUrl(url) && importReady) {
-      setCifraContent(null)
       setCifraContentKey(null)
       lastImportedToneRef.current = null
       lastAutoImportKeyRef.current = null
@@ -444,7 +443,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     }
 
     if (cifraTab === 'file' && !hasPdfSource) {
-      setFormError('Envie um PDF ou foto da cifra.')
+      setFormError('Envie um PDF da cifra.')
       return
     }
 
@@ -724,7 +723,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         <DialogHeader>
           <DialogTitle>{song ? 'Editar música' : 'Nova música'}</DialogTitle>
           <DialogDescription>
-            Link do CifraClub/Cifralize ou arquivo PDF/foto — escolha uma das duas formas.
+            Link do CifraClub/Cifralize ou arquivo PDF — escolha uma das duas formas.
           </DialogDescription>
         </DialogHeader>
 
@@ -744,7 +743,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               </TabsTrigger>
               <TabsTrigger value="file" className="gap-1.5">
                 <FileUp className="h-3.5 w-3.5" />
-                PDF ou foto
+                PDF
               </TabsTrigger>
             </TabsList>
 
@@ -778,11 +777,30 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               )}
 
               {importReady && (
-                <div className="space-y-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3">
-                  <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Cifra pronta
+                <div
+                  className={cn(
+                    'space-y-3 rounded-lg border p-3',
+                    hasCurrentTextCifra
+                      ? 'border-emerald-500/40 bg-emerald-500/5'
+                      : 'border-amber-500/40 bg-amber-500/5'
+                  )}
+                >
+                  <p
+                    className={cn(
+                      'flex items-center gap-2 text-sm font-medium',
+                      hasCurrentTextCifra
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-amber-700 dark:text-amber-400'
+                    )}
+                  >
+                    {hasCurrentTextCifra ? <CheckCircle2 className="h-4 w-4" /> : <Spinner className="h-4 w-4" />}
+                    {hasCurrentTextCifra ? 'Cifra pronta' : `Atualizando cifra para ${tone || 'o tom selecionado'}...`}
                   </p>
+                  {!hasCurrentTextCifra && (
+                    <p className="text-xs text-muted-foreground">
+                      A cifra anterior continua visível enquanto o novo tom carrega. O salvamento fica bloqueado até terminar.
+                    </p>
+                  )}
                   {songDetailsFields()}
                   {toneField(true)}
                   {capoFrets > 0 && (
@@ -801,7 +819,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,image/jpeg,image/png,image/webp"
+                accept="application/pdf,.pdf"
                 className="sr-only"
                 onChange={handleFileChange}
               />
@@ -822,12 +840,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                       ? cifraFile.name
                       : existingPdfPath
                         ? 'Arquivo atual — toque para trocar'
-                        : 'Escolher PDF ou foto'}
+                        : 'Escolher PDF'}
                   </span>
                   <span className="text-xs text-muted-foreground">Máx. 10 MB</span>
                 </Button>
                 {!hasPdfSource && (
-                  <p className="text-xs text-destructive">Envie um PDF ou foto da cifra.</p>
+                  <p className="text-xs text-destructive">Envie um PDF da cifra.</p>
                 )}
               </div>
             </TabsContent>

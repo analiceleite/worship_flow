@@ -5,14 +5,11 @@ export const MAX_CIFRA_FILE_BYTES = 10 * 1024 * 1024
 
 const ACCEPTED_MIME = new Set([
   'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
 ])
 
 export function validateCifraFile(file: File): string | null {
   if (!ACCEPTED_MIME.has(file.type)) {
-    return 'Envie um PDF ou imagem (JPG, PNG ou WebP).'
+    return 'Envie um arquivo PDF.'
   }
   if (file.size > MAX_CIFRA_FILE_BYTES) {
     return 'O arquivo deve ter no máximo 10 MB.'
@@ -21,10 +18,7 @@ export function validateCifraFile(file: File): string | null {
 }
 
 function extensionForFile(file: File): string {
-  if (file.type === 'application/pdf') return 'pdf'
-  if (file.type === 'image/png') return 'png'
-  if (file.type === 'image/webp') return 'webp'
-  return 'jpg'
+  return 'pdf'
 }
 
 export function isPdfStoragePath(path: string): boolean {
