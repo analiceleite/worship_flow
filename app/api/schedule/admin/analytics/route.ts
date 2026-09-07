@@ -16,7 +16,7 @@ interface QuarterRow {
 interface RoleRow {
   id: string
   name: string
-  category: 'ministro' | 'vocal' | 'instrumento'
+  category: 'ministro' | 'vocal' | 'instrumento' | 'midia'
   display_order: number
 }
 

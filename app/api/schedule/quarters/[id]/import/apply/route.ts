@@ -18,6 +18,7 @@ interface AssignmentApplyRow {
     quarter_id: string
     minister_id: string | null
     is_trainee: boolean
+    role: { category: string } | null
 }
 
 export async function POST(
@@ -51,7 +52,7 @@ export async function POST(
 
     const { data: assignments, error: assignmentsError } = await adminSupabase
         .from('schedule_assignments')
-        .select('id, quarter_id, minister_id, is_trainee')
+        .select('id, quarter_id, minister_id, is_trainee, role:schedule_roles(category)')
         .in('id', assignmentIds)
         .eq('quarter_id', id)
 
@@ -62,6 +63,26 @@ export async function POST(
     const assignmentMap = new Map(
         ((assignments ?? []) as AssignmentApplyRow[]).map((row) => [row.id, row])
     )
+
+    const selectedMinisterIds = Array.from(
+        new Set(items.map((item) => item.minister_id).filter((value): value is string => Boolean(value)))
+    )
+    const selectedMinisterRoleMap = new Map<string, string>()
+
+    if (selectedMinisterIds.length) {
+        const { data: selectedMinisters, error: selectedMinistersError } = await adminSupabase
+            .from('ministers')
+            .select('id, role')
+            .in('id', selectedMinisterIds)
+
+        if (selectedMinistersError) {
+            return NextResponse.json({ error: selectedMinistersError.message }, { status: 500 })
+        }
+
+        for (const minister of selectedMinisters ?? []) {
+            selectedMinisterRoleMap.set(minister.id, minister.role)
+        }
+    }
 
     let updatedCount = 0
     let skippedCount = 0
@@ -76,6 +97,18 @@ export async function POST(
 
         const nextMinisterId = item.minister_id ?? null
         const nextIsTrainee = nextMinisterId ? Boolean(item.is_trainee) : false
+
+        const invalidMediaAssignment =
+            assignment.role?.category === 'midia' &&
+            nextMinisterId &&
+            selectedMinisterRoleMap.get(nextMinisterId) !== 'midia'
+
+        if (invalidMediaAssignment) {
+            return NextResponse.json(
+                { error: 'A função Sonoplasta aceita apenas usuários do grupo Mídia' },
+                { status: 400 }
+            )
+        }
 
         const noChanges =
             assignment.minister_id === nextMinisterId &&

@@ -25,7 +25,7 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '../ui
 export interface ScheduleRole {
     id: string
     name: string
-    category: 'ministro' | 'vocal' | 'instrumento'
+    category: 'ministro' | 'vocal' | 'instrumento' | 'midia'
     display_order: number
 }
 
@@ -307,10 +307,12 @@ function CellEditor({
     assignment,
     saving,
     onSave,
+    ministerRoleFilter,
 }: {
     assignment: ScheduleAssignment
     saving: boolean
     onSave: (payload: SavePayload) => Promise<void>
+    ministerRoleFilter?: 'midia'
 }) {
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
@@ -326,8 +328,9 @@ function CellEditor({
         const timeout = setTimeout(async () => {
             try {
                 setLoading(true)
+                const roleParam = ministerRoleFilter ? `&role=${ministerRoleFilter}` : ''
                 const response = await fetch(
-                    `/api/ministers/search?query=${encodeURIComponent(query)}&limit=25`,
+                    `/api/ministers/search?query=${encodeURIComponent(query)}&limit=25${roleParam}`,
                     { signal: controller.signal }
                 )
 
@@ -348,7 +351,7 @@ function CellEditor({
             clearTimeout(timeout)
             controller.abort()
         }
-    }, [open, query])
+    }, [ministerRoleFilter, open, query])
 
     const handlePick = async (minister: MinisterOption | null) => {
         await onSave({
@@ -394,7 +397,7 @@ function CellEditor({
                     disabled={saving}
                 >
                     <span className="truncate">
-                        {assignment.minister?.name ?? 'Selecionar ministro'}
+                        {assignment.minister?.name ?? (ministerRoleFilter === 'midia' ? 'Selecionar mídia' : 'Selecionar ministro')}
                     </span>
                     {assignment.minister_id && assignment.is_trainee && (
                         <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
@@ -412,7 +415,7 @@ function CellEditor({
                     <CommandInput
                         value={query}
                         onValueChange={setQuery}
-                        placeholder="Buscar ministro por nome"
+                        placeholder={ministerRoleFilter === 'midia' ? 'Buscar mídia por nome' : 'Buscar ministro por nome'}
                     />
                     <CommandList>
                         {loading && (
@@ -421,7 +424,7 @@ function CellEditor({
                                 Buscando...
                             </div>
                         )}
-                        <CommandEmpty>Nenhum ministro encontrado</CommandEmpty>
+                        <CommandEmpty>{ministerRoleFilter === 'midia' ? 'Nenhum usuário de mídia encontrado' : 'Nenhum ministro encontrado'}</CommandEmpty>
                         <CommandGroup heading="Atribuição">
                             <CommandItem value="none" onSelect={() => handlePick(null)}>
                                 <Check className={assignment.minister_id ? 'opacity-0' : 'opacity-100'} />
@@ -479,7 +482,11 @@ export function ScheduleGrid({
         return map
     }, [assignments, eventType])
 
-    function renderCell(assignment: ScheduleAssignment | undefined, cellKey: string) {
+    function ministerRoleFilterFor(role: ScheduleRole) {
+        return role.category === 'midia' ? ('midia' as const) : undefined
+    }
+
+    function renderCell(assignment: ScheduleAssignment | undefined, cellKey: string, role: ScheduleRole) {
         if (!assignment) {
             return (
                 <div className="flex h-8 items-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-2 text-xs text-muted-foreground">
@@ -520,6 +527,7 @@ export function ScheduleGrid({
                         assignment={assignment}
                         saving={Boolean(savingKeys[cellKey] || savingKeys[assignment.id])}
                         onSave={onSaveAssignment}
+                        ministerRoleFilter={ministerRoleFilterFor(role)}
                     />
                 ) : (
                     <div className="flex h-8 items-center rounded-md border border-border bg-background px-2 text-xs text-muted-foreground">
@@ -612,6 +620,7 @@ export function ScheduleGrid({
                                                             assignment={assignment}
                                                             saving={Boolean(savingKeys[assignment.id])}
                                                             onSave={onSaveAssignment}
+                                                            ministerRoleFilter={ministerRoleFilterFor(role)}
                                                         />
                                                     ) : (
                                                         <div className="flex h-9 items-center rounded-md border border-border bg-background px-2 text-xs text-muted-foreground">
@@ -661,7 +670,7 @@ export function ScheduleGrid({
                                             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{role.category}</p>
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            {renderCell(assignment, cellKey)}
+                                            {renderCell(assignment, cellKey, role)}
                                         </div>
                                     </div>
                                 )
