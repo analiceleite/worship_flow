@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseCifralizeUrl } from '@/lib/cifralize-url'
+import { parseCifraClubUrl } from '@/lib/cifraclub-url'
 import {
   scrapeCifralize,
   scrapeCifralizeBySearch,
@@ -8,6 +9,10 @@ import {
   type ImportedCifra,
 } from '@/lib/cifralize-scraper'
 import { normalizeCifraClubTone } from '@/lib/cifraclub-scraper'
+import {
+  CifraClubImporterError,
+  importFromCifraClubService,
+} from '@/lib/cifraclub-importer-client'
 import { checkCifralizeRateLimit, recordCifralizeImport } from '@/lib/cifralize-rate-limit'
 
 export type { ImportedCifra }
@@ -54,26 +59,43 @@ export async function GET(request: NextRequest) {
     let result: ImportedCifra
 
     if (urlParam) {
-      const parsed = parseCifralizeUrl(urlParam)
-      if (!parsed) {
+      const cifralizeUrl = parseCifralizeUrl(urlParam)
+      const cifraClubUrl = parseCifraClubUrl(urlParam)
+
+      if (!cifralizeUrl && !cifraClubUrl) {
         return NextResponse.json(
           {
             error:
-              'URL inválida. Cole um link do Cifralize (cifralize.com.br) ou use a aba PDF ou foto.',
+              'URL inválida. Cole um link do CifraClub ou Cifralize, ou use a aba PDF ou foto.',
           },
           { status: 400 }
         )
       }
 
-      if (!validSlug.test(parsed.artist) || !validSlug.test(parsed.song)) {
-        return NextResponse.json({ error: 'Link do Cifralize inválido.' }, { status: 400 })
-      }
+      if (cifraClubUrl) {
+        if (!validSlug.test(cifraClubUrl.artist) || !validSlug.test(cifraClubUrl.song)) {
+          return NextResponse.json({ error: 'Link do CifraClub inválido.' }, { status: 400 })
+        }
 
-      result = await scrapeCifralize({
-        artist: parsed.artist,
-        song: parsed.song,
-        targetTone: targetTone ?? parsed.tone ?? null,
-      })
+        result = await importFromCifraClubService({
+          url: urlParam,
+          artist: cifraClubUrl.artist,
+          song: cifraClubUrl.song,
+          targetTone,
+        })
+      } else if (cifralizeUrl) {
+        if (!validSlug.test(cifralizeUrl.artist) || !validSlug.test(cifralizeUrl.song)) {
+          return NextResponse.json({ error: 'Link do Cifralize inválido.' }, { status: 400 })
+        }
+
+        result = await scrapeCifralize({
+          artist: cifralizeUrl.artist,
+          song: cifralizeUrl.song,
+          targetTone: targetTone ?? cifralizeUrl.tone ?? null,
+        })
+      } else {
+        return NextResponse.json({ error: 'Link de cifra inválido.' }, { status: 400 })
+      }
     } else if (artistParam && songParam) {
       if (!validSlug.test(artistParam) || !validSlug.test(songParam)) {
         return NextResponse.json({ error: 'Artista ou música inválidos.' }, { status: 400 })
@@ -88,7 +110,7 @@ export async function GET(request: NextRequest) {
       result = await scrapeCifralizeBySearch(queryParam, targetTone)
     } else {
       return NextResponse.json(
-        { error: 'Informe a URL do Cifralize (parâmetro url) ou artista e música.' },
+        { error: 'Informe a URL do CifraClub/Cifralize (parâmetro url) ou artista e música.' },
         { status: 400 }
       )
     }
@@ -113,7 +135,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.error('Cifralize import error:', err)
+    if (err instanceof CifraClubImporterError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          available_tones: err.availableTones,
+          code: err.code,
+        },
+        { status: err.status }
+      )
+    }
+
+    console.error('Cifra import error:', err)
     return NextResponse.json({ error: 'Erro ao importar cifra.' }, { status: 500 })
   }
 }

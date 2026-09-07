@@ -30,6 +30,7 @@ import { CheckCircle2, FileUp, Link2, Search, X, Youtube } from 'lucide-react'
 import { uploadCifraFile, validateCifraFile } from '@/lib/cifra-storage'
 import { buildYoutubeSearchCacheKey } from '@/lib/youtube-search-cache'
 import { isCifralizeUrl } from '@/lib/cifralize-url'
+import { isCifraClubUrl } from '@/lib/cifraclub-url'
 import { normalizeCifraClubTone, tonesAreEquivalent } from '@/lib/cifraclub-scraper'
 import { cn } from '@/lib/utils'
 
@@ -63,6 +64,16 @@ function defaultCifraTab(s: Song | null | undefined): 'link' | 'file' {
   return 'link'
 }
 
+function isSupportedCifraUrl(url: string): boolean {
+  return isCifraClubUrl(url) || isCifralizeUrl(url)
+}
+
+function cifraSourceLabel(url: string): string {
+  if (isCifraClubUrl(url)) return 'CifraClub'
+  if (isCifralizeUrl(url)) return 'Cifralize'
+  return 'link informado'
+}
+
 export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister }: SongFormProps) {
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
@@ -74,7 +85,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const [availableTones, setAvailableTones] = useState<string[]>([])
   const [capoFrets, setCapoFrets] = useState(0)
   const [importingCifra, setImportingCifra] = useState(false)
-  /** Tom sendo buscado no Cifralize (troca de tom); null = importação inicial pelo link. */
+  /** Tom sendo buscado na fonte da cifra (troca de tom); null = importação inicial pelo link. */
   const [loadingToneForImport, setLoadingToneForImport] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
@@ -120,8 +131,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const importFromUrl = useCallback(
     async (urlInput: string, toneValue: string) => {
       const url = ensureHttps(urlInput)
-      if (!url || !isCifralizeUrl(url)) {
-        setImportError('Cole um link válido do Cifralize (cifralize.com.br).')
+      if (!url || !isSupportedCifraUrl(url)) {
+        setImportError('Cole um link válido do CifraClub ou Cifralize.')
         return false
       }
 
@@ -225,7 +236,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
     if (!open || cifraTab !== 'link') return
 
     const url = ensureHttps(cipherUrl)
-    if (!url || !isCifralizeUrl(url) || importingCifra) return
+    if (!url || !isSupportedCifraUrl(url) || importingCifra) return
 
     const importKey = buildImportKey(url, tone)
     if (importKey === lastAutoImportKeyRef.current) return
@@ -324,7 +335,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
     setTone(t)
     const url = ensureHttps(cipherUrl)
-    if (cifraTab === 'link' && url && isCifralizeUrl(url) && importReady) {
+    if (cifraTab === 'link' && url && isSupportedCifraUrl(url) && importReady) {
       lastImportedToneRef.current = null
       lastAutoImportKeyRef.current = null
       setLoadingToneForImport(t)
@@ -334,7 +345,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
 
   const handleRetryImport = () => {
     const url = ensureHttps(cipherUrl)
-    if (!url || !isCifralizeUrl(url)) return
+    if (!url || !isSupportedCifraUrl(url)) return
     lastAutoImportKeyRef.current = null
     lastImportedUrlRef.current = null
     lastImportedToneRef.current = null
@@ -588,7 +599,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           <p className="text-xs text-muted-foreground">
             {youtubeRequired
               ? importReady
-                ? 'Obrigatório para salvar. Se o Cifralize não trouxe vídeo, busque a versão abaixo.'
+                ? 'Obrigatório para salvar. Se a importação não trouxe vídeo, busque a versão abaixo.'
                 : 'Obrigatório para salvar. Busque a versão que a equipe usa como referência.'
               : 'Opcional — útil para ensaio. Músicas autorais podem ficar sem vídeo.'}
           </p>
@@ -647,7 +658,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
         <DialogHeader>
           <DialogTitle>{song ? 'Editar música' : 'Nova música'}</DialogTitle>
           <DialogDescription>
-            Link do Cifralize ou arquivo PDF/foto — escolha uma das duas formas.
+            Link do CifraClub/Cifralize ou arquivo PDF/foto — escolha uma das duas formas.
           </DialogDescription>
         </DialogHeader>
 
@@ -680,7 +691,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
                   if (importError) setImportError(null)
                   lastAutoImportKeyRef.current = null
                 }}
-                placeholder="Cole o link do Cifralize…"
+                placeholder="Cole o link do CifraClub ou Cifralize…"
                 className="h-11"
                 autoFocus={!song}
                 disabled={importingCifra}
@@ -688,7 +699,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
               {importingCifra && !loadingToneForImport && (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
                   <Spinner className="h-3.5 w-3.5" />
-                  Importando cifra do Cifralize…
+                  Importando cifra do {cifraSourceLabel(ensureHttps(cipherUrl))}…
                 </p>
               )}
               {importError && !importingCifra && (

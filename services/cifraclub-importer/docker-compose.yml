@@ -1,0 +1,15 @@
+services:
+  cifraclub-importer:
+    build: .
+    container_name: worship-flow-cifraclub-importer
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    environment:
+      PORT: "3010"
+      CIFRACLUB_IMPORTER_TOKEN: "wf_cifraclub_a8f6c2e9d14b47f39c05e72ab6d8f341"
+      IMPORT_TIMEOUT_MS: "30000"
+      CACHE_TTL_MS: "1209600000"
+      FAILURE_CACHE_TTL_MS: "300000"
+      RATE_LIMIT_WINDOW_MS: "600000"
+      RATE_LIMIT_MAX: "30"

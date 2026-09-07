@@ -241,6 +241,26 @@ pnpm backfill:cifras        # Busca e armazena cifras
 pnpm backfill:cifras:dry    # Prévia sem modificar dados
 ```
 
+### Importador CifraClub com Navegador Real
+
+O app aceita links do CifraClub diretamente usando um microserviço com Playwright. Para importar links do CifraClub, configure e rode esse serviço; Cifralize e PDF/foto continuam funcionando como alternativas.
+
+Variáveis do app principal:
+
+```env
+CIFRACLUB_IMPORTER_URL=http://localhost:3010
+CIFRACLUB_IMPORTER_TOKEN=seu-token-interno
+```
+
+Rodar o microserviço localmente:
+
+```bash
+docker build -t worship-flow-cifraclub-importer services/cifraclub-importer
+docker run --rm -p 3010:3010 -e CIFRACLUB_IMPORTER_TOKEN=seu-token-interno worship-flow-cifraclub-importer
+```
+
+Detalhes do serviço: `services/cifraclub-importer/README.md`.
+
 ### Auditoria e Correção de Tons
 
 Valida e corrige inconsistências de tons nas músicas:
