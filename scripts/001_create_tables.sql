@@ -82,7 +82,7 @@ CREATE TABLE public.schedule_quarters (
 CREATE TABLE public.schedule_roles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   name text NOT NULL,
-  category text CHECK (category = ANY (ARRAY['ministro'::text, 'vocal'::text, 'instrumento'::text])),
+  category text CHECK (category = ANY (ARRAY['ministro'::text, 'vocal'::text, 'instrumento'::text, 'midia'::text])),
   display_order integer DEFAULT 0,
   CONSTRAINT schedule_roles_pkey PRIMARY KEY (id)
 );

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { google } from 'googleapis'
+import { google, calendar_v3 } from 'googleapis'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   getAuthorizedClientForMinister,
@@ -16,6 +16,9 @@ const TIME_ZONE = 'America/Sao_Paulo'
 // Locked-in design decision: `calendar.events` scope only permits event operations, not
 // creating/deleting a dedicated secondary calendar (that would need the broader `calendar` scope).
 const CALENDAR_ID = 'primary'
+const PRIVATE_MINISTER_ID = 'worshipFlowMinisterId'
+const PRIVATE_EVENT_KEY = 'worshipFlowEventKey'
+const EVENT_MARKER_VERSION = 2
 
 function contentHashFor(item: CalendarEventItem, alarmOffsets: number[]): string {
   return createHash('sha256')
@@ -26,12 +29,13 @@ function contentHashFor(item: CalendarEventItem, alarmOffsets: number[]): string
         start: item.arrivalUtc.toISOString(),
         end: item.endUtc.toISOString(),
         alarmOffsets,
+        markerVersion: EVENT_MARKER_VERSION,
       })
     )
     .digest('hex')
 }
 
-function toEventBody(item: CalendarEventItem, alarmOffsets: number[]) {
+function toEventBody(item: CalendarEventItem, alarmOffsets: number[], ministerId: string) {
   return {
     summary: item.eventLabel,
     description: item.description,
@@ -46,6 +50,12 @@ function toEventBody(item: CalendarEventItem, alarmOffsets: number[]) {
         .slice(0, 5)
         .filter((m) => m > 0 && m <= 40320)
         .map((minutes) => ({ method: 'popup' as const, minutes })),
+    },
+    extendedProperties: {
+      private: {
+        [PRIVATE_MINISTER_ID]: ministerId,
+        [PRIVATE_EVENT_KEY]: item.eventKey,
+      },
     },
   }
 }
@@ -74,6 +84,73 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 function statusOf(err: unknown): number | undefined {
   const anyErr = err as { code?: number; response?: { status?: number } }
   return anyErr?.code ?? anyErr?.response?.status
+}
+
+function isNotFound(err: unknown) {
+  const status = statusOf(err)
+  return status === 404 || status === 410
+}
+
+function eventTimeMs(value: string | null | undefined) {
+  if (!value) return null
+  const ms = new Date(value).getTime()
+  return Number.isNaN(ms) ? null : ms
+}
+
+function isLegacyMatch(event: calendar_v3.Schema$Event, item: CalendarEventItem) {
+  const startMs = eventTimeMs(event.start?.dateTime)
+  const endMs = eventTimeMs(event.end?.dateTime)
+
+  return event.status !== 'cancelled' &&
+    event.summary === item.eventLabel &&
+    event.description === item.description &&
+    startMs === item.arrivalUtc.getTime() &&
+    endMs === item.endUtc.getTime()
+}
+
+async function findExistingGoogleEvents(
+  calendar: calendar_v3.Calendar,
+  ministerId: string,
+  item: CalendarEventItem
+) {
+  const marked = await withRetry(() =>
+    calendar.events.list({
+      calendarId: CALENDAR_ID,
+      privateExtendedProperty: [
+        `${PRIVATE_MINISTER_ID}=${ministerId}`,
+        `${PRIVATE_EVENT_KEY}=${item.eventKey}`,
+      ],
+      showDeleted: false,
+      singleEvents: true,
+    })
+  )
+  const markedEvents = (marked.data.items ?? []).filter((event) => event.id)
+  if (markedEvents.length) return markedEvents
+
+  const windowStart = new Date(item.arrivalUtc.getTime() - 60 * 60 * 1000).toISOString()
+  const windowEnd = new Date(item.endUtc.getTime() + 60 * 60 * 1000).toISOString()
+  const legacy = await withRetry(() =>
+    calendar.events.list({
+      calendarId: CALENDAR_ID,
+      timeMin: windowStart,
+      timeMax: windowEnd,
+      q: 'Escala',
+      showDeleted: false,
+      singleEvents: true,
+    })
+  )
+
+  return (legacy.data.items ?? []).filter((event) => event.id && isLegacyMatch(event, item))
+}
+
+async function deleteGoogleEvent(calendar: calendar_v3.Calendar, eventId: string) {
+  try {
+    await withRetry(() => calendar.events.delete({ calendarId: CALENDAR_ID, eventId }))
+    return true
+  } catch (err) {
+    if (!isNotFound(err)) throw err
+    return false
+  }
 }
 
 export type ReconcileResult =
@@ -109,15 +186,48 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
   let deleted = 0
 
   try {
+    const marked = await withRetry(() =>
+      calendar.events.list({
+        calendarId: CALENDAR_ID,
+        privateExtendedProperty: [`${PRIVATE_MINISTER_ID}=${ministerId}`],
+        showDeleted: false,
+        singleEvents: true,
+      })
+    )
+
+    for (const event of marked.data.items ?? []) {
+      const eventKey = event.extendedProperties?.private?.[PRIVATE_EVENT_KEY]
+      if (!event.id || !eventKey || desiredKeys.has(eventKey)) continue
+
+      if (await deleteGoogleEvent(calendar, event.id)) deleted++
+      await admin
+        .from('google_calendar_event_map')
+        .delete()
+        .eq('minister_id', ministerId)
+        .eq('event_key', eventKey)
+    }
+
     for (const item of built.events) {
       const hash = contentHashFor(item, alarmOffsets)
       const prior = existing.get(item.eventKey)
-      const body = toEventBody(item, alarmOffsets)
+      const body = toEventBody(item, alarmOffsets, ministerId)
 
       if (!prior) {
-        const res = await withRetry(() =>
-          calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: body })
-        )
+        const matches = await findExistingGoogleEvents(calendar, ministerId, item)
+        const primaryMatch = matches[0]
+        const googleEventId = primaryMatch?.id
+
+        if (googleEventId) {
+          await withRetry(() =>
+            calendar.events.update({ calendarId: CALENDAR_ID, eventId: googleEventId, requestBody: body })
+          )
+          updated++
+        }
+
+        const res = googleEventId
+          ? { data: { id: googleEventId } }
+          : await withRetry(() => calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: body }))
+
         await admin.from('google_calendar_event_map').upsert(
           {
             minister_id: ministerId,
@@ -128,15 +238,50 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
           },
           { onConflict: 'minister_id,event_key' }
         )
-        inserted++
+
+        for (const duplicate of matches.slice(1)) {
+          if (duplicate.id && await deleteGoogleEvent(calendar, duplicate.id)) deleted++
+        }
+
+        if (!googleEventId) inserted++
       } else if (prior.content_hash !== hash) {
-        await withRetry(() =>
-          calendar.events.update({
-            calendarId: CALENDAR_ID,
-            eventId: prior.google_event_id,
-            requestBody: body,
-          })
-        )
+        try {
+          await withRetry(() =>
+            calendar.events.update({
+              calendarId: CALENDAR_ID,
+              eventId: prior.google_event_id,
+              requestBody: body,
+            })
+          )
+        } catch (err) {
+          if (!isNotFound(err)) throw err
+
+          const matches = await findExistingGoogleEvents(calendar, ministerId, item)
+          const googleEventId = matches[0]?.id
+          if (googleEventId) {
+            await withRetry(() =>
+              calendar.events.update({ calendarId: CALENDAR_ID, eventId: googleEventId, requestBody: body })
+            )
+            await admin
+              .from('google_calendar_event_map')
+              .update({ google_event_id: googleEventId })
+              .eq('minister_id', ministerId)
+              .eq('event_key', item.eventKey)
+          } else {
+            const res = await withRetry(() => calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: body }))
+            await admin
+              .from('google_calendar_event_map')
+              .update({ google_event_id: res.data.id! })
+              .eq('minister_id', ministerId)
+              .eq('event_key', item.eventKey)
+            inserted++
+          }
+
+          for (const duplicate of matches.slice(1)) {
+            if (duplicate.id && await deleteGoogleEvent(calendar, duplicate.id)) deleted++
+          }
+        }
+
         await admin
           .from('google_calendar_event_map')
           .update({ content_hash: hash, updated_at: new Date().toISOString() })
@@ -148,14 +293,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
 
     for (const [eventKey, row] of existing.entries()) {
       if (desiredKeys.has(eventKey)) continue
-      try {
-        await withRetry(() =>
-          calendar.events.delete({ calendarId: CALENDAR_ID, eventId: row.google_event_id })
-        )
-      } catch (err) {
-        const status = statusOf(err)
-        if (status !== 404 && status !== 410) throw err // already gone on Google's side = fine
-      }
+      await deleteGoogleEvent(calendar, row.google_event_id)
       await admin
         .from('google_calendar_event_map')
         .delete()
@@ -230,14 +368,32 @@ export async function disconnectMinister(ministerId: string) {
       .select('google_event_id')
       .eq('minister_id', ministerId)
     const calendar = google.calendar({ version: 'v3', auth: oauthClient })
-    for (const m of (mappings ?? []) as Array<{ google_event_id: string }>) {
+    const eventIds = new Set<string>(
+      (mappings ?? []).map((m: { google_event_id: string }) => m.google_event_id)
+    )
+
+    try {
+      const marked = await withRetry(() =>
+        calendar.events.list({
+          calendarId: CALENDAR_ID,
+          privateExtendedProperty: [`${PRIVATE_MINISTER_ID}=${ministerId}`],
+          showDeleted: false,
+          singleEvents: true,
+        })
+      )
+
+      for (const event of marked.data.items ?? []) {
+        if (event.id) eventIds.add(event.id)
+      }
+    } catch (err) {
+      console.error('Failed to list marked Google events on disconnect:', err)
+    }
+
+    for (const eventId of eventIds) {
       try {
-        await withRetry(() =>
-          calendar.events.delete({ calendarId: CALENDAR_ID, eventId: m.google_event_id })
-        )
+        await deleteGoogleEvent(calendar, eventId)
       } catch (err) {
-        const status = statusOf(err)
-        if (status !== 404 && status !== 410) console.error('Failed to delete event on disconnect:', err)
+        console.error('Failed to delete event on disconnect:', err)
       }
     }
     try {

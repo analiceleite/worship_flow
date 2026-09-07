@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const rawQuery = (searchParams.get('query') ?? '').trim()
   const limit = Number(searchParams.get('limit') ?? '30')
+  const role = searchParams.get('role')
 
   const adminSupabase = createAdminClient()
   let query = adminSupabase
@@ -23,6 +24,10 @@ export async function GET(request: Request) {
     .eq('is_active', true)
     .order('name', { ascending: true })
     .limit(Number.isNaN(limit) ? 30 : Math.min(Math.max(limit, 1), 100))
+
+  if (role === 'midia') {
+    query = query.eq('role', 'midia')
+  }
 
   if (rawQuery) {
     query = query.ilike('name', `%${rawQuery}%`)

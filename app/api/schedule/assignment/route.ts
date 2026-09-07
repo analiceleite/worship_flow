@@ -34,6 +34,52 @@ export async function PATCH(request: Request) {
 
   const adminSupabase = createAdminClient()
 
+  let roleId = payload.role_id ?? null
+  if (!roleId && payload.id) {
+    const { data: existingAssignment, error: existingAssignmentError } = await adminSupabase
+      .from('schedule_assignments')
+      .select('role_id')
+      .eq('id', payload.id)
+      .single()
+
+    if (existingAssignmentError || !existingAssignment?.role_id) {
+      return NextResponse.json(
+        { error: existingAssignmentError?.message ?? 'Célula da escala não encontrada' },
+        { status: 400 }
+      )
+    }
+
+    roleId = existingAssignment.role_id
+  }
+
+  const { data: role, error: roleError } = await adminSupabase
+    .from('schedule_roles')
+    .select('id, name, category')
+    .eq('id', roleId as string)
+    .single()
+
+  if (roleError || !role) {
+    return NextResponse.json(
+      { error: roleError?.message ?? 'Função da escala não encontrada' },
+      { status: 400 }
+    )
+  }
+
+  if (role.category === 'midia' && payload.minister_id) {
+    const { data: selectedMinister, error: selectedMinisterError } = await adminSupabase
+      .from('ministers')
+      .select('id, role')
+      .eq('id', payload.minister_id)
+      .single()
+
+    if (selectedMinisterError || selectedMinister?.role !== 'midia') {
+      return NextResponse.json(
+        { error: 'A função Sonoplasta aceita apenas usuários do grupo Mídia' },
+        { status: 400 }
+      )
+    }
+  }
+
   let assignmentId = payload.id
   let previousMinisterId: string | null = null
 

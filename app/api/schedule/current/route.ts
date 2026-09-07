@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 interface QuarterRole {
   id: string
   name: string
-  category: 'ministro' | 'vocal' | 'instrumento'
+  category: 'ministro' | 'vocal' | 'instrumento' | 'midia'
   display_order: number
 }
 

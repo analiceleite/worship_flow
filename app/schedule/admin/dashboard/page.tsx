@@ -51,7 +51,7 @@ interface AnalyticsSummary {
 interface AnalyticsRole {
     role_id: string
     role_name: string
-    category: 'ministro' | 'vocal' | 'instrumento'
+    category: 'ministro' | 'vocal' | 'instrumento' | 'midia'
     total: number
     filled: number
     empty: number
