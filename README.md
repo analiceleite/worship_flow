@@ -1,84 +1,101 @@
 # Worship Flow
 
-Worship Flow e uma aplicacao web multitenant para gestao de ministerios de louvor. Ela organiza musicas, repertorios, escalas bimestrais, usuarios, notificacoes por email, cifras, integracao com YouTube e Google Calendar.
+Worship Flow is a multitenant web application for worship ministry management. It helps churches organize songs, repertoires, bimonthly schedules, team members, email reminders, chord sheets, YouTube references, and Google Calendar integration.
 
-A aplicacao opera como uma plataforma SaaS simples: uma unica instalacao atende varias igrejas, com isolamento por `church_id` no banco e suporte operacional para administracao interna, impersonacao e ambiente demo.
+The app is built as a simple SaaS platform: one deployment can serve multiple churches, with data isolation by `church_id`, internal platform administration, tenant impersonation, and a public demo environment.
 
-## Estado Atual
+## Live Demo
 
-- Aplicacao multitenant por igreja.
-- Modelo atual: `1 auth user = 1 minister = 1 church`.
-- Um usuario tambem pode ser admin da plataforma via `platform_admins`.
-- Dados principais sao isolados por `church_id`.
-- Platform admin acessa `/platform/churches` para gerenciar igrejas.
-- Platform admin pode impersonar uma igreja para suporte ou demonstracao.
-- Header exibe a igreja ativa junto ao nome do app.
-- Igreja demo disponivel para apresentacao publica.
+Access the application here:
 
-## Funcionalidades
+```txt
+https://worship-flow-kappa.vercel.app/
+```
 
-### Plataforma E Multitenancy
+Demo credentials:
 
-- Cadastro de igrejas/tenants.
-- Isolamento por igreja em usuarios, musicas, repertorios, escalas, eventos especiais, notificacoes e integracoes.
-- Contexto efetivo de igreja para paginas client-side e server-side.
-- Impersonacao de igreja por admin da plataforma.
-- Auditoria de impersonacao em `platform_impersonation_audit`.
-- Modos por igreja: `production`, `demo` e `test`.
-- Modos de email por igreja: `real`, `disabled` e `test_recipient`.
+```txt
+Email: demo@worshipflow.app
+Password: Demo@12345
+```
 
-### Gestao De Musicas
+The demo tenant contains fake data only and is isolated from production church data.
 
-- Cadastro, edicao e exclusao de musicas.
-- Tom principal e tons disponiveis.
-- Links de cifra e YouTube.
-- Conteudo de cifra em texto/PDF.
-- Importacao/backfill de cifras.
-- Busca de videos no YouTube com cache.
-- Validacao/auditoria de tons.
+## Current State
 
-### Repertorio
+- Multitenant application organized by church.
+- Current model: `1 auth user = 1 minister = 1 church`.
+- A user can also be a platform administrator through `platform_admins`.
+- Core data is isolated by `church_id`.
+- Platform administrators can manage tenants at `/platform/churches`.
+- Platform administrators can impersonate a church for support and setup.
+- The header displays the active church next to the app name.
+- A public demo church is available for portfolio/demo access.
 
-- Organizacao de musicas por data.
-- Ordenacao do repertorio.
-- Eventos especiais nomeados.
-- Player de repertorio.
-- Visualizacao isolada por igreja.
+## Features
 
-### Escala Bimestral
+### Platform And Multitenancy
 
-- Criacao de bimestres/periodos.
-- Escalas para quinta e domingo.
-- Ministros, trainees, aprendizes e tecnico de som.
-- Ensaios por culto/servico.
-- Publicacao de escala.
-- Dashboard/admin de escala.
+- Church/tenant management.
+- Data isolation for users, songs, repertoires, schedules, special events, notifications, and integrations.
+- Effective church context for client-side and server-side pages.
+- Church impersonation by platform administrators.
+- Impersonation audit log in `platform_impersonation_audit`.
+- Church environments: `production`, `demo`, and `test`.
+- Church email modes: `real`, `disabled`, and `test_recipient`.
 
-### Usuarios E Permissoes
+### Song Management
 
-- `admin`: gerencia usuarios, musicas, repertorio e escala da propria igreja.
-- `minister`: gerencia musicas proprias e visualiza repertorio/escala.
-- `midia`: acesso limitado a repertorio/escala.
-- RLS no Supabase para reforcar isolamento e permissao.
+- Create, edit, and delete songs.
+- Main key and available keys.
+- Chord sheet and YouTube links.
+- Chord sheet content in text/PDF format.
+- Chord sheet import/backfill utilities.
+- YouTube search with cache.
+- Key validation and audit scripts.
 
-### Notificacoes E Calendario
+### Repertoire
 
-- Notificacoes por email via Resend.
-- Lembretes por antecedencia configuravel.
-- Notificacao de escala publicada.
-- Fila de emails assíncrona.
-- Interceptacao de emails para teste.
-- Integracao com Google Calendar por ministro.
+- Organize songs by service date.
+- Reorder repertoire items.
+- Named special events.
+- Repertoire player view.
+- Tenant-isolated repertoire data.
+
+### Bimonthly Schedule
+
+- Create bimonthly schedule periods.
+- Thursday and Sunday service types.
+- Ministers, trainees, apprentices, and sound technician assignments.
+- Rehearsal information per service.
+- Schedule publishing.
+- Admin schedule dashboard.
+
+### Users And Permissions
+
+- `admin`: manages users, songs, repertoire, and schedules for their own church.
+- `minister`: manages their own songs and views repertoire/schedule data.
+- `midia`: limited access to repertoire/schedule views.
+- Supabase RLS reinforces tenant isolation and role-based permissions.
+
+### Notifications And Calendar
+
+- Email notifications through Resend.
+- Configurable reminder offsets.
+- Published schedule notifications.
+- Async email queue.
+- Test-recipient email interception.
+- Google Calendar integration per minister.
 
 ### Interface
 
 - Next.js App Router.
-- UI responsiva desktop/mobile.
-- Tema claro/escuro.
-- Componentes Radix UI + Tailwind.
-- PWA instalavel.
+- Responsive desktop/mobile UI.
+- Light/dark theme.
+- Radix UI + Tailwind components.
+- Installable PWA.
 
-## Stack
+## Tech Stack
 
 - Next.js 16
 - React 19
@@ -89,72 +106,71 @@ A aplicacao opera como uma plataforma SaaS simples: uma unica instalacao atende 
 - Google APIs
 - pnpm 9.15
 
-## Requisitos
+## Requirements
 
 - Node.js 20+
 - pnpm 9.15+
-- Projeto Supabase
-- Conta Resend para emails reais
-- Credenciais Google OAuth para integracao de calendario, se usada
+- Supabase project
+- Resend account for real emails
+- Google OAuth credentials if calendar integration is enabled
 
-## Variaveis De Ambiente
+## Environment Variables
 
-Crie `.env.development.local` e `.env.production.local` conforme o ambiente.
+Create `.env.development.local` and `.env.production.local` as needed.
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 
 APP_BASE_URL=http://localhost:3000
 
-CRON_SECRET=um-secret-aleatorio
-
+CRON_SECRET=random-secret
 RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=noreply@seudominio.com
-SCHEDULE_EMAIL_TEST_RECIPIENT=seu-email-de-teste@dominio.com
+RESEND_FROM_EMAIL=noreply@yourdomain.com
+SCHEDULE_EMAIL_TEST_RECIPIENT=test-email@domain.com
 
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 
 CIFRACLUB_IMPORTER_URL=http://localhost:3010
-CIFRACLUB_IMPORTER_TOKEN=seu-token-interno
+CIFRACLUB_IMPORTER_TOKEN=internal-token
 ```
 
-Notas:
+Notes:
 
-- `SUPABASE_SERVICE_ROLE_KEY` nunca deve ir para o cliente/browser.
-- `CRON_SECRET` precisa bater com o secret configurado no GitHub Actions.
-- `SCHEDULE_EMAIL_TEST_RECIPIENT` intercepta emails quando a igreja estiver em modo `test_recipient`.
-- Para igrejas demo/teste, nao use `email_mode = real`.
+- `SUPABASE_SERVICE_ROLE_KEY` must never be exposed to the browser.
+- `CRON_SECRET` must match the GitHub Actions secret.
+- `SCHEDULE_EMAIL_TEST_RECIPIENT` intercepts emails when a church uses `test_recipient` mode.
+- Demo/test churches should not use `email_mode = real`.
 
-## Instalar E Rodar
+## Install And Run
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-O app abre em:
+The app runs at:
 
 ```txt
 http://localhost:3000
 ```
 
-Build de producao:
+Production build:
 
 ```bash
 pnpm build
 pnpm start
 ```
 
-Ou:
+Or:
 
 ```bash
 pnpm prod
 ```
 
-Validacao TypeScript:
+TypeScript validation:
 
 ```bash
 pnpm exec tsc --noEmit
@@ -166,11 +182,11 @@ Lint:
 pnpm lint
 ```
 
-Observacao: o script `pnpm lint` chama `eslint .`, mas o pacote `eslint` precisa estar instalado/declarado para funcionar no ambiente atual.
+Note: `pnpm lint` calls `eslint .`, but the `eslint` package must be installed/declared for the command to work in the current environment.
 
-## Banco De Dados
+## Database Setup
 
-Execute os SQLs em ordem no SQL Editor do Supabase.
+Run the SQL files in order in the Supabase SQL Editor.
 
 ```txt
 scripts/001_create_tables.sql
@@ -193,106 +209,106 @@ scripts/031_simple_multitenancy_rls.sql
 scripts/032_simple_multitenancy_hardening.sql
 ```
 
-As migrations `030`, `031` e `032` adicionam a base multitenant, RLS tenant-aware, constraints finais, indices e hardening de `church_id`.
+Migrations `030`, `031`, and `032` add the multitenant foundation, tenant-aware RLS, final constraints, indexes, and `church_id` hardening.
 
-## Primeiro Acesso Da Plataforma
+## First Platform Access
 
-O primeiro operador precisa existir no Supabase Auth, ter um registro em `ministers` e ser promovido para `platform_admins`.
+The first operator must exist in Supabase Auth, have a corresponding `ministers` record, and be promoted to `platform_admins`.
 
-Exemplo:
+Example:
 
 ```sql
 insert into public.platform_admins (user_id)
 select user_id
 from public.ministers
-where email = 'seu-email@dominio.com'
+where email = 'your-email@domain.com'
 on conflict (user_id) do nothing;
 ```
 
-Depois disso, acesse:
+Then access:
 
 ```txt
 /platform/churches
 ```
 
-## Setup De Nova Igreja
+## New Church Setup
 
-O fluxo operacional completo esta documentado em:
+The full operational guide is available at:
 
 ```txt
 sdd/plan/new-church-setup-readme.md
 ```
 
-Resumo:
+Summary:
 
-1. Entrar como platform admin.
-2. Acessar `/platform/churches`.
-3. Criar a igreja com `environment = production` e `email_mode = real`.
-4. Impersonar a igreja.
-5. Validar que o ambiente esta vazio.
-6. Criar o primeiro admin da igreja em `/users`.
-7. Encerrar a impersonacao.
-8. Pedir para o admin configurar ministros, musicas, repertorios e escalas.
+1. Log in as a platform administrator.
+2. Open `/platform/churches`.
+3. Create the church with `environment = production` and `email_mode = real`.
+4. Impersonate the church.
+5. Confirm the tenant starts empty.
+6. Create the first church admin at `/users`.
+7. Stop impersonation.
+8. Ask the church admin to configure ministers, songs, repertoires, and schedules.
 
-Checklist minimo antes de entregar:
+Minimum delivery checklist:
 
-- Header mostra o nome correto da igreja.
-- `/users` mostra apenas usuarios da nova igreja.
-- `/songs` mostra apenas musicas da nova igreja.
-- `/repertoire` nao mostra dados de outra igreja.
-- `/schedule` nao mostra dados de outra igreja.
-- Emails estao no modo correto.
-- Impersonacao encerra corretamente.
+- Header shows the correct active church name.
+- `/users` only shows users from the new church.
+- `/songs` only shows songs from the new church.
+- `/repertoire` does not show data from another church.
+- `/schedule` does not show data from another church.
+- Email mode is configured correctly.
+- Impersonation can be stopped successfully.
 
-## Ambiente Demo
+## Demo Tenant
 
-A igreja demo padrao pode ser populada com:
+Populate or recreate the default demo church with:
 
 ```bash
 node scripts/seed-demo-worship-flow.mjs
 ```
 
-Credenciais atuais da demo:
+Demo credentials:
 
 ```txt
 Email: demo@worshipflow.app
-Senha: Demo@12345
+Password: Demo@12345
 ```
 
-Use a demo para apresentacao publica. Antes de expor amplamente, considere trocar a senha e revisar os dados fake.
+Use the demo tenant for public presentations and portfolio access. Consider rotating the password if you want tighter control over access.
 
-## Emails E Automacao
+## Email Automation
 
-O workflow de emails fica em:
+The email workflow is located at:
 
 ```txt
 .github/workflows/schedule-email-reminders.yml
 ```
 
-Secrets necessarios no GitHub Actions:
+Required GitHub Actions secrets:
 
-| Secret | Valor |
+| Secret | Value |
 | --- | --- |
-| `APP_BASE_URL` | URL publica da aplicacao |
-| `CRON_SECRET` | Mesmo valor do ambiente de producao |
+| `APP_BASE_URL` | Public app URL |
+| `CRON_SECRET` | Same value used in production env |
 
-Fluxo:
+Flow:
 
-1. Escala publicada enfileira notificacoes.
-2. Cron enfileira lembretes periodicos.
-3. Fila processa emails via Resend.
-4. Modo de email da igreja controla envio real, teste ou bloqueio.
+1. Publishing a schedule enqueues notifications.
+2. Cron jobs enqueue reminder emails.
+3. The queue sends emails through Resend.
+4. The church email mode controls real delivery, testing, or disabled delivery.
 
-## Scripts Uteis
+## Useful Scripts
 
-Backfill de cifras:
+Chord sheet backfill:
 
 ```bash
 pnpm backfill:cifras
 pnpm backfill:cifras:dry
 ```
 
-Auditoria de tons:
+Song key audit:
 
 ```bash
 pnpm audit:tones
@@ -300,13 +316,13 @@ pnpm audit:tones:fix
 pnpm audit:tones:rewrite
 ```
 
-Seed da demo:
+Demo seed:
 
 ```bash
 node scripts/seed-demo-worship-flow.mjs
 ```
 
-Geracao de escala original em XLSX:
+Original schedule XLSX export:
 
 ```bash
 node scripts/generate-original-schedule-xlsx.mjs
@@ -314,110 +330,110 @@ node scripts/generate-original-schedule-xlsx.mjs
 
 ## CifraClub Importer
 
-Links do CifraClub podem ser importados usando o microservico Playwright em `services/cifraclub-importer`.
+CifraClub links can be imported through the Playwright microservice in `services/cifraclub-importer`.
 
-Rodar localmente:
+Run locally:
 
 ```bash
 docker build -t worship-flow-cifraclub-importer services/cifraclub-importer
-docker run --rm -p 3010:3010 -e CIFRACLUB_IMPORTER_TOKEN=seu-token-interno worship-flow-cifraclub-importer
+docker run --rm -p 3010:3010 -e CIFRACLUB_IMPORTER_TOKEN=internal-token worship-flow-cifraclub-importer
 ```
 
-Detalhes:
+Details:
 
 ```txt
 services/cifraclub-importer/README.md
 ```
 
-## Estrutura Principal
+## Project Structure
 
 ```txt
 app/
   api/
-    context/                 # contexto efetivo de usuario/igreja
-    platform/                # endpoints internos da plataforma
-    schedule/                # escala, bimestres, assignments
-    songs/                   # musicas
-    notifications/           # emails e cron
-  platform/churches/         # gestao interna de igrejas
-  songs/                     # gestao de musicas
-  repertoire/                # repertorio
-  schedule/                  # escala
-  users/                     # usuarios/ministros da igreja
+    context/                 # effective user/church context
+    platform/                # internal platform endpoints
+    schedule/                # schedules, quarters, assignments
+    songs/                   # song management
+    notifications/           # emails and cron endpoints
+  platform/churches/         # internal tenant management
+  songs/                     # song management UI
+  repertoire/                # repertoire UI
+  schedule/                  # schedule UI
+  users/                     # church users/ministers
 
 components/
-  header.tsx                 # navegacao, igreja ativa e impersonacao
+  header.tsx                 # navigation, active church, impersonation banner
   song-form.tsx
   minister-form.tsx
   schedule/
   ui/
 
 lib/
-  auth-context.ts            # contexto multitenant e impersonacao
-  supabase/                  # clients server/client/admin
+  auth-context.ts            # multitenant context and impersonation
+  supabase/                  # server/client/admin clients
   notifications/
   google-calendar.ts
   types.ts
 
 scripts/
-  001_*.sql ... 032_*.sql    # schema e migrations
+  001_*.sql ... 032_*.sql    # schema and migrations
   seed-demo-worship-flow.mjs
   backfill-cifras.mjs
   audit-song-tones.mjs
 ```
 
-## Seguranca
+## Security Notes
 
-- Nunca exponha `SUPABASE_SERVICE_ROLE_KEY`.
-- Rotacione chaves se forem compartilhadas indevidamente.
-- Use `platform_admins` apenas para operadores internos confiaveis.
-- Use impersonacao somente para suporte, setup e demonstracao.
-- Valide isolamento antes de entregar uma nova igreja.
-- Nao use email real em tenants demo/teste.
+- Never expose `SUPABASE_SERVICE_ROLE_KEY`.
+- Rotate keys if they are accidentally shared.
+- Grant `platform_admins` access only to trusted internal operators.
+- Use impersonation only for support, setup, and demos.
+- Validate tenant isolation before delivering a new church.
+- Do not use real email delivery in demo/test tenants.
 
 ## Troubleshooting
 
-### Dados De Outra Igreja Aparecendo
+### Data From Another Church Appears
 
-Pare o setup e investigue imediatamente.
+Stop the setup and investigate immediately.
 
-Verifique:
+Check:
 
-- Se a pagina/API usa `getCurrentMinisterContext()` ou `/api/context`.
-- Se a query filtra pelo `churchId` efetivo.
-- Se a tabela possui `church_id` preenchido e `not null`.
-- Se a policy RLS correspondente considera `church_id`.
+- Whether the page/API uses `getCurrentMinisterContext()` or `/api/context`.
+- Whether the query filters by the effective `churchId`.
+- Whether the table has a non-null `church_id`.
+- Whether the corresponding RLS policy includes `church_id`.
 
-### Permission Denied No Supabase
+### Supabase Permission Denied
 
-Verifique:
+Check:
 
-- Usuario existe em `auth.users`.
-- Registro correspondente existe em `public.ministers`.
-- `ministers.user_id` aponta para o UUID correto.
-- `ministers.church_id` esta preenchido.
-- Role esta correta: `admin`, `minister` ou `midia`.
+- The user exists in `auth.users`.
+- A corresponding row exists in `public.ministers`.
+- `ministers.user_id` points to the correct auth UUID.
+- `ministers.church_id` is set.
+- Role is one of `admin`, `minister`, or `midia`.
 
-### Emails Nao Enviam
+### Emails Are Not Sent
 
-Verifique:
+Check:
 
-- `RESEND_API_KEY` e `RESEND_FROM_EMAIL`.
-- `CRON_SECRET` no ambiente e no GitHub Actions.
-- `churches.email_mode` da igreja.
-- `churches.environment` da igreja.
-- Logs do workflow `schedule-email-reminders`.
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL`.
+- `CRON_SECRET` in both production env and GitHub Actions.
+- The church `email_mode`.
+- The church `environment`.
+- Logs from the `schedule-email-reminders` workflow.
 
-### Service Worker/PWA Desatualizado
+### Stale Service Worker/PWA
 
-No navegador:
+In the browser:
 
 1. DevTools > Application > Service Workers > Unregister.
-2. Limpar Cache Storage.
-3. Fechar e abrir o app novamente.
-4. Se instalado como PWA, reinstalar.
+2. Clear Cache Storage.
+3. Close and reopen the app.
+4. If installed as a PWA, reinstall it.
 
-## Documentos Internos
+## Internal Docs
 
 - `sdd/spec/simple-tenant-multitenancy-spec.md`
 - `sdd/plan/simple-tenant-multitenancy-plan.md`
