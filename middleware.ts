@@ -116,23 +116,14 @@ export async function middleware(request: NextRequest) {
 
   // Se está autenticado
   if (user && !isPublicRoute) {
+    const isPlatformRoute = request.nextUrl.pathname.startsWith('/platform')
+    if (isPlatformRoute) return response
+
     const { data: minister, error } = await supabase
       .from('ministers')
       .select('role, is_active')
       .eq('user_id', user.id)
       .single()
-
-    const isPlatformRoute = request.nextUrl.pathname.startsWith('/platform')
-
-    if (isPlatformRoute) {
-      const { data: platformAdmin } = await supabase
-        .from('platform_admins')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (platformAdmin) return response
-    }
 
     // Se não encontrou registro do ministro
     if (error || !minister) {
