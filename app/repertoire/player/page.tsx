@@ -199,6 +199,7 @@ function RepertoirePlayerContent() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
+    const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
     const [items, setItems] = useState<RepertoireItem[]>([])
     const [currentIndex, setCurrentIndex] = useState(0)
     const [metronomeEnabled, setMetronomeEnabled] = useState(false)
@@ -307,6 +308,12 @@ function RepertoirePlayerContent() {
                 .single()
 
             setCurrentMinister((minister ?? null) as Minister | null)
+
+            const contextResponse = await fetch('/api/context')
+            if (contextResponse.ok) {
+                const result = await contextResponse.json()
+                setEffectiveChurchId(result.context?.churchId ?? null)
+            }
         }
 
         void fetchCurrentMinister()
@@ -320,7 +327,7 @@ function RepertoirePlayerContent() {
                 return
             }
 
-            if (!currentMinister) return
+            if (!currentMinister || !effectiveChurchId) return
 
             setLoading(true)
             setError(null)
@@ -329,7 +336,7 @@ function RepertoirePlayerContent() {
             const { data, error: repError } = await supabase
                 .from('repertoire')
                 .select('*, song:songs(*), minister:ministers(*)')
-                .eq('church_id', currentMinister.church_id)
+                .eq('church_id', effectiveChurchId)
                 .eq('event_date', date)
                 .eq('event_name', eventName)
                 .order('order_index')
@@ -349,7 +356,7 @@ function RepertoirePlayerContent() {
         }
 
         void fetchItems()
-    }, [date, eventName, currentMinister])
+    }, [date, eventName, currentMinister, effectiveChurchId])
 
     const currentItem = items[currentIndex]
     const isMobile = useIsMobile()

@@ -23,6 +23,7 @@ interface MinisterFormProps {
   onOpenChange: (open: boolean) => void
   minister?: Minister | null
   currentMinister?: Minister | null
+  effectiveChurchId?: string | null
   onSuccess: () => void
 }
 
@@ -31,6 +32,7 @@ export function MinisterForm({
   onOpenChange,
   minister,
   currentMinister,
+  effectiveChurchId,
   onSuccess,
 }: MinisterFormProps) {
   const [loading, setLoading] = useState(false)
@@ -114,7 +116,7 @@ export function MinisterForm({
             instrument: instrumentValue,
           })
           .eq('id', minister.id)
-          .eq('church_id', currentMinister?.church_id ?? minister.church_id)
+          .eq('church_id', effectiveChurchId ?? currentMinister?.church_id ?? minister.church_id)
 
         if (error) throw error
       } else {

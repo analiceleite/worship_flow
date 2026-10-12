@@ -28,6 +28,7 @@ export default function MinistrosPage() {
     const [editingMinister, setEditingMinister] = useState<Minister | null>(null)
     const [deletingMinister, setDeletingMinister] = useState<Minister | null>(null)
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
+    const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
 
     const fetchMinisters = useCallback(async () => {
         const supabase = createClient()
@@ -51,10 +52,18 @@ export default function MinistrosPage() {
 
         setCurrentMinister(viewer)
 
+        let churchId = viewer.church_id
+        const contextResponse = await fetch('/api/context')
+        if (contextResponse.ok) {
+            const result = await contextResponse.json()
+            churchId = result.context?.churchId ?? churchId
+            setEffectiveChurchId(churchId)
+        }
+
         const { data, error } = await supabase
             .from('ministers')
             .select('*')
-            .eq('church_id', viewer.church_id)
+            .eq('church_id', churchId)
             .order('name', { ascending: true })
 
         if (error) {
@@ -235,6 +244,7 @@ export default function MinistrosPage() {
                 }}
                 minister={editingMinister}
                 currentMinister={currentMinister}
+                effectiveChurchId={effectiveChurchId}
                 onSuccess={fetchMinisters}
             />
 

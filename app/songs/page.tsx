@@ -54,6 +54,7 @@ export default function HomePage() {
     const [editingSong, setEditingSong] = useState<Song | null>(null)
     const [deletingSong, setDeletingSong] = useState<Song | null>(null)
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
+    const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
     const [isAdmin, setIsAdmin] = useState(false)
     const [ministers, setMinisters] = useState<Minister[]>([])
     const [selectedMinisterId, setSelectedMinisterId] = useState<string>('all')
@@ -93,17 +94,24 @@ export default function HomePage() {
                 setIsAdmin(minister.role === 'admin')
             }
         }
+
+        const contextResponse = await fetch('/api/context')
+        if (contextResponse.ok) {
+            const result = await contextResponse.json()
+            setEffectiveChurchId(result.context?.churchId ?? null)
+            if (result.context?.isImpersonating) setIsAdmin(true)
+        }
     }
 
     const fetchSongs = useCallback(async () => {
-        if (!currentMinister) return
+        if (!currentMinister || !effectiveChurchId) return
         setLoading(true)
         const supabase = createClient()
 
         let query = supabase
             .from('songs')
             .select('*, minister:ministers(id, name, instrument)', { count: 'exact' })
-            .eq('church_id', currentMinister.church_id)
+            .eq('church_id', effectiveChurchId)
             .order('title', { ascending: true })
             .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
@@ -126,20 +134,20 @@ export default function HomePage() {
             setTotalSongs(count ?? 0)
         }
         setLoading(false)
-    }, [currentMinister, page, appliedSearch, selectedMinisterId])
+    }, [currentMinister, effectiveChurchId, page, appliedSearch, selectedMinisterId])
 
     useEffect(() => {
-        if (!currentMinister) return
+        if (!effectiveChurchId) return
 
         const supabase = createClient()
         supabase
             .from('ministers')
             .select('*')
-            .eq('church_id', currentMinister.church_id)
+            .eq('church_id', effectiveChurchId)
             .eq('is_active', true)
             .order('name')
             .then(({ data }: { data: Minister[] | null }) => { if (data) setMinisters(data) })
-    }, [currentMinister])
+    }, [effectiveChurchId])
 
     useEffect(() => {
         fetchSongs()
@@ -163,7 +171,7 @@ export default function HomePage() {
             .from('songs')
             .delete()
             .eq('id', deletingSong.id)
-            .eq('church_id', currentMinister?.church_id)
+            .eq('church_id', effectiveChurchId)
 
         if (error) throw error
         await fetchSongs()
@@ -341,6 +349,7 @@ export default function HomePage() {
                 song={editingSong}
                 onSuccess={fetchSongs}
                 currentMinister={currentMinister}
+                effectiveChurchId={effectiveChurchId}
             />
 
             <DeleteDialog

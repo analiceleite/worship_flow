@@ -40,6 +40,7 @@ interface SongFormProps {
   song?: Song | null
   onSuccess: () => void
   currentMinister: Minister | null
+  effectiveChurchId?: string | null
 }
 
 function toTitleCase(value: string): string {
@@ -92,7 +93,7 @@ function cifraSourceLabel(url: string): string {
   return 'link informado'
 }
 
-export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister }: SongFormProps) {
+export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister, effectiveChurchId }: SongFormProps) {
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [tone, setTone] = useState('')
@@ -101,6 +102,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
   const [cipherUrl, setCipherUrl] = useState('')
   const [cifraContent, setCifraContent] = useState<string[] | null>(null)
   const [availableTones, setAvailableTones] = useState<string[]>([])
+  const churchIdForSave = effectiveChurchId ?? currentMinister?.church_id ?? null
   const [cifraContentKey, setCifraContentKey] = useState<string | null>(null)
   const [capoFrets, setCapoFrets] = useState(0)
   const [importingCifra, setImportingCifra] = useState(false)
@@ -490,11 +492,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
             .from('songs')
             .update(body)
             .eq('id', song.id)
-            .eq('church_id', currentMinister?.church_id)
+            .eq('church_id', churchIdForSave)
         }
         return supabase
           .from('songs')
-          .insert({ ...body, church_id: currentMinister?.church_id, minister_id: currentMinister?.id })
+          .insert({ ...body, church_id: churchIdForSave, minister_id: currentMinister?.id })
           .select('id')
           .single()
       }
@@ -514,13 +516,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       if (!songId) throw new Error('Não foi possível identificar a música.')
 
       if (cifraTab === 'file' && cifraFile) {
-        if (!currentMinister?.church_id) throw new Error('Não foi possível identificar a igreja do ministro.')
-        const path = await uploadCifraFile(supabase, currentMinister.church_id, songId, cifraFile)
+        if (!churchIdForSave) throw new Error('Não foi possível identificar a igreja do ministro.')
+        const path = await uploadCifraFile(supabase, churchIdForSave, songId, cifraFile)
         const { error: pathError } = await supabase
           .from('songs')
           .update({ cifra_pdf_path: path })
           .eq('id', songId)
-          .eq('church_id', currentMinister?.church_id)
+          .eq('church_id', churchIdForSave)
         if (pathError) throw pathError
       }
 
