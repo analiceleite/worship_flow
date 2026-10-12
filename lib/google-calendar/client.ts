@@ -34,10 +34,11 @@ export async function exchangeCodeForTokens(code: string): Promise<Credentials> 
   return tokens
 }
 
-export async function saveTokensForMinister(ministerId: string, tokens: Credentials) {
+export async function saveTokensForMinister(ministerId: string, churchId: string, tokens: Credentials) {
   const admin = createAdminClient()
   const { error } = await admin.from('google_calendar_tokens').upsert(
     {
+      church_id: churchId,
       minister_id: ministerId,
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
@@ -54,9 +55,18 @@ export async function saveTokensForMinister(ministerId: string, tokens: Credenti
  *  access tokens transparently via the `tokens` event (fires whenever googleapis refreshes). */
 export async function getAuthorizedClientForMinister(ministerId: string): Promise<OAuth2Client | null> {
   const admin = createAdminClient()
+  const { data: minister } = await admin
+    .from('ministers')
+    .select('church_id')
+    .eq('id', ministerId)
+    .maybeSingle()
+
+  if (!minister?.church_id) return null
+
   const { data: row } = await admin
     .from('google_calendar_tokens')
     .select('access_token, refresh_token, expiry_date, scope')
+    .eq('church_id', minister.church_id)
     .eq('minister_id', ministerId)
     .maybeSingle()
 
@@ -80,6 +90,7 @@ export async function getAuthorizedClientForMinister(ministerId: string): Promis
         ...(newTokens.refresh_token ? { refresh_token: newTokens.refresh_token } : {}),
         updated_at: new Date().toISOString(),
       })
+      .eq('church_id', minister.church_id)
       .eq('minister_id', ministerId)
       .then(({ error }: { error: { message: string } | null }) => {
         if (error) console.error('Failed to persist refreshed Google token:', error.message)
@@ -91,8 +102,22 @@ export async function getAuthorizedClientForMinister(ministerId: string): Promis
 
 export async function deleteTokensAndMappings(ministerId: string) {
   const admin = createAdminClient()
-  await admin.from('google_calendar_event_map').delete().eq('minister_id', ministerId)
-  await admin.from('google_calendar_tokens').delete().eq('minister_id', ministerId)
+  const { data: minister } = await admin
+    .from('ministers')
+    .select('church_id')
+    .eq('id', ministerId)
+    .maybeSingle()
+
+  let mappingsQuery = admin.from('google_calendar_event_map').delete().eq('minister_id', ministerId)
+  let tokensQuery = admin.from('google_calendar_tokens').delete().eq('minister_id', ministerId)
+
+  if (minister?.church_id) {
+    mappingsQuery = mappingsQuery.eq('church_id', minister.church_id)
+    tokensQuery = tokensQuery.eq('church_id', minister.church_id)
+  }
+
+  await mappingsQuery
+  await tokensQuery
 }
 
 /** Marks a connection as broken (invalid_grant / revoked by the user in their Google Account

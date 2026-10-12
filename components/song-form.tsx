@@ -514,7 +514,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       if (!songId) throw new Error('Não foi possível identificar a música.')
 
       if (cifraTab === 'file' && cifraFile) {
-        const path = await uploadCifraFile(supabase, songId, cifraFile)
+        if (!currentMinister?.church_id) throw new Error('Não foi possível identificar a igreja do ministro.')
+        const path = await uploadCifraFile(supabase, currentMinister.church_id, songId, cifraFile)
         const { error: pathError } = await supabase
           .from('songs')
           .update({ cifra_pdf_path: path })

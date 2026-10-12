@@ -27,13 +27,14 @@ export function isPdfStoragePath(path: string): boolean {
 
 export async function uploadCifraFile(
   supabase: SupabaseClient,
+  churchId: string,
   songId: string,
   file: File
 ): Promise<string> {
   const validationError = validateCifraFile(file)
   if (validationError) throw new Error(validationError)
 
-  const path = `${songId}/cifra.${extensionForFile(file)}`
+  const path = `${churchId}/${songId}/cifra.${extensionForFile(file)}`
   const { error } = await supabase.storage.from(CIFRA_BUCKET).upload(path, file, {
     upsert: true,
     contentType: file.type,

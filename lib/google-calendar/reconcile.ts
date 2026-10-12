@@ -161,17 +161,32 @@ type EventMapRow = { event_key: string; google_event_id: string; content_hash: s
 
 export async function reconcileMinisterCalendar(ministerId: string): Promise<ReconcileResult> {
   const admin = createAdminClient()
+  const { data: minister } = await admin
+    .from('ministers')
+    .select('church_id')
+    .eq('id', ministerId)
+    .maybeSingle()
+
+  if (!minister?.church_id) return { skipped: 'not_connected' }
+
   const oauthClient = await getAuthorizedClientForMinister(ministerId)
   if (!oauthClient) return { skipped: 'not_connected' }
+  const churchId = minister.church_id
 
   const calendar = google.calendar({ version: 'v3', auth: oauthClient })
 
   const [built, ministerRes, mappingRes] = await Promise.all([
     buildMinisterCalendarEvents(ministerId),
-    admin.from('ministers').select('calendar_alarm_offsets_minutes').eq('id', ministerId).single(),
+    admin
+      .from('ministers')
+      .select('calendar_alarm_offsets_minutes')
+      .eq('id', ministerId)
+      .eq('church_id', churchId)
+      .single(),
     admin
       .from('google_calendar_event_map')
       .select('event_key, google_event_id, content_hash')
+      .eq('church_id', churchId)
       .eq('minister_id', ministerId),
   ])
   if (!built) return { skipped: 'not_connected' }
@@ -203,6 +218,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
       await admin
         .from('google_calendar_event_map')
         .delete()
+        .eq('church_id', churchId)
         .eq('minister_id', ministerId)
         .eq('event_key', eventKey)
     }
@@ -230,6 +246,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
 
         await admin.from('google_calendar_event_map').upsert(
           {
+            church_id: churchId,
             minister_id: ministerId,
             event_key: item.eventKey,
             google_event_id: res.data.id!,
@@ -265,6 +282,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
             await admin
               .from('google_calendar_event_map')
               .update({ google_event_id: googleEventId })
+              .eq('church_id', churchId)
               .eq('minister_id', ministerId)
               .eq('event_key', item.eventKey)
           } else {
@@ -272,6 +290,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
             await admin
               .from('google_calendar_event_map')
               .update({ google_event_id: res.data.id! })
+              .eq('church_id', churchId)
               .eq('minister_id', ministerId)
               .eq('event_key', item.eventKey)
             inserted++
@@ -285,6 +304,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
         await admin
           .from('google_calendar_event_map')
           .update({ content_hash: hash, updated_at: new Date().toISOString() })
+          .eq('church_id', churchId)
           .eq('minister_id', ministerId)
           .eq('event_key', item.eventKey)
         updated++
@@ -297,6 +317,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
       await admin
         .from('google_calendar_event_map')
         .delete()
+        .eq('church_id', churchId)
         .eq('minister_id', ministerId)
         .eq('event_key', eventKey)
       deleted++
@@ -317,9 +338,18 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
 /** Scoped sync for the publish/unpublish hook — only ministers actually assigned in this quarter. */
 export async function reconcileMinistersForQuarter(quarterId: string) {
   const admin = createAdminClient()
+  const { data: quarter } = await admin
+    .from('schedule_quarters')
+    .select('church_id')
+    .eq('id', quarterId)
+    .maybeSingle()
+
+  if (!quarter?.church_id) return { ministers: 0, errors: [] as Array<{ ministerId: string; error: string }> }
+
   const { data: assignedMinisters } = await admin
     .from('schedule_assignments')
     .select('minister_id')
+    .eq('church_id', quarter.church_id)
     .eq('quarter_id', quarterId)
     .not('minister_id', 'is', null)
 
@@ -331,6 +361,7 @@ export async function reconcileMinistersForQuarter(quarterId: string) {
   const { data: connected } = await admin
     .from('google_calendar_tokens')
     .select('minister_id')
+    .eq('church_id', quarter.church_id)
     .in('minister_id', ministerIds)
 
   const errors: Array<{ ministerId: string; error: string }> = []
@@ -363,10 +394,22 @@ export async function disconnectMinister(ministerId: string) {
   const oauthClient = await getAuthorizedClientForMinister(ministerId)
   if (oauthClient) {
     const admin = createAdminClient()
-    const { data: mappings } = await admin
+    const { data: minister } = await admin
+      .from('ministers')
+      .select('church_id')
+      .eq('id', ministerId)
+      .maybeSingle()
+
+    let mappingsQuery = admin
       .from('google_calendar_event_map')
       .select('google_event_id')
       .eq('minister_id', ministerId)
+
+    if (minister?.church_id) {
+      mappingsQuery = mappingsQuery.eq('church_id', minister.church_id)
+    }
+
+    const { data: mappings } = await mappingsQuery
     const calendar = google.calendar({ version: 'v3', auth: oauthClient })
     const eventIds = new Set<string>(
       (mappings ?? []).map((m: { google_event_id: string }) => m.google_event_id)

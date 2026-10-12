@@ -1,34 +1,31 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 export async function GET() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext()
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const admin = createAdminClient()
-  const { data: minister } = await admin.from('ministers').select('id').eq('user_id', user.id).single()
-
-  if (!minister) {
-    return NextResponse.json({ error: 'Minister not found' }, { status: 404 })
-  }
-
   const [tokenRes, mappingRes] = await Promise.all([
     admin
       .from('google_calendar_tokens')
       .select('connected_at')
-      .eq('minister_id', minister.id)
+      .eq('church_id', context.churchId)
+      .eq('minister_id', context.ministerId)
       .maybeSingle(),
     admin
       .from('google_calendar_event_map')
       .select('id', { count: 'exact', head: true })
-      .eq('minister_id', minister.id),
+      .eq('church_id', context.churchId)
+      .eq('minister_id', context.ministerId),
   ])
 
   return NextResponse.json({

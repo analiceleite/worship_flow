@@ -32,7 +32,7 @@ type RehearsalRow = {
   rehearsal_time: string | null
 }
 
-type QuarterRow = QuarterTimeConfig & { id: string }
+type QuarterRow = QuarterTimeConfig & { id: string; start_date: string }
 
 export function normalizeAlarmOffsetsMinutes(raw: unknown): number[] {
   const arr = Array.isArray(raw) ? raw : [720, 60]
@@ -49,26 +49,41 @@ export async function buildMinisterCalendarEvents(
 ): Promise<{ ministerName: string; events: CalendarEventItem[] } | null> {
   const admin = createAdminClient()
 
-  const [ministerRes, assignmentsRes, rehearsalsRes, quartersRes] = await Promise.all([
-    admin.from('ministers').select('id, name').eq('id', ministerId).single(),
+  const ministerRes = await admin
+    .from('ministers')
+    .select('id, church_id, name')
+    .eq('id', ministerId)
+    .single()
+
+  if (ministerRes.error || !ministerRes.data) return null
+
+  const ministerName = ministerRes.data.name as string
+  const churchId = ministerRes.data.church_id as string
+
+  const [assignmentsRes, rehearsalsRes, quartersRes] = await Promise.all([
     admin
       .from('schedule_assignments')
       .select('minister_id, event_date, event_type, role:schedule_roles(name)')
+      .eq('church_id', churchId)
       .eq('minister_id', ministerId)
       .order('event_date', { ascending: true }),
-    admin.from('schedule_rehearsals').select('event_date, event_type, rehearsal_time'),
-    admin.from('schedule_quarters').select('*'),
+    admin
+      .from('schedule_rehearsals')
+      .select('event_date, event_type, rehearsal_time')
+      .eq('church_id', churchId),
+    admin
+      .from('schedule_quarters')
+      .select('*')
+      .eq('church_id', churchId),
   ])
 
-  if (ministerRes.error || !ministerRes.data) return null
   if (assignmentsRes.error || rehearsalsRes.error || quartersRes.error) {
     throw new Error('Database error building calendar events')
   }
 
-  const ministerName = ministerRes.data.name as string
   const assignments = (assignmentsRes.data || []) as AssignmentRow[]
-  const rehearsals = (rehearsalsRes.data || []) as RehearsalRow[]
-  const quarters = (quartersRes.data || []) as QuarterRow[]
+  const rehearsals = ((rehearsalsRes.data || []) as RehearsalRow[])
+  const quarters = ((quartersRes.data || []) as QuarterRow[])
 
   const rehearsalsByEvent = new Map<string, RehearsalRow>()
   for (const r of rehearsals) {
@@ -76,7 +91,7 @@ export async function buildMinisterCalendarEvents(
   }
 
   // Use the most recent quarter for time defaults (same rule as the ICS route).
-  const quarter = quarters.sort((a, b) => b.id.localeCompare(a.id))[0]
+  const quarter = quarters.sort((a, b) => b.start_date.localeCompare(a.start_date))[0]
   if (!quarter) return { ministerName, events: [] }
 
   // Group assignments by event_date and event_type to handle multiple roles per day.
