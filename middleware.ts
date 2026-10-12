@@ -122,6 +122,18 @@ export async function middleware(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
 
+    const isPlatformRoute = request.nextUrl.pathname.startsWith('/platform')
+
+    if (isPlatformRoute) {
+      const { data: platformAdmin } = await supabase
+        .from('platform_admins')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (platformAdmin) return response
+    }
+
     // Se não encontrou registro do ministro
     if (error || !minister) {
       await supabase.auth.signOut()
