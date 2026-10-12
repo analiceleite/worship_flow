@@ -58,11 +58,13 @@ ALTER TABLE public.schedule_assignments
 ALTER TABLE public.schedule_email_notifications
   ADD COLUMN IF NOT EXISTS church_id uuid REFERENCES public.churches(id) ON DELETE RESTRICT;
 
-ALTER TABLE public.schedule_notifications
-  ADD COLUMN IF NOT EXISTS church_id uuid REFERENCES public.churches(id) ON DELETE RESTRICT;
-
 DO $$
 BEGIN
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    ALTER TABLE public.schedule_notifications
+      ADD COLUMN IF NOT EXISTS church_id uuid REFERENCES public.churches(id) ON DELETE RESTRICT;
+  END IF;
+
   IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
     ALTER TABLE public.schedule_rehearsals
       ADD COLUMN IF NOT EXISTS church_id uuid REFERENCES public.churches(id) ON DELETE RESTRICT;
@@ -128,15 +130,19 @@ UPDATE public.schedule_email_notifications
 SET church_id = (SELECT id FROM default_church)
 WHERE church_id IS NULL;
 
-WITH default_church AS (
-  SELECT id FROM public.churches WHERE slug = 'worship-flow-default'
-)
-UPDATE public.schedule_notifications
-SET church_id = (SELECT id FROM default_church)
-WHERE church_id IS NULL;
-
 DO $$
 BEGIN
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    EXECUTE $sql$
+      WITH default_church AS (
+        SELECT id FROM public.churches WHERE slug = 'worship-flow-default'
+      )
+      UPDATE public.schedule_notifications
+      SET church_id = (SELECT id FROM default_church)
+      WHERE church_id IS NULL
+    $sql$;
+  END IF;
+
   IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
     EXECUTE $sql$
       WITH default_church AS (
@@ -186,10 +192,13 @@ CREATE INDEX IF NOT EXISTS schedule_quarters_church_published_idx ON public.sche
 CREATE INDEX IF NOT EXISTS schedule_assignments_church_quarter_idx ON public.schedule_assignments(church_id, quarter_id);
 CREATE INDEX IF NOT EXISTS schedule_assignments_church_event_idx ON public.schedule_assignments(church_id, event_date, event_type);
 CREATE INDEX IF NOT EXISTS schedule_email_notifications_church_status_idx ON public.schedule_email_notifications(church_id, status);
-CREATE INDEX IF NOT EXISTS schedule_notifications_church_event_idx ON public.schedule_notifications(church_id, event_date, event_type);
-
 DO $$
 BEGIN
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS schedule_notifications_church_event_idx
+      ON public.schedule_notifications(church_id, event_date, event_type);
+  END IF;
+
   IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
     CREATE INDEX IF NOT EXISTS schedule_rehearsals_church_quarter_idx
       ON public.schedule_rehearsals(church_id, quarter_id);

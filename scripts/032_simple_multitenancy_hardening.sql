@@ -15,8 +15,7 @@ BEGIN
     'special_events',
     'schedule_quarters',
     'schedule_assignments',
-    'schedule_email_notifications',
-    'schedule_notifications'
+    'schedule_email_notifications'
   ]
   LOOP
     EXECUTE format('SELECT count(*) FROM public.%I WHERE church_id IS NULL', table_name) INTO null_count;
@@ -29,6 +28,13 @@ BEGIN
     EXECUTE 'SELECT count(*) FROM public.schedule_rehearsals WHERE church_id IS NULL' INTO null_count;
     IF null_count > 0 THEN
       RAISE EXCEPTION 'Cannot harden schedule_rehearsals.church_id: % rows are null', null_count;
+    END IF;
+  END IF;
+
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    EXECUTE 'SELECT count(*) FROM public.schedule_notifications WHERE church_id IS NULL' INTO null_count;
+    IF null_count > 0 THEN
+      RAISE EXCEPTION 'Cannot harden schedule_notifications.church_id: % rows are null', null_count;
     END IF;
   END IF;
 
@@ -54,10 +60,13 @@ ALTER TABLE public.special_events ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE public.schedule_quarters ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE public.schedule_assignments ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE public.schedule_email_notifications ALTER COLUMN church_id SET NOT NULL;
-ALTER TABLE public.schedule_notifications ALTER COLUMN church_id SET NOT NULL;
 
 DO $$
 BEGIN
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    ALTER TABLE public.schedule_notifications ALTER COLUMN church_id SET NOT NULL;
+  END IF;
+
   IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
     ALTER TABLE public.schedule_rehearsals ALTER COLUMN church_id SET NOT NULL;
   END IF;

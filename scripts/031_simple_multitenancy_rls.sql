@@ -77,10 +77,13 @@ ALTER TABLE public.repertoire ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.special_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schedule_quarters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schedule_assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.schedule_notifications ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE public.schedule_notifications ENABLE ROW LEVEL SECURITY';
+  END IF;
+
   IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
     EXECUTE 'ALTER TABLE public.schedule_rehearsals ENABLE ROW LEVEL SECURITY';
   END IF;
@@ -396,15 +399,16 @@ CREATE POLICY "Admins can manage own church schedule assignments"
     AND public.is_church_admin(church_id)
   );
 
-DROP POLICY IF EXISTS "Authenticated users can view own church schedule notifications" ON public.schedule_notifications;
-
-CREATE POLICY "Authenticated users can view own church schedule notifications"
-  ON public.schedule_notifications FOR SELECT
-  TO authenticated
-  USING (church_id = public.get_current_church_id());
-
 DO $$
 BEGIN
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Authenticated users can view own church schedule notifications" ON public.schedule_notifications';
+    EXECUTE 'CREATE POLICY "Authenticated users can view own church schedule notifications"
+      ON public.schedule_notifications FOR SELECT
+      TO authenticated
+      USING (church_id = public.get_current_church_id())';
+  END IF;
+
   IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
     EXECUTE 'DROP POLICY IF EXISTS "Authenticated users can view own church schedule rehearsals" ON public.schedule_rehearsals';
     EXECUTE 'DROP POLICY IF EXISTS "Admins or ministers can manage own church schedule rehearsals" ON public.schedule_rehearsals';
