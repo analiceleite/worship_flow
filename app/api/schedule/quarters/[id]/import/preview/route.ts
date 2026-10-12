@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 type EventType = 'thursday' | 'sunday'
 
@@ -22,6 +22,7 @@ type AssignmentRow = {
     minister_id: string | null
     event_date: string
     event_type: EventType
+    church_id: string
 }
 
 type QuarterRow = {
@@ -247,13 +248,14 @@ export async function POST(
 ) {
     const { id } = await params
 
-    const supabase = await createClient()
-    const {
-        data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let context
+    try {
+        context = await getCurrentMinisterContext({ requireAdmin: true })
+    } catch (error) {
+        if (error instanceof AuthContextError) {
+            return NextResponse.json({ error: error.message }, { status: error.status })
+        }
+        throw error
     }
 
     const body = await request.json().catch(() => ({}))
@@ -278,6 +280,7 @@ export async function POST(
             .from('schedule_quarters')
             .select('id, name, start_date, end_date')
             .eq('id', id)
+            .eq('church_id', context.churchId)
             .maybeSingle(),
         adminSupabase
             .from('schedule_roles')
@@ -285,11 +288,13 @@ export async function POST(
             .order('display_order', { ascending: true }),
         adminSupabase
             .from('schedule_assignments')
-            .select('id, quarter_id, role_id, minister_id, event_date, event_type')
+            .select('id, church_id, quarter_id, role_id, minister_id, event_date, event_type')
+            .eq('church_id', context.churchId)
             .eq('quarter_id', id),
         adminSupabase
             .from('ministers')
             .select('id, name')
+            .eq('church_id', context.churchId)
             .eq('is_active', true)
             .order('name', { ascending: true }),
     ])

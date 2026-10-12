@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 export async function DELETE(
     _request: Request,
@@ -8,13 +8,14 @@ export async function DELETE(
 ) {
     const { id } = await params
 
-    const supabase = await createClient()
-    const {
-        data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let context
+    try {
+        context = await getCurrentMinisterContext({ requireAdmin: true })
+    } catch (error) {
+        if (error instanceof AuthContextError) {
+            return NextResponse.json({ error: error.message }, { status: error.status })
+        }
+        throw error
     }
 
     const adminSupabase = createAdminClient()
@@ -23,6 +24,7 @@ export async function DELETE(
         .from('schedule_quarters')
         .select('id, name')
         .eq('id', id)
+        .eq('church_id', context.churchId)
         .maybeSingle()
 
     if (fetchError) {
@@ -36,6 +38,7 @@ export async function DELETE(
     const { error: notificationsError } = await adminSupabase
         .from('schedule_email_notifications')
         .delete()
+        .eq('church_id', context.churchId)
         .eq('quarter_id', id)
 
     if (notificationsError) {
@@ -45,6 +48,7 @@ export async function DELETE(
     const { error: rehearsalsError } = await adminSupabase
         .from('schedule_rehearsals')
         .delete()
+        .eq('church_id', context.churchId)
         .eq('quarter_id', id)
 
     if (rehearsalsError) {
@@ -54,6 +58,7 @@ export async function DELETE(
     const { error: assignmentsError } = await adminSupabase
         .from('schedule_assignments')
         .delete()
+        .eq('church_id', context.churchId)
         .eq('quarter_id', id)
 
     if (assignmentsError) {
@@ -64,6 +69,7 @@ export async function DELETE(
         .from('schedule_quarters')
         .delete()
         .eq('id', id)
+        .eq('church_id', context.churchId)
 
     if (quarterDeleteError) {
         return NextResponse.json({ error: quarterDeleteError.message }, { status: 500 })

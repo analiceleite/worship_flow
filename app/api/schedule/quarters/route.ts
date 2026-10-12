@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 type EventType = 'thursday' | 'sunday'
 
@@ -94,19 +94,21 @@ function generateServiceDates(startDate: string, endDate: string): ServiceDate[]
 }
 
 export async function GET() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext()
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const adminSupabase = createAdminClient()
   const { data, error } = await adminSupabase
     .from('schedule_quarters')
-    .select('id, name, start_date, end_date, is_published, created_at')
+    .select('id, church_id, name, start_date, end_date, is_published, created_at')
+    .eq('church_id', context.churchId)
     .order('start_date', { ascending: false })
 
   if (error) {
@@ -117,13 +119,14 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext({ requireAdmin: true })
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const body = await request.json()
@@ -146,16 +149,6 @@ export async function POST(request: Request) {
     )
   }
 
-  const { data: minister, error: ministerError } = await supabase
-    .from('ministers')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-
-  if (ministerError || !minister) {
-    return NextResponse.json({ error: 'Ministro não encontrado' }, { status: 404 })
-  }
-
   const adminSupabase = createAdminClient()
 
   let startDate = requestedStartDate
@@ -168,6 +161,7 @@ export async function POST(request: Request) {
     const { data: latestQuarter, error: latestQuarterError } = await adminSupabase
       .from('schedule_quarters')
       .select('id, end_date')
+      .eq('church_id', context.churchId)
       .order('end_date', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -213,6 +207,7 @@ export async function POST(request: Request) {
   const { data: duplicatedQuarter, error: duplicatedQuarterError } = await adminSupabase
     .from('schedule_quarters')
     .select('id')
+    .eq('church_id', context.churchId)
     .eq('start_date', startDate)
     .eq('end_date', endDate)
     .maybeSingle()
@@ -239,15 +234,16 @@ export async function POST(request: Request) {
     .from('schedule_quarters')
     .insert({
       name,
+      church_id: context.churchId,
       start_date: startDate,
       end_date: endDate,
-      created_by: minister.id,
+      created_by: context.ministerId,
       thursday_arrival_time: thursdayArrivalTime,
       thursday_service_time: thursdayServiceTime,
       sunday_arrival_time: sundayArrivalTime,
       sunday_service_time: sundayServiceTime,
     })
-    .select('id, name, start_date, end_date, is_published, created_at')
+    .select('id, church_id, name, start_date, end_date, is_published, created_at')
     .single()
 
   if (quarterError || !quarter) {
@@ -275,6 +271,7 @@ export async function POST(request: Request) {
     role_id: string
     event_date: string
     event_type: EventType
+    church_id: string
   }> = []
 
   const seedAssignmentsMap = new Map<string, { minister_id: string | null; is_trainee: boolean }>()
@@ -283,6 +280,7 @@ export async function POST(request: Request) {
     const { data: seedAssignments, error: seedAssignmentsError } = await adminSupabase
       .from('schedule_assignments')
       .select('role_id, event_date, event_type, minister_id, is_trainee')
+      .eq('church_id', context.churchId)
       .eq('quarter_id', previousQuarterForSeed.id)
       .gte('event_date', overlapMonthBounds.start)
       .lte('event_date', overlapMonthBounds.end)
@@ -307,6 +305,7 @@ export async function POST(request: Request) {
 
       assignmentRows.push({
         quarter_id: quarter.id,
+        church_id: context.churchId,
         minister_id: seededAssignment?.minister_id ?? null,
         is_trainee: seededAssignment?.is_trainee ?? false,
         role_id: role.id,
@@ -331,6 +330,7 @@ export async function POST(request: Request) {
     const { data: seedRehearsals, error: seedRehearsalsError } = await adminSupabase
       .from('schedule_rehearsals')
       .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
+      .eq('church_id', context.churchId)
       .eq('quarter_id', previousQuarterForSeed.id)
       .gte('event_date', overlapMonthBounds.start)
       .lte('event_date', overlapMonthBounds.end)
@@ -341,6 +341,7 @@ export async function POST(request: Request) {
 
     const rehearsalRows = ((seedRehearsals ?? []) as RehearsalSeedRow[]).map((row) => ({
       quarter_id: quarter.id,
+      church_id: context.churchId,
       event_date: row.event_date,
       event_type: row.event_type,
       rehearsal_date: row.rehearsal_date,

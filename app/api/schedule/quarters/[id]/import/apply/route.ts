@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
 
 interface ApplyItem {
@@ -18,6 +18,7 @@ interface AssignmentApplyRow {
     quarter_id: string
     minister_id: string | null
     is_trainee: boolean
+    church_id: string
     role: { category: string } | null
 }
 
@@ -27,13 +28,14 @@ export async function POST(
 ) {
     const { id } = await params
 
-    const supabase = await createClient()
-    const {
-        data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let context
+    try {
+        context = await getCurrentMinisterContext({ requireAdmin: true })
+    } catch (error) {
+        if (error instanceof AuthContextError) {
+            return NextResponse.json({ error: error.message }, { status: error.status })
+        }
+        throw error
     }
 
     const payload = (await request.json().catch(() => ({}))) as ApplyPayload
@@ -50,10 +52,26 @@ export async function POST(
 
     const adminSupabase = createAdminClient()
 
+    const { data: quarter, error: quarterError } = await adminSupabase
+        .from('schedule_quarters')
+        .select('id')
+        .eq('id', id)
+        .eq('church_id', context.churchId)
+        .maybeSingle()
+
+    if (quarterError) {
+        return NextResponse.json({ error: quarterError.message }, { status: 500 })
+    }
+
+    if (!quarter) {
+        return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
+    }
+
     const { data: assignments, error: assignmentsError } = await adminSupabase
         .from('schedule_assignments')
-        .select('id, quarter_id, minister_id, is_trainee, role:schedule_roles(category)')
+        .select('id, church_id, quarter_id, minister_id, is_trainee, role:schedule_roles(category)')
         .in('id', assignmentIds)
+        .eq('church_id', context.churchId)
         .eq('quarter_id', id)
 
     if (assignmentsError) {
@@ -73,6 +91,7 @@ export async function POST(
         const { data: selectedMinisters, error: selectedMinistersError } = await adminSupabase
             .from('ministers')
             .select('id, role')
+            .eq('church_id', context.churchId)
             .in('id', selectedMinisterIds)
 
         if (selectedMinistersError) {
@@ -126,6 +145,7 @@ export async function POST(
                 is_trainee: nextIsTrainee,
             })
             .eq('id', assignment.id)
+            .eq('church_id', context.churchId)
 
         if (updateError) {
             return NextResponse.json({ error: updateError.message }, { status: 500 })

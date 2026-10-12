@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import {
   enqueueBimesterPublishedNotifications,
   processScheduleEmailQueue,
@@ -13,13 +13,14 @@ export async function PATCH(
 ) {
   const { id } = await params
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext({ requireAdmin: true })
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const body = await request.json().catch(() => ({}))
@@ -27,10 +28,26 @@ export async function PATCH(
 
   const adminSupabase = createAdminClient()
 
+  const { data: targetQuarter, error: targetQuarterError } = await adminSupabase
+    .from('schedule_quarters')
+    .select('id')
+    .eq('id', id)
+    .eq('church_id', context.churchId)
+    .maybeSingle()
+
+  if (targetQuarterError) {
+    return NextResponse.json({ error: targetQuarterError.message }, { status: 500 })
+  }
+
+  if (!targetQuarter) {
+    return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
+  }
+
   if (isPublished) {
     const { error: resetError } = await adminSupabase
       .from('schedule_quarters')
       .update({ is_published: false })
+      .eq('church_id', context.churchId)
       .neq('id', id)
 
     if (resetError) {
@@ -42,7 +59,8 @@ export async function PATCH(
     .from('schedule_quarters')
     .update({ is_published: isPublished })
     .eq('id', id)
-    .select('id, name, start_date, end_date, is_published, created_at')
+    .eq('church_id', context.churchId)
+    .select('id, church_id, name, start_date, end_date, is_published, created_at')
     .single()
 
   if (error || !data) {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 type EventType = 'thursday' | 'sunday'
 
@@ -11,6 +11,7 @@ interface QuarterRow {
   end_date: string
   is_published: boolean
   created_at: string
+  church_id: string
 }
 
 interface RoleRow {
@@ -36,6 +37,7 @@ interface AssignmentRow {
   is_trainee: boolean
   event_date: string
   event_type: EventType
+  church_id: string
 }
 
 function round(value: number, decimals = 1) {
@@ -48,30 +50,17 @@ function getQuarterLabel(quarter: QuarterRow) {
 }
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext({ requireAdmin: true })
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const adminSupabase = createAdminClient()
-
-  const { data: viewer, error: viewerError } = await adminSupabase
-    .from('ministers')
-    .select('id, role')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (viewerError || !viewer) {
-    return NextResponse.json({ error: 'Usuário sem perfil de ministro' }, { status: 403 })
-  }
-
-  if (viewer.role !== 'admin') {
-    return NextResponse.json({ error: 'Acesso restrito para administradores' }, { status: 403 })
-  }
 
   const { searchParams } = new URL(request.url)
   const requestedQuarterId = searchParams.get('quarter_id')
@@ -81,8 +70,9 @@ export async function GET(request: Request) {
   if (requestedQuarterId) {
     const { data, error } = await adminSupabase
       .from('schedule_quarters')
-      .select('id, name, start_date, end_date, is_published, created_at')
+      .select('id, church_id, name, start_date, end_date, is_published, created_at')
       .eq('id', requestedQuarterId)
+      .eq('church_id', context.churchId)
       .maybeSingle()
 
     if (error) {
@@ -93,7 +83,8 @@ export async function GET(request: Request) {
   } else {
     const { data, error } = await adminSupabase
       .from('schedule_quarters')
-      .select('id, name, start_date, end_date, is_published, created_at')
+      .select('id, church_id, name, start_date, end_date, is_published, created_at')
+      .eq('church_id', context.churchId)
       .eq('is_published', true)
       .order('start_date', { ascending: false })
       .limit(1)
@@ -141,12 +132,14 @@ export async function GET(request: Request) {
     adminSupabase
       .from('ministers')
       .select('id, name, role, instrument, is_active')
+      .eq('church_id', context.churchId)
       .eq('is_active', true)
       .in('role', ['admin', 'minister'])
       .order('name', { ascending: true }),
     adminSupabase
       .from('schedule_assignments')
-      .select('id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type')
+      .select('id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type')
+      .eq('church_id', context.churchId)
       .eq('quarter_id', quarter.id),
   ])
 

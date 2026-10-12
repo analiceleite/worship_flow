@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
 
 interface AssignmentPayload {
@@ -14,13 +14,14 @@ interface AssignmentPayload {
 }
 
 export async function PATCH(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext({ requireAdmin: true })
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const payload = (await request.json()) as AssignmentPayload
@@ -40,6 +41,7 @@ export async function PATCH(request: Request) {
       .from('schedule_assignments')
       .select('role_id')
       .eq('id', payload.id)
+      .eq('church_id', context.churchId)
       .single()
 
     if (existingAssignmentError || !existingAssignment?.role_id) {
@@ -70,6 +72,7 @@ export async function PATCH(request: Request) {
       .from('ministers')
       .select('id, role')
       .eq('id', payload.minister_id)
+      .eq('church_id', context.churchId)
       .single()
 
     if (selectedMinisterError || selectedMinister?.role !== 'midia') {
@@ -88,6 +91,7 @@ export async function PATCH(request: Request) {
       .from('schedule_assignments')
       .select('minister_id')
       .eq('id', assignmentId)
+      .eq('church_id', context.churchId)
       .maybeSingle()
 
     if (existingByIdError) {
@@ -96,9 +100,25 @@ export async function PATCH(request: Request) {
 
     previousMinisterId = existingById?.minister_id ?? null
   } else {
+    const { data: quarter, error: quarterError } = await adminSupabase
+      .from('schedule_quarters')
+      .select('id')
+      .eq('id', payload.quarter_id as string)
+      .eq('church_id', context.churchId)
+      .maybeSingle()
+
+    if (quarterError) {
+      return NextResponse.json({ error: quarterError.message }, { status: 500 })
+    }
+
+    if (!quarter) {
+      return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
+    }
+
     const { data: existing, error: existingError } = await adminSupabase
       .from('schedule_assignments')
       .select('id, minister_id')
+      .eq('church_id', context.churchId)
       .eq('quarter_id', payload.quarter_id as string)
       .eq('role_id', payload.role_id as string)
       .eq('event_date', payload.event_date as string)
@@ -120,6 +140,23 @@ export async function PATCH(request: Request) {
     is_trainee: payload.minister_id ? Boolean(payload.is_trainee) : false,
   }
 
+  if (payload.minister_id) {
+    const { data: selectedMinister, error: selectedMinisterError } = await adminSupabase
+      .from('ministers')
+      .select('id')
+      .eq('id', payload.minister_id)
+      .eq('church_id', context.churchId)
+      .maybeSingle()
+
+    if (selectedMinisterError) {
+      return NextResponse.json({ error: selectedMinisterError.message }, { status: 500 })
+    }
+
+    if (!selectedMinister) {
+      return NextResponse.json({ error: 'Ministro não encontrado nesta igreja' }, { status: 400 })
+    }
+  }
+
   let writeError: string | null = null
 
   if (assignmentId) {
@@ -127,12 +164,14 @@ export async function PATCH(request: Request) {
       .from('schedule_assignments')
       .update(writePayload)
       .eq('id', assignmentId)
+      .eq('church_id', context.churchId)
 
     if (error) writeError = error.message
   } else {
     const { error } = await adminSupabase
       .from('schedule_assignments')
       .insert({
+        church_id: context.churchId,
         quarter_id: payload.quarter_id,
         role_id: payload.role_id,
         event_date: payload.event_date,
@@ -149,7 +188,8 @@ export async function PATCH(request: Request) {
 
   const query = adminSupabase
     .from('schedule_assignments')
-    .select('id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)')
+    .select('id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)')
+    .eq('church_id', context.churchId)
 
   const { data: assignment, error: assignmentError } = assignmentId
     ? await query.eq('id', assignmentId).single()

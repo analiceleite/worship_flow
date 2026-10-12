@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 interface QuarterRole {
   id: string
@@ -17,6 +17,7 @@ interface AssignmentRow {
   is_trainee: boolean
   event_date: string
   event_type: 'thursday' | 'sunday'
+  church_id: string
   minister: { id: string; name: string } | null
 }
 
@@ -30,13 +31,14 @@ export async function GET(
 ) {
   const { id } = await params
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext()
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const adminSupabase = createAdminClient()
@@ -44,8 +46,9 @@ export async function GET(
   const [quarterRes, rolesRes, assignmentsRes] = await Promise.all([
     adminSupabase
       .from('schedule_quarters')
-      .select('id, name, start_date, end_date, is_published, created_at')
+      .select('id, church_id, name, start_date, end_date, is_published, created_at')
       .eq('id', id)
+      .eq('church_id', context.churchId)
       .single(),
     adminSupabase
       .from('schedule_roles')
@@ -54,8 +57,9 @@ export async function GET(
     adminSupabase
       .from('schedule_assignments')
       .select(
-        'id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)'
+        'id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)'
       )
+      .eq('church_id', context.churchId)
       .eq('quarter_id', id),
   ])
 

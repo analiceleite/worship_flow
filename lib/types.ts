@@ -1,5 +1,18 @@
+export interface Church {
+  id: string
+  name: string
+  slug: string
+  status: 'active' | 'inactive'
+  environment: 'production' | 'demo' | 'test'
+  email_mode: 'real' | 'disabled' | 'test_recipient'
+  plan: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Minister {
   id: string
+  church_id: string
   name: string
   email: string | null
   instrument: string
@@ -12,6 +25,7 @@ export interface Minister {
 
 export interface Song {
   id: string
+  church_id: string
   title: string
   artist: string
   tone: string
@@ -36,6 +50,7 @@ export interface YouTubeSearchResult {
 
 export interface RepertoireItem {
   id: string
+  church_id: string
   song_id: string
   minister_id: string | null
   event_name: string | null
@@ -44,6 +59,18 @@ export interface RepertoireItem {
   created_at: string
   song?: Song
   minister?: Minister
+}
+
+export interface CurrentMinisterContext {
+  userId: string
+  ministerId: string
+  churchId: string
+  role: Minister['role']
+  isAdmin: boolean
+}
+
+export interface PlatformAdminContext {
+  userId: string
 }
 
 export const TONES = [

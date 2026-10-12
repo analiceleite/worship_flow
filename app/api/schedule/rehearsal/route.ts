@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 type EventType = 'thursday' | 'sunday'
 
@@ -15,6 +15,16 @@ interface RehearsalPayload {
 
 // GET: /api/schedule/rehearsal?quarter_id=...&event_date=...&event_type=...
 export async function GET(request: Request) {
+  let context
+  try {
+    context = await getCurrentMinisterContext()
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
+  }
+
   const { searchParams } = new URL(request.url)
   const quarter_id = searchParams.get('quarter_id')
   const event_date = searchParams.get('event_date')
@@ -30,6 +40,7 @@ export async function GET(request: Request) {
   const baseQuery = supabase
     .from('schedule_rehearsals')
     .select('*')
+    .eq('church_id', context.churchId)
     .eq('quarter_id', quarter_id)
 
   if (event_date && event_type) {
@@ -56,13 +67,14 @@ export async function GET(request: Request) {
 
 // PATCH: atualiza ou cria dados do ensaio
 export async function PATCH(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext()
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const payload = (await request.json()) as RehearsalPayload
@@ -74,18 +86,23 @@ export async function PATCH(request: Request) {
 
   const adminSupabase = createAdminClient()
 
-  const { data: editor, error: editorError } = await adminSupabase
-    .from('ministers')
-    .select('id, role')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (editorError) {
-    return NextResponse.json({ error: editorError.message }, { status: 500 })
+  if (context.role !== 'admin' && context.role !== 'minister') {
+    return NextResponse.json({ error: 'Permissão insuficiente para editar ensaio' }, { status: 403 })
   }
 
-  if (!editor || (editor.role !== 'admin' && editor.role !== 'minister')) {
-    return NextResponse.json({ error: 'Permissão insuficiente para editar ensaio' }, { status: 403 })
+  const { data: quarter, error: quarterError } = await adminSupabase
+    .from('schedule_quarters')
+    .select('id')
+    .eq('id', quarter_id)
+    .eq('church_id', context.churchId)
+    .maybeSingle()
+
+  if (quarterError) {
+    return NextResponse.json({ error: quarterError.message }, { status: 500 })
+  }
+
+  if (!quarter) {
+    return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
   }
 
   // UPSERT
@@ -93,6 +110,7 @@ export async function PATCH(request: Request) {
     .from('schedule_rehearsals')
     .upsert([
       {
+        church_id: context.churchId,
         quarter_id,
         event_date,
         event_type,
