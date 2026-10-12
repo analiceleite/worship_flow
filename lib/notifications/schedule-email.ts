@@ -12,6 +12,7 @@ type NotificationType = 'quarter_published' | 'reminder_7days' | 'reminder_1day'
 const BIMESTER_PUBLISHED_NOTIFICATION_TYPE: NotificationType = 'quarter_published'
 
 type QueueRow = {
+  church_id: string
   dedupe_key: string
   notification_type: NotificationType
   quarter_id: string | null
@@ -148,6 +149,7 @@ export function groupAssignmentsByMinister(
 export async function enqueueBimesterPublishedNotifications(input: {
   bimesterId: string
   bimesterName: string
+  churchId: string
 }) {
   const admin = createAdminClient()
 
@@ -157,11 +159,13 @@ export async function enqueueBimesterPublishedNotifications(input: {
       .select(
         'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active), role:schedule_roles(name)'
       )
+      .eq('church_id', input.churchId)
       .eq('quarter_id', input.bimesterId)
       .not('minister_id', 'is', null),
     admin
       .from('schedule_rehearsals')
       .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
+      .eq('church_id', input.churchId)
       .eq('quarter_id', input.bimesterId),
   ])
 
@@ -180,7 +184,8 @@ export async function enqueueBimesterPublishedNotifications(input: {
   if (grouped.length === 0) return { queued: 0 }
 
   const rows: QueueRow[] = grouped.map((g) => ({
-    dedupe_key: `quarter_published:${input.bimesterId}:${g.minister_id}`,
+    church_id: input.churchId,
+    dedupe_key: `quarter_published:${input.churchId}:${input.bimesterId}:${g.minister_id}`,
     notification_type: BIMESTER_PUBLISHED_NOTIFICATION_TYPE,
     quarter_id: input.bimesterId,
     minister_id: g.minister_id,
@@ -201,6 +206,7 @@ export async function enqueueBimesterPublishedNotifications(input: {
   const { data: alreadySent } = await admin
     .from('schedule_email_notifications')
     .select('dedupe_key')
+    .eq('church_id', input.churchId)
     .in('dedupe_key', dedupeKeys)
     .eq('status', 'sent')
 
@@ -237,22 +243,24 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
   const now = input?.now ?? new Date()
   const admin = createAdminClient()
 
-  const { data: publishedBimesterRaw, error: publishedBimesterError } = await admin
+  const { data: publishedBimestersRaw, error: publishedBimesterError } = await admin
     .from('schedule_quarters')
-    .select('id, name, thursday_arrival_time, thursday_service_time, sunday_arrival_time, sunday_service_time')
+    .select('id, church_id, name, thursday_arrival_time, thursday_service_time, sunday_arrival_time, sunday_service_time')
     .eq('is_published', true)
     .order('start_date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
   if (publishedBimesterError) throw new Error(publishedBimesterError.message)
-  if (!publishedBimesterRaw) return { queued: 0 }
+  if (!publishedBimestersRaw?.length) return { queued: 0 }
 
-  const publishedBimester = publishedBimesterRaw as QuarterTimeConfig & { id: string; name: string }
+  const publishedBimesters = publishedBimestersRaw as Array<QuarterTimeConfig & { id: string; church_id: string; name: string }>
 
   const todayStr = toBrazilDateString(now)
   const lookaheadEnd = new Date(now.getTime() + OFFSET_REMINDER_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000)
   const lookaheadEndStr = toBrazilDateString(lookaheadEnd)
+
+  const rows: QueueRow[] = []
+
+  for (const publishedBimester of publishedBimesters) {
 
   const [assignmentsRes, rehearsalsRes] = await Promise.all([
     admin
@@ -260,6 +268,7 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
       .select(
         'minister_id, event_date, event_type, minister:ministers(id, name, email, is_active, email_reminders_enabled, email_reminder_offsets_minutes), role:schedule_roles(name)'
       )
+      .eq('church_id', publishedBimester.church_id)
       .eq('quarter_id', publishedBimester.id)
       .gte('event_date', todayStr)
       .lte('event_date', lookaheadEndStr)
@@ -267,6 +276,7 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
     admin
       .from('schedule_rehearsals')
       .select('event_date, event_type, rehearsal_time')
+      .eq('church_id', publishedBimester.church_id)
       .eq('quarter_id', publishedBimester.id),
   ])
 
@@ -304,9 +314,7 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
       return minister?.email_reminders_enabled !== false
     })
 
-  if (grouped.length === 0) return { queued: 0 }
-
-  const rows: QueueRow[] = []
+  if (grouped.length === 0) continue
 
   for (const g of grouped) {
     const minister = assignments.find((a) => a.minister_id === g.minister_id)?.minister
@@ -330,7 +338,8 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
         if (triggerAt > now.getTime()) continue // ainda não venceu
 
         rows.push({
-          dedupe_key: `reminder_offset:${g.minister_id}:${eventKey}:${offsetMinutes}`,
+          church_id: publishedBimester.church_id,
+          dedupe_key: `reminder_offset:${publishedBimester.church_id}:${g.minister_id}:${eventKey}:${offsetMinutes}`,
           notification_type: 'reminder_offset',
           quarter_id: publishedBimester.id,
           minister_id: g.minister_id,
@@ -350,6 +359,7 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
         })
       }
     }
+  }
   }
 
   if (rows.length === 0) return { queued: 0 }
@@ -663,8 +673,12 @@ async function sendEmailWithRetry(params: { to: string; subject: string; text: s
   }
 }
 
-function resolveNotificationRecipient(email: string) {
+function resolveNotificationRecipient(email: string, emailMode?: string | null) {
   const testRecipient = (process.env.SCHEDULE_EMAIL_TEST_RECIPIENT ?? '').trim()
+
+  if (emailMode === 'test_recipient') {
+    return testRecipient || null
+  }
 
   if (!testRecipient) {
     return email
@@ -699,7 +713,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
 
   const { data: rows, error } = await admin
     .from('schedule_email_notifications')
-    .select('id, notification_type, attempts, payload_json, status')
+    .select('id, church_id, notification_type, attempts, payload_json, status, church:churches(environment, email_mode)')
     .in('status', ['pending', 'failed'])
     .lt('attempts', 3)
     .order('created_at', { ascending: true })
@@ -715,8 +729,23 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   for (const row of rows ?? []) {
     const payload = (row.payload_json ?? {}) as Record<string, unknown>
     const email = String(payload.minister_email ?? '').trim()
-    const recipient = resolveNotificationRecipient(email)
     const attempts = Number(row.attempts ?? 0) + 1
+    const church = Array.isArray(row.church) ? row.church[0] : row.church
+    const emailMode = church?.email_mode as string | null | undefined
+    const environment = church?.environment as string | null | undefined
+
+    if (emailMode === 'disabled' || ((environment === 'demo' || environment === 'test') && emailMode !== 'test_recipient')) {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Envio real desabilitado para esta igreja.',
+      })
+      skipped += 1
+      continue
+    }
+
+    const recipient = resolveNotificationRecipient(email, emailMode)
 
     if (!email) {
       await markQueueStatus({
@@ -724,6 +753,17 @@ export async function processScheduleEmailQueue(batchSize = 50) {
         status: 'skipped',
         attempts,
         lastError: 'Ministro sem e-mail cadastrado.',
+      })
+      skipped += 1
+      continue
+    }
+
+    if (!recipient) {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Destinatário de teste não configurado.',
       })
       skipped += 1
       continue

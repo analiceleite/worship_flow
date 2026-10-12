@@ -320,6 +320,8 @@ function RepertoirePlayerContent() {
                 return
             }
 
+            if (!currentMinister) return
+
             setLoading(true)
             setError(null)
 
@@ -327,6 +329,7 @@ function RepertoirePlayerContent() {
             const { data, error: repError } = await supabase
                 .from('repertoire')
                 .select('*, song:songs(*), minister:ministers(*)')
+                .eq('church_id', currentMinister.church_id)
                 .eq('event_date', date)
                 .eq('event_name', eventName)
                 .order('order_index')
@@ -346,7 +349,7 @@ function RepertoirePlayerContent() {
         }
 
         void fetchItems()
-    }, [date, eventName])
+    }, [date, eventName, currentMinister])
 
     const currentItem = items[currentIndex]
     const isMobile = useIsMobile()

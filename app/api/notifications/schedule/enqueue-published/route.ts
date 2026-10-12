@@ -19,31 +19,34 @@ export async function POST(request: Request) {
   try {
     const admin = createAdminClient()
 
-    const { data: publishedBimester, error } = await admin
+    const { data: publishedBimesters, error } = await admin
       .from('schedule_quarters')
-      .select('id, name')
+      .select('id, church_id, name')
       .eq('is_published', true)
       .order('start_date', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
     if (error) {
       throw new Error(error.message)
     }
 
-    if (!publishedBimester) {
+    if (!publishedBimesters?.length) {
       return NextResponse.json({ ok: true, queued: 0, message: 'Nenhuma escala publicada encontrada.' })
     }
 
-    const result = await enqueueBimesterPublishedNotifications({
-      bimesterId: publishedBimester.id,
-      bimesterName: publishedBimester.name,
-    })
+    let queued = 0
+    for (const publishedBimester of publishedBimesters) {
+      const result = await enqueueBimesterPublishedNotifications({
+        bimesterId: publishedBimester.id,
+        bimesterName: publishedBimester.name,
+        churchId: publishedBimester.church_id,
+      })
+      queued += result.queued
+    }
 
     return NextResponse.json({
       ok: true,
-      queued: result.queued,
-      quarter: publishedBimester,
+      queued,
+      quarters: publishedBimesters,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro ao enfileirar notificações da escala publicada'

@@ -76,6 +76,7 @@ export async function PATCH(
       const enqueueResult = await enqueueBimesterPublishedNotifications({
         bimesterId: data.id,
         bimesterName: data.name,
+        churchId: context.churchId,
       })
 
       const processResult = await processScheduleEmailQueue(200)

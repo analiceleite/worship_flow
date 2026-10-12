@@ -1,6 +1,6 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 export async function DELETE(
   request: Request,
@@ -16,52 +16,24 @@ export async function DELETE(
       )
     }
 
-    const cookieStore = await cookies()
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-    // Create Supabase client with SSR
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options })
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: '', ...options })
-        },
-      },
-    })
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    let context
+    try {
+      context = await getCurrentMinisterContext({ requireAdmin: true })
+    } catch (error) {
+      if (error instanceof AuthContextError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
     }
 
-    // Check if current user is admin
-    const { data: currentMinister } = await supabase
-      .from('ministers')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!currentMinister || currentMinister.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Apenas administradores podem excluir ministros' },
-        { status: 403 }
-      )
-    }
+    const supabaseAdmin = createAdminClient()
 
     // Get minister's user_id before deleting
-    const { data: ministerToDelete, error: fetchError } = await supabase
+    const { data: ministerToDelete, error: fetchError } = await supabaseAdmin
       .from('ministers')
       .select('user_id')
       .eq('id', ministerId)
+      .eq('church_id', context.churchId)
       .single()
 
     if (fetchError || !ministerToDelete) {
@@ -71,29 +43,12 @@ export async function DELETE(
       )
     }
 
-    // Create admin client to delete auth user
-    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-    if (!supabaseServiceRoleKey) {
-      return NextResponse.json(
-        { error: 'Service Role Key não configurada' },
-        { status: 500 }
-      )
-    }
-
-    const { createClient } = await import('@supabase/supabase-js')
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    })
-
     // Explicit cleanup (service role) to guarantee full removal of related data
     // 1) Find songs owned by minister
     const { data: ministerSongs, error: songsFetchError } = await supabaseAdmin
       .from('songs')
       .select('id')
+      .eq('church_id', context.churchId)
       .eq('minister_id', ministerId)
 
     if (songsFetchError) {
@@ -113,6 +68,7 @@ export async function DELETE(
     const { error: repertoireByMinisterError } = await supabaseAdmin
       .from('repertoire')
       .delete()
+      .eq('church_id', context.churchId)
       .eq('minister_id', ministerId)
 
     if (repertoireByMinisterError) {
@@ -128,6 +84,7 @@ export async function DELETE(
       const { error: repertoireBySongsError } = await supabaseAdmin
         .from('repertoire')
         .delete()
+        .eq('church_id', context.churchId)
         .in('song_id', songIds)
 
       if (repertoireBySongsError) {
@@ -143,6 +100,7 @@ export async function DELETE(
     const { error: deleteSongsError } = await supabaseAdmin
       .from('songs')
       .delete()
+      .eq('church_id', context.churchId)
       .eq('minister_id', ministerId)
 
     if (deleteSongsError) {
@@ -158,6 +116,7 @@ export async function DELETE(
       .from('ministers')
       .delete()
       .eq('id', ministerId)
+      .eq('church_id', context.churchId)
 
     if (deleteMinisterError) {
       console.error('Error deleting minister:', deleteMinisterError)

@@ -27,12 +27,34 @@ export default function MinistrosPage() {
     const [formOpen, setFormOpen] = useState(false)
     const [editingMinister, setEditingMinister] = useState<Minister | null>(null)
     const [deletingMinister, setDeletingMinister] = useState<Minister | null>(null)
+    const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
 
     const fetchMinisters = useCallback(async () => {
         const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+            setLoading(false)
+            return
+        }
+
+        const { data: viewer, error: viewerError } = await supabase
+            .from('ministers')
+            .select('*')
+            .eq('user_id', user.id)
+            .single()
+
+        if (viewerError || !viewer) {
+            console.error('Erro ao identificar ministro atual:', viewerError)
+            setLoading(false)
+            return
+        }
+
+        setCurrentMinister(viewer)
+
         const { data, error } = await supabase
             .from('ministers')
             .select('*')
+            .eq('church_id', viewer.church_id)
             .order('name', { ascending: true })
 
         if (error) {
@@ -212,6 +234,7 @@ export default function MinistrosPage() {
                     if (!open) setEditingMinister(null)
                 }}
                 minister={editingMinister}
+                currentMinister={currentMinister}
                 onSuccess={fetchMinisters}
             />
 

@@ -103,6 +103,7 @@ export default function HomePage() {
         let query = supabase
             .from('songs')
             .select('*, minister:ministers(id, name, instrument)', { count: 'exact' })
+            .eq('church_id', currentMinister.church_id)
             .order('title', { ascending: true })
             .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
@@ -128,14 +129,17 @@ export default function HomePage() {
     }, [currentMinister, page, appliedSearch, selectedMinisterId])
 
     useEffect(() => {
+        if (!currentMinister) return
+
         const supabase = createClient()
         supabase
             .from('ministers')
             .select('*')
+            .eq('church_id', currentMinister.church_id)
             .eq('is_active', true)
             .order('name')
             .then(({ data }: { data: Minister[] | null }) => { if (data) setMinisters(data) })
-    }, [])
+    }, [currentMinister])
 
     useEffect(() => {
         fetchSongs()
@@ -159,6 +163,7 @@ export default function HomePage() {
             .from('songs')
             .delete()
             .eq('id', deletingSong.id)
+            .eq('church_id', currentMinister?.church_id)
 
         if (error) throw error
         await fetchSongs()

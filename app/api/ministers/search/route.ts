@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context
+  try {
+    context = await getCurrentMinisterContext()
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   const { searchParams } = new URL(request.url)
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
   let query = adminSupabase
     .from('ministers')
     .select('id, name, email')
+    .eq('church_id', context.churchId)
     .eq('is_active', true)
     .order('name', { ascending: true })
     .limit(Number.isNaN(limit) ? 30 : Math.min(Math.max(limit, 1), 100))

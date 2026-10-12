@@ -485,10 +485,16 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
       let songId = song?.id
 
       const performSave = async (body: Record<string, unknown>) => {
-        if (song) return supabase.from('songs').update(body).eq('id', song.id)
+        if (song) {
+          return supabase
+            .from('songs')
+            .update(body)
+            .eq('id', song.id)
+            .eq('church_id', currentMinister?.church_id)
+        }
         return supabase
           .from('songs')
-          .insert({ ...body, minister_id: currentMinister?.id })
+          .insert({ ...body, church_id: currentMinister?.church_id, minister_id: currentMinister?.id })
           .select('id')
           .single()
       }
@@ -513,6 +519,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister 
           .from('songs')
           .update({ cifra_pdf_path: path })
           .eq('id', songId)
+          .eq('church_id', currentMinister?.church_id)
         if (pathError) throw pathError
       }
 

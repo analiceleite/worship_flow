@@ -307,11 +307,17 @@ export default function RepertorioPage() {
     // ── Special events + day info ──────────────────────────────────────────────
 
     const fetchSpecialEvents = useCallback(async () => {
+        if (!currentMinister) return [] as SpecialEvent[]
+
         const supabase = createClient()
-        const { data } = await supabase.from('special_events').select('*').order('event_date')
+        const { data } = await supabase
+            .from('special_events')
+            .select('*')
+            .eq('church_id', currentMinister.church_id)
+            .order('event_date')
         if (data) { setSpecialEvents(data); return data }
         return [] as SpecialEvent[]
-    }, [])
+    }, [currentMinister])
 
     const buildDayInfoMap = useCallback((events: SpecialEvent[], days: Date[]) => {
         setDayInfoMap(prev => {
@@ -327,29 +333,31 @@ export default function RepertorioPage() {
     }, [])
 
     useEffect(() => {
+        if (!currentMinister) return
         setWeekLoading(true)
         const days = getWeekDays(weekAnchor)
         fetchSpecialEvents().then(events => buildDayInfoMap(events, days))
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [weekAnchor])
+    }, [weekAnchor, currentMinister, fetchSpecialEvents, buildDayInfoMap])
 
     // ── Repertoire ─────────────────────────────────────────────────────────────
 
     const fetchRepertoire = useCallback(async () => {
-        if (!selectedDay) return
+        if (!selectedDay || !currentMinister) return
         setLoading(true)
         const supabase = createClient()
         const [songsRes, ministersRes, repRes, repCountRes] = await Promise.all([
-            supabase.from('songs').select('*').order('title'),
-            supabase.from('ministers').select('*').order('name'),
+            supabase.from('songs').select('*').eq('church_id', currentMinister.church_id).order('title'),
+            supabase.from('ministers').select('*').eq('church_id', currentMinister.church_id).order('name'),
             supabase.from('repertoire')
                 .select('*, song:songs(*), minister:ministers(*)', { count: 'exact' })
+                .eq('church_id', currentMinister.church_id)
                 .eq('event_date', toDateStr(selectedDay.date))
                 .eq('event_name', selectedDay.eventName)
                 .order('order_index')
                 .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
             supabase.from('repertoire')
                 .select('id', { count: 'exact', head: true })
+                .eq('church_id', currentMinister.church_id)
                 .eq('event_date', toDateStr(selectedDay.date))
                 .eq('event_name', selectedDay.eventName),
         ])
@@ -358,7 +366,7 @@ export default function RepertorioPage() {
         if (repRes.data) setRepertoire(repRes.data)
         setTotalRepertoire(repCountRes.count || 0)
         setLoading(false)
-    }, [selectedDay, page])
+    }, [selectedDay, page, currentMinister])
 
     useEffect(() => { if (selectedDay) fetchRepertoire() }, [fetchRepertoire, selectedDay, page])
 
@@ -379,10 +387,11 @@ export default function RepertorioPage() {
             setFormError('Selecione o ministro para carregar e adicionar as músicas dele.')
             return
         }
-        if (!isAdmin && !currentMinister) { setFormError('Não foi possível identificar o ministro logado.'); return }
+        if (!currentMinister) { setFormError('Não foi possível identificar o ministro logado.'); return }
         const supabase = createClient()
         const maxOrder = repertoire.length > 0 ? Math.max(...repertoire.map(r => r.order_index)) : 0
         const { error } = await supabase.from('repertoire').insert({
+            church_id: currentMinister.church_id,
             song_id: formData.song_id,
             minister_id: isAdmin ? (formData.minister_id || null) : currentMinister?.id,
             event_name: selectedDay.eventName,
@@ -401,7 +410,11 @@ export default function RepertorioPage() {
             setDeletingItem(null)
             return
         }
-        await createClient().from('repertoire').delete().eq('id', deletingItem.id)
+        await createClient()
+            .from('repertoire')
+            .delete()
+            .eq('id', deletingItem.id)
+            .eq('church_id', currentMinister?.church_id)
         setDeletingItem(null)
         fetchRepertoire()
     }
@@ -409,8 +422,17 @@ export default function RepertorioPage() {
     const handleDeleteEvent = async () => {
         if (!deletingEvent) return
         const supabase = createClient()
-        await supabase.from('repertoire').delete().eq('event_name', deletingEvent.name).eq('event_date', deletingEvent.event_date)
-        await supabase.from('special_events').delete().eq('id', deletingEvent.id)
+        await supabase
+            .from('repertoire')
+            .delete()
+            .eq('church_id', currentMinister?.church_id)
+            .eq('event_name', deletingEvent.name)
+            .eq('event_date', deletingEvent.event_date)
+        await supabase
+            .from('special_events')
+            .delete()
+            .eq('id', deletingEvent.id)
+            .eq('church_id', currentMinister?.church_id)
         setDeletingEvent(null)
         if (selectedDay?.specialEventId === deletingEvent.id) setSelectedDay(getNearestServiceDay(new Date()))
         const events = await fetchSpecialEvents()
@@ -426,6 +448,7 @@ export default function RepertorioPage() {
             .from('special_events')
             .update({ name: editEventName.trim() })
             .eq('id', editingEvent.id)
+            .eq('church_id', currentMinister?.church_id)
         if (error) { setEditEventError(error.message); return }
         if (selectedDay?.specialEventId === editingEvent.id) {
             setSelectedDay(prev => prev ? { ...prev, eventName: editEventName.trim() } : prev)
@@ -440,7 +463,8 @@ export default function RepertorioPage() {
         setNewEventError(null)
         if (!newEventName.trim()) { setNewEventError('Informe o nome do evento.'); return }
         if (!newEventDate) { setNewEventError('Informe a data.'); return }
-        const { data, error } = await createClient().from('special_events').insert({ name: newEventName.trim(), event_date: newEventDate, created_by: currentMinister?.id ?? null }).select().single()
+        if (!currentMinister) { setNewEventError('Não foi possível identificar o ministro logado.'); return }
+        const { data, error } = await createClient().from('special_events').insert({ church_id: currentMinister.church_id, name: newEventName.trim(), event_date: newEventDate, created_by: currentMinister.id }).select().single()
         if (error) { setNewEventError(error.message); return }
         setCreateEventOpen(false)
         setNewEventName('')
@@ -495,7 +519,11 @@ export default function RepertorioPage() {
         setReorderError(null)
         const supabase = createClient()
         const updates = items.map(item =>
-            supabase.from('repertoire').update({ order_index: item.order_index }).eq('id', item.id)
+            supabase
+                .from('repertoire')
+                .update({ order_index: item.order_index })
+                .eq('id', item.id)
+                .eq('church_id', currentMinister?.church_id)
         )
         const results = await Promise.all(updates)
         for (const result of results) {

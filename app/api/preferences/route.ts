@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let context
+    try {
+      context = await getCurrentMinisterContext()
+    } catch (error) {
+      if (error instanceof AuthContextError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
     }
 
     const body = await request.json()
@@ -20,16 +23,6 @@ export async function PATCH(request: Request) {
     } = body
 
     const admin = createAdminClient()
-
-    const { data: minister } = await admin
-      .from('ministers')
-      .select('id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!minister) {
-      return NextResponse.json({ error: 'Minister not found' }, { status: 404 })
-    }
 
     const updateData: Record<string, unknown> = {}
 
@@ -60,7 +53,8 @@ export async function PATCH(request: Request) {
     const { error: updateError } = await admin
       .from('ministers')
       .update(updateData)
-      .eq('id', minister.id)
+      .eq('id', context.ministerId)
+      .eq('church_id', context.churchId)
 
     if (updateError) {
       return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 })
@@ -68,7 +62,7 @@ export async function PATCH(request: Request) {
 
     if (calendar_alarm_offsets_minutes !== undefined) {
       try {
-        await reconcileMinisterCalendar(minister.id) // no-op se não conectado ao Google Calendar
+        await reconcileMinisterCalendar(context.ministerId) // no-op se não conectado ao Google Calendar
       } catch (syncError) {
         console.error('Erro ao sincronizar alarmes no Google Calendar:', syncError)
       }
