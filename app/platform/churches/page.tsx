@@ -94,6 +94,21 @@ export default function PlatformChurchesPage() {
     await loadChurches()
   }
 
+  const startImpersonation = async (church: Church) => {
+    setError(null)
+    const response = await fetch('/api/platform/impersonation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ church_id: church.id }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      setError(result.error || 'Erro ao iniciar impersonação.')
+      return
+    }
+    window.location.href = '/'
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -175,7 +190,10 @@ export default function PlatformChurchesPage() {
                     <p className="font-semibold">{church.name}</p>
                     <p className="text-xs text-muted-foreground">{church.slug} · {church.environment} · {church.email_mode} · {church.status} · {church.plan}</p>
                   </div>
-                  <Button variant="outline" onClick={() => editChurch(church)}>Editar</Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => editChurch(church)}>Editar</Button>
+                    <Button onClick={() => startImpersonation(church)}>Impersonar</Button>
+                  </div>
                 </div>
               ))}
             </div>

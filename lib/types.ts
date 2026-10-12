@@ -67,6 +67,8 @@ export interface CurrentMinisterContext {
   churchId: string
   role: Minister['role']
   isAdmin: boolean
+  isImpersonating?: boolean
+  impersonatedChurchId?: string | null
 }
 
 export interface PlatformAdminContext {

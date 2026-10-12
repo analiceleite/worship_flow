@@ -32,23 +32,36 @@ export async function getCurrentMinisterContext(
     throw new AuthContextError('Usuário não autenticado.', 401)
   }
 
+  const admin = createAdminClient()
+  const impersonatedChurchId = await getImpersonatedChurchId()
+  const { data: platformAdmin } = impersonatedChurchId
+    ? await admin
+        .from('platform_admins')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+    : { data: null }
+
   const { data: minister, error: ministerError } = await supabase
     .from('ministers')
     .select('id, church_id, role')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
-  if (ministerError || !minister?.church_id) {
+  if (ministerError || (!minister?.church_id && !platformAdmin)) {
     throw new AuthContextError('Ministro não encontrado para o usuário autenticado.', 403)
   }
 
-  const role = minister.role as Minister['role']
+  const isImpersonating = Boolean(platformAdmin && impersonatedChurchId)
+  const role = isImpersonating ? 'admin' : minister!.role as Minister['role']
   const context: CurrentMinisterContext = {
     userId: user.id,
-    ministerId: minister.id,
-    churchId: minister.church_id,
+    ministerId: minister?.id ?? user.id,
+    churchId: isImpersonating ? impersonatedChurchId! : minister!.church_id,
     role,
     isAdmin: role === 'admin',
+    isImpersonating,
+    impersonatedChurchId: isImpersonating ? impersonatedChurchId : null,
   }
 
   if (options.requireAdmin && !context.isAdmin) {

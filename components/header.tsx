@@ -69,10 +69,23 @@ export function Header() {
   const [userName, setUserName] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('')
   const [userAvatar, setUserAvatar] = useState<string | null>(null)
+  const [impersonatedChurch, setImpersonatedChurch] = useState<{ id: string; name: string; slug: string } | null>(null)
 
   useEffect(() => {
     loadUser()
+    loadImpersonation()
   }, [])
+
+  const loadImpersonation = async () => {
+    try {
+      const response = await fetch('/api/platform/impersonation')
+      if (!response.ok) return
+      const result = await response.json()
+      setImpersonatedChurch(result.church ?? null)
+    } catch {
+      setImpersonatedChurch(null)
+    }
+  }
 
   const loadUser = async () => {
     const supabase = createClient()
@@ -100,6 +113,13 @@ export function Header() {
     router.refresh()
   }
 
+  const stopImpersonation = async () => {
+    await fetch('/api/platform/impersonation', { method: 'DELETE' })
+    setImpersonatedChurch(null)
+    router.push('/platform/churches')
+    router.refresh()
+  }
+
   const visibleNavigation = navigation.filter(item =>
     // Admin-only pages only visible to admin
     (!item.adminOnly || userRole === 'admin')
@@ -109,6 +129,14 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 bg-card border-b border-border">
+      {impersonatedChurch && (
+        <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-950">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+            <span>Impersonando: <strong>{impersonatedChurch.name}</strong></span>
+            <button className="font-semibold underline" onClick={stopImpersonation}>Encerrar</button>
+          </div>
+        </div>
+      )}
       <nav className="mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
