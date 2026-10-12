@@ -1,458 +1,424 @@
 # Worship Flow
 
-Aplicação web completa para gerenciamento de músicas, repertório e escala bimestral de ministérios de louvor. Com autenticação integrada (Supabase Auth), controle de acesso por perfil (admin/ministro/mídia), integração com cifras (CifraClub, Cifralize), busca de vídeos no YouTube, notificações por email e suporte PWA.
+Worship Flow e uma aplicacao web multitenant para gestao de ministerios de louvor. Ela organiza musicas, repertorios, escalas bimestrais, usuarios, notificacoes por email, cifras, integracao com YouTube e Google Calendar.
 
-## ✨ Funcionalidades
+A aplicacao opera como uma plataforma SaaS simples: uma unica instalacao atende varias igrejas, com isolamento por `church_id` no banco e suporte operacional para administracao interna, impersonacao e ambiente demo.
 
-### 🎵 Gestão de Músicas
-- Cadastro, edição e exclusão de músicas com tom personalizado
-- Integração com links de **cifra** (URL + conteúdo PDF/texto)
-- Busca integrada no **YouTube** com cache
-- Validação automática de **tom e capo**
-- Backup automático de cifras via backfill
+## Estado Atual
 
-### 📅 Escala Bimestral (Schedule)
-- Organização de escala por **bimestres** (períodos de 2 meses)
-- Tipos de eventos:
-  - **Quinta** (ensaios/preparação)
-  - **Domingo** (cultos)
-- Atribuição de ministros por evento e data
-- Suporte a **trainees** (aprendizes) e **apprentices** (aprendizes de papel específico)
-- Visualização por minister e por admin
+- Aplicacao multitenant por igreja.
+- Modelo atual: `1 auth user = 1 minister = 1 church`.
+- Um usuario tambem pode ser admin da plataforma via `platform_admins`.
+- Dados principais sao isolados por `church_id`.
+- Platform admin acessa `/platform/churches` para gerenciar igrejas.
+- Platform admin pode impersonar uma igreja para suporte ou demonstracao.
+- Header exibe a igreja ativa junto ao nome do app.
+- Igreja demo disponivel para apresentacao publica.
 
-### 📋 Repertório
-- Organização de músicas por data e evento
-- Reordenação visual (drag-and-drop)
-- Atribuição de ministro responsável por cada música
-- Suporte a eventos especiais nomeados
+## Funcionalidades
 
-### 📧 Notificações por Email
-- Workflow automático a cada 15 minutos (GitHub Actions)
-- Lembretes com antecedência configurável por ministro (padrão: 7 dias e 1 dia antes do culto;
-  opcionalmente também 12h/1h/30min antes)
-- Notificação de publicação da escala
-- Fila de processamento de emails assíncrona
-- Interceptação de emails para testes
+### Plataforma E Multitenancy
 
-### 👥 Controle de Acesso (RLS)
-- **Admin**: gerenciamento completo (músicas, ministros, escala)
-- **Minister**: gerencia próprias músicas, visualiza sua escala
-- **Mídia**: acesso limitado (visualização de repertório)
-- Políticas de segurança em nível de banco de dados (Supabase RLS)
+- Cadastro de igrejas/tenants.
+- Isolamento por igreja em usuarios, musicas, repertorios, escalas, eventos especiais, notificacoes e integracoes.
+- Contexto efetivo de igreja para paginas client-side e server-side.
+- Impersonacao de igreja por admin da plataforma.
+- Auditoria de impersonacao em `platform_impersonation_audit`.
+- Modos por igreja: `production`, `demo` e `test`.
+- Modos de email por igreja: `real`, `disabled` e `test_recipient`.
 
-### 🎨 Interface
-- Responsiva (desktop/mobile)
-- Tema claro/escuro
-- Componentes UI com Radix + Tailwind
-- Ícones com Lucide React
-- Notificações com Sonner
-- PWA instalável
+### Gestao De Musicas
 
-## Tech Stack
+- Cadastro, edicao e exclusao de musicas.
+- Tom principal e tons disponiveis.
+- Links de cifra e YouTube.
+- Conteudo de cifra em texto/PDF.
+- Importacao/backfill de cifras.
+- Busca de videos no YouTube com cache.
+- Validacao/auditoria de tons.
 
-- **Next.js 16** (App Router)
-- **React 19** + TypeScript 5.7
-- **Tailwind CSS 4** + Radix UI
-- **Supabase** (Auth + Postgres + RLS)
-- **pnpm 9.15** (package manager)
-- **Integrations**: Resend (emails), YouTube API, CifraClub/Cifralize (cifras)
+### Repertorio
 
-## 📋 Requisitos
+- Organizacao de musicas por data.
+- Ordenacao do repertorio.
+- Eventos especiais nomeados.
+- Player de repertorio.
+- Visualizacao isolada por igreja.
 
-- **Node.js** 20+ (recomendado 20.x ou 22.x)
-- **pnpm** 9.15+ (recomendado) ou npm
-- **Projeto Supabase** com banco de dados Postgres configurado
+### Escala Bimestral
 
-## 🚀 Instalação e Setup
+- Criacao de bimestres/periodos.
+- Escalas para quinta e domingo.
+- Ministros, trainees, aprendizes e tecnico de som.
+- Ensaios por culto/servico.
+- Publicacao de escala.
+- Dashboard/admin de escala.
 
-### 1️⃣ Clonar e Instalar Dependências
+### Usuarios E Permissoes
 
-```bash
-git clone <repository-url>
-cd worship_flow
-pnpm install
-```
+- `admin`: gerencia usuarios, musicas, repertorio e escala da propria igreja.
+- `minister`: gerencia musicas proprias e visualiza repertorio/escala.
+- `midia`: acesso limitado a repertorio/escala.
+- RLS no Supabase para reforcar isolamento e permissao.
 
-### 2️⃣ Configurar Variáveis de Ambiente
+### Notificacoes E Calendario
 
-Copie os arquivos de exemplo e preencha suas credenciais:
+- Notificacoes por email via Resend.
+- Lembretes por antecedencia configuravel.
+- Notificacao de escala publicada.
+- Fila de emails assíncrona.
+- Interceptacao de emails para teste.
+- Integracao com Google Calendar por ministro.
 
-```bash
-cp .env.development.local.example .env.development.local
-cp .env.production.local.example .env.production.local
-```
+### Interface
 
-**Variáveis obrigatórias em ambos os arquivos**:
+- Next.js App Router.
+- UI responsiva desktop/mobile.
+- Tema claro/escuro.
+- Componentes Radix UI + Tailwind.
+- PWA instalavel.
+
+## Stack
+
+- Next.js 16
+- React 19
+- TypeScript 5.7
+- Tailwind CSS 4
+- Supabase Auth + Postgres + RLS
+- Resend
+- Google APIs
+- pnpm 9.15
+
+## Requisitos
+
+- Node.js 20+
+- pnpm 9.15+
+- Projeto Supabase
+- Conta Resend para emails reais
+- Credenciais Google OAuth para integracao de calendario, se usada
+
+## Variaveis De Ambiente
+
+Crie `.env.development.local` e `.env.production.local` conforme o ambiente.
 
 ```env
-# Supabase (obtém na dashboard do projeto)
-NEXT_PUBLIC_SUPABASE_URL=https://seu-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
 
-# App
-APP_BASE_URL=http://localhost:3000  # dev
-APP_BASE_URL=https://seu-dominio.vercel.app  # prod
+APP_BASE_URL=http://localhost:3000
 
-# Email (Resend)
+CRON_SECRET=um-secret-aleatorio
+
 RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=noreply@seudominio.com
+SCHEDULE_EMAIL_TEST_RECIPIENT=seu-email-de-teste@dominio.com
 
-# Automação
-CRON_SECRET=seu-secret-aleatorio-aqui
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 
-# Testes (opcional)
-SCHEDULE_EMAIL_TEST_RECIPIENT=seu-email@exemplo.com
-```
-
-**Obtendo as credenciais Supabase**:
-1. Acesse [supabase.com/dashboard](https://app.supabase.com)
-2. Selecione seu projeto
-3. Vá em **Settings** → **API**
-4. Copie `Project URL` e `anon public key`
-5. Vá em **Settings** → **Service Role Secret** para obter a service role key
-
-### 3️⃣ Aplicar Migrações SQL no Supabase
-
-Execute os scripts em ordem no **SQL Editor** do Supabase:
-
-1. `scripts/001_create_tables.sql` — Cria todas as tabelas base
-2. `scripts/016_consolidate_access_policies.sql` — RLS policies consolidadas
-3. `scripts/017_add_is_trainee_to_schedule_assignments.sql` — Suporte a trainees
-4. `scripts/018_add_apprentice_schedule_role.sql` — Suporte a apprentices
-5. `scripts/019_add_cifra_content_to_songs.sql` — Armazena conteúdo de cifras
-6. `scripts/020_create_password_resets.sql` — Tabela de reset de senha
-7. `scripts/021_add_schedule_rehearsals.sql` — Informações de ensaios
-8. `scripts/022_song_cifra_pdf_storage.sql` — Armazena PDFs de cifras
-9. `scripts/023_youtube_search_cache.sql` — Cache de buscas YouTube
-
-**Como aplicar**:
-1. Abra [Supabase Dashboard](https://app.supabase.com) → seu projeto
-2. Vá em **SQL Editor** → **New query**
-3. Copie todo o conteúdo de um script
-4. Cole na query e clique em **Run**
-5. Repita para cada script na ordem acima
-
-### 4️⃣ Criar Usuário Admin (Primeira Vez)
-
-1. Vá em **Authentication** → **Users** no Supabase
-2. Clique em **Add user** → **Create new user**
-3. Preencha email e senha temporária
-4. ✅ Marque **Auto Confirm User**
-5. Clique em **Create user**
-6. **Copie o UUID** do novo usuário
-
-7. Vá em **SQL Editor** e execute:
-```sql
-INSERT INTO public.ministers (
-  name, email, role, user_id, is_active, instrument
-) VALUES (
-  'Administrador',
-  'seu-email@dominio.com',
-  'admin',
-  'COLE_O_UUID_AQUI',
-  true,
-  'Voz'
-);
-```
-
-Agora você pode fazer login com o email e senha definidos.
-
-## 🏃 Executar o Projeto
-
-### Desenvolvimento
-
-```bash
-pnpm dev
-```
-
-Abre em `http://localhost:3000` com recarregamento automático.
-
-> **Nota Windows**: O script habilita `WATCHPACK_POLLING` e `CHOKIDAR_USEPOLLING` para melhor compatibilidade com file watching.
-
-### Produção Local
-
-```bash
-pnpm build    # Build para produção
-pnpm start    # Inicia servidor
-```
-
-Ou em um comando:
-
-```bash
-pnpm prod  # Build + start combinados
-```
-
-### Linting
-
-```bash
-pnpm lint  # Verifica ESLint em todo o projeto
-```
-
-## 📧 Automação de Notificações por Email
-
-O repositório inclui um workflow automático em [.github/workflows/schedule-email-reminders.yml](.github/workflows/schedule-email-reminders.yml) para notificações agendadas.
-
-### Fluxo
-
-1. ✅ **Publicação de Escala** — Quando admin publica uma escala, notificação é enviada
-2. 📬 **Enfileiração** (a cada 15 minutos):
-   - Re-enfileira notificações pendentes da escala bimestral publicada
-   - Enfileira lembretes por email nas antecedências configuradas por cada ministro no perfil
-     (padrão: **7 dias** e **1 dia** antes; opcionalmente também 12h/1h/30min antes)
-3. 📤 **Processamento** — Emails são enviados via Resend
-
-> O gatilho `schedule` do GitHub Actions é best-effort: execuções muito frequentes (5-15 min)
-> podem atrasar alguns minutos em períodos de alta carga. Lembretes de antecedência curta
-> (ex.: 30 min antes) podem, na prática, chegar um pouco depois do previsto.
-
-### Configurar no GitHub
-
-Para habilitar automação, adicione estes **secrets** no repositório (Settings → Secrets and variables → Actions):
-
-| Secret | Valor |
-|--------|-------|
-| `APP_BASE_URL` | `https://seu-dominio.vercel.app` |
-| `CRON_SECRET` | Mesmo valor do `.env.production.local` |
-
-### Testes Locais
-
-Para testar emails sem enviá-los realmente:
-
-1. Configure em `.env.development.local`:
-   ```env
-   SCHEDULE_EMAIL_TEST_RECIPIENT=seu-email-teste@dominio.com
-   ```
-2. Todos os emails serão interceptados e enviados para esse endereço
-
-### Rodar Manualmente
-
-- Workflow executa automaticamente **a cada 15 minutos**
-- Pode ser disparado manualmente em **Actions** → **schedule-email-reminders**
-
-## 🛠️ Utilitários e Scripts de Dados
-
-### Backfill de Cifras
-
-Busca automaticamente cifras de CifraClub e Cifralize para músicas sem conteúdo de cifra:
-
-```bash
-pnpm backfill:cifras        # Busca e armazena cifras
-pnpm backfill:cifras:dry    # Prévia sem modificar dados
-```
-
-### Importador CifraClub com Navegador Real
-
-O app aceita links do CifraClub diretamente usando um microserviço com Playwright. Para importar links do CifraClub, configure e rode esse serviço; Cifralize e PDF/foto continuam funcionando como alternativas.
-
-Variáveis do app principal:
-
-```env
 CIFRACLUB_IMPORTER_URL=http://localhost:3010
 CIFRACLUB_IMPORTER_TOKEN=seu-token-interno
 ```
 
-Rodar o microserviço localmente:
+Notas:
+
+- `SUPABASE_SERVICE_ROLE_KEY` nunca deve ir para o cliente/browser.
+- `CRON_SECRET` precisa bater com o secret configurado no GitHub Actions.
+- `SCHEDULE_EMAIL_TEST_RECIPIENT` intercepta emails quando a igreja estiver em modo `test_recipient`.
+- Para igrejas demo/teste, nao use `email_mode = real`.
+
+## Instalar E Rodar
+
+```bash
+pnpm install
+pnpm dev
+```
+
+O app abre em:
+
+```txt
+http://localhost:3000
+```
+
+Build de producao:
+
+```bash
+pnpm build
+pnpm start
+```
+
+Ou:
+
+```bash
+pnpm prod
+```
+
+Validacao TypeScript:
+
+```bash
+pnpm exec tsc --noEmit
+```
+
+Lint:
+
+```bash
+pnpm lint
+```
+
+Observacao: o script `pnpm lint` chama `eslint .`, mas o pacote `eslint` precisa estar instalado/declarado para funcionar no ambiente atual.
+
+## Banco De Dados
+
+Execute os SQLs em ordem no SQL Editor do Supabase.
+
+```txt
+scripts/001_create_tables.sql
+scripts/016_consolidate_access_policies.sql
+scripts/017_add_is_trainee_to_schedule_assignments.sql
+scripts/018_add_apprentice_schedule_role.sql
+scripts/019_add_cifra_content_to_songs.sql
+scripts/020_create_password_resets.sql
+scripts/021_add_schedule_rehearsals.sql
+scripts/022_song_cifra_pdf_storage.sql
+scripts/023_youtube_search_cache.sql
+scripts/024_add_calendar_feed.sql
+scripts/025_add_email_reminder_offsets.sql
+scripts/026_add_google_calendar_integration.sql
+scripts/027_remove_ics_calendar_subscription.sql
+scripts/028_add_sound_technician_schedule_role.sql
+scripts/029_add_available_tones_to_songs.sql
+scripts/030_simple_multitenancy_base.sql
+scripts/031_simple_multitenancy_rls.sql
+scripts/032_simple_multitenancy_hardening.sql
+```
+
+As migrations `030`, `031` e `032` adicionam a base multitenant, RLS tenant-aware, constraints finais, indices e hardening de `church_id`.
+
+## Primeiro Acesso Da Plataforma
+
+O primeiro operador precisa existir no Supabase Auth, ter um registro em `ministers` e ser promovido para `platform_admins`.
+
+Exemplo:
+
+```sql
+insert into public.platform_admins (user_id)
+select user_id
+from public.ministers
+where email = 'seu-email@dominio.com'
+on conflict (user_id) do nothing;
+```
+
+Depois disso, acesse:
+
+```txt
+/platform/churches
+```
+
+## Setup De Nova Igreja
+
+O fluxo operacional completo esta documentado em:
+
+```txt
+sdd/plan/new-church-setup-readme.md
+```
+
+Resumo:
+
+1. Entrar como platform admin.
+2. Acessar `/platform/churches`.
+3. Criar a igreja com `environment = production` e `email_mode = real`.
+4. Impersonar a igreja.
+5. Validar que o ambiente esta vazio.
+6. Criar o primeiro admin da igreja em `/users`.
+7. Encerrar a impersonacao.
+8. Pedir para o admin configurar ministros, musicas, repertorios e escalas.
+
+Checklist minimo antes de entregar:
+
+- Header mostra o nome correto da igreja.
+- `/users` mostra apenas usuarios da nova igreja.
+- `/songs` mostra apenas musicas da nova igreja.
+- `/repertoire` nao mostra dados de outra igreja.
+- `/schedule` nao mostra dados de outra igreja.
+- Emails estao no modo correto.
+- Impersonacao encerra corretamente.
+
+## Ambiente Demo
+
+A igreja demo padrao pode ser populada com:
+
+```bash
+node scripts/seed-demo-worship-flow.mjs
+```
+
+Credenciais atuais da demo:
+
+```txt
+Email: demo@worshipflow.app
+Senha: Demo@12345
+```
+
+Use a demo para apresentacao publica. Antes de expor amplamente, considere trocar a senha e revisar os dados fake.
+
+## Emails E Automacao
+
+O workflow de emails fica em:
+
+```txt
+.github/workflows/schedule-email-reminders.yml
+```
+
+Secrets necessarios no GitHub Actions:
+
+| Secret | Valor |
+| --- | --- |
+| `APP_BASE_URL` | URL publica da aplicacao |
+| `CRON_SECRET` | Mesmo valor do ambiente de producao |
+
+Fluxo:
+
+1. Escala publicada enfileira notificacoes.
+2. Cron enfileira lembretes periodicos.
+3. Fila processa emails via Resend.
+4. Modo de email da igreja controla envio real, teste ou bloqueio.
+
+## Scripts Uteis
+
+Backfill de cifras:
+
+```bash
+pnpm backfill:cifras
+pnpm backfill:cifras:dry
+```
+
+Auditoria de tons:
+
+```bash
+pnpm audit:tones
+pnpm audit:tones:fix
+pnpm audit:tones:rewrite
+```
+
+Seed da demo:
+
+```bash
+node scripts/seed-demo-worship-flow.mjs
+```
+
+Geracao de escala original em XLSX:
+
+```bash
+node scripts/generate-original-schedule-xlsx.mjs
+```
+
+## CifraClub Importer
+
+Links do CifraClub podem ser importados usando o microservico Playwright em `services/cifraclub-importer`.
+
+Rodar localmente:
 
 ```bash
 docker build -t worship-flow-cifraclub-importer services/cifraclub-importer
 docker run --rm -p 3010:3010 -e CIFRACLUB_IMPORTER_TOKEN=seu-token-interno worship-flow-cifraclub-importer
 ```
 
-Detalhes do serviço: `services/cifraclub-importer/README.md`.
+Detalhes:
 
-### Auditoria e Correção de Tons
-
-Valida e corrige inconsistências de tons nas músicas:
-
-```bash
-pnpm audit:tones            # Lista problemas de tom
-pnpm audit:tones:fix        # Corrige tons individuais
-pnpm audit:tones:rewrite    # Reescreve conteúdo de cifra baseado no tom
+```txt
+services/cifraclub-importer/README.md
 ```
 
-### Backfill de Capo
+## Estrutura Principal
 
-Script legado para atualizar capo (trastes):
+```txt
+app/
+  api/
+    context/                 # contexto efetivo de usuario/igreja
+    platform/                # endpoints internos da plataforma
+    schedule/                # escala, bimestres, assignments
+    songs/                   # musicas
+    notifications/           # emails e cron
+  platform/churches/         # gestao interna de igrejas
+  songs/                     # gestao de musicas
+  repertoire/                # repertorio
+  schedule/                  # escala
+  users/                     # usuarios/ministros da igreja
 
-```bash
-node scripts/backfill-capo.mjs
+components/
+  header.tsx                 # navegacao, igreja ativa e impersonacao
+  song-form.tsx
+  minister-form.tsx
+  schedule/
+  ui/
+
+lib/
+  auth-context.ts            # contexto multitenant e impersonacao
+  supabase/                  # clients server/client/admin
+  notifications/
+  google-calendar.ts
+  types.ts
+
+scripts/
+  001_*.sql ... 032_*.sql    # schema e migrations
+  seed-demo-worship-flow.mjs
+  backfill-cifras.mjs
+  audit-song-tones.mjs
 ```
 
-### Gerar Escala Original (Excel)
+## Seguranca
 
-Exporta escala para formato XLSX:
+- Nunca exponha `SUPABASE_SERVICE_ROLE_KEY`.
+- Rotacione chaves se forem compartilhadas indevidamente.
+- Use `platform_admins` apenas para operadores internos confiaveis.
+- Use impersonacao somente para suporte, setup e demonstracao.
+- Valide isolamento antes de entregar uma nova igreja.
+- Nao use email real em tenants demo/teste.
 
-```bash
-node scripts/generate-original-schedule-xlsx.mjs
-```
+## Troubleshooting
 
-## 📱 PWA (Progressive Web App)
+### Dados De Outra Igreja Aparecendo
 
-O projeto suporta instalação como app nativo em dispositivos.
+Pare o setup e investigue imediatamente.
 
-### Testar Instalação
+Verifique:
 
-1. Rode em `localhost` (`pnpm dev`) com HTTPS (ou use `localhost` que funciona)
-2. Abra DevTools → **Application** → **Manifest**
-3. Verifique ícones e critério **Installability**
+- Se a pagina/API usa `getCurrentMinisterContext()` ou `/api/context`.
+- Se a query filtra pelo `churchId` efetivo.
+- Se a tabela possui `church_id` preenchido e `not null`.
+- Se a policy RLS correspondente considera `church_id`.
 
-### Arquivos PWA
+### Permission Denied No Supabase
 
-- `app/manifest.ts` — Configuração do manifest
-- `public/sw.js` — Service Worker
-- `components/pwa-register.tsx` — Registro do SW
-- `public/logo.jpg` — Ícone da aplicação
+Verifique:
 
-> **Nota**: Após alterar PWA/Service Worker, limpe o cache do navegador e reinstale o app para refletir mudanças.
+- Usuario existe em `auth.users`.
+- Registro correspondente existe em `public.ministers`.
+- `ministers.user_id` aponta para o UUID correto.
+- `ministers.church_id` esta preenchido.
+- Role esta correta: `admin`, `minister` ou `midia`.
 
-## 📁 Estrutura do Projeto
+### Emails Nao Enviam
 
-```
-worship_flow/
-├── app/                           # Next.js App Router
-│   ├── (auth)/                   # Routes de autenticação
-│   │   ├── login/
-│   │   ├── forgot-password/
-│   │   ├── reset/
-│   │   └── set-password/
-│   ├── api/                      # API Routes
-│   │   ├── schedule/            # Schedule management (quarters, assignments, emails)
-│   │   ├── songs/               # Song CRUD
-│   │   ├── ministers/           # Minister management
-│   │   ├── cifra/               # Cipher import from Cifralize
-│   │   ├── youtube/             # YouTube search
-│   │   └── notifications/       # Email queue & scheduling
-│   ├── schedule/                # Schedule pages
-│   │   ├── page.tsx            # Minister view
-│   │   └── admin/              # Admin schedule builder
-│   ├── songs/                  # Song management page
-│   ├── repertoire/             # Repertoire viewing
-│   ├── users/                  # Minister management (admin)
-│   ├── manifest.ts             # PWA manifest
-│   └── layout.tsx              # Root layout
-│
-├── components/                  # React components
-│   ├── ui/                     # Radix UI + Tailwind wrappers
-│   ├── schedule/               # Schedule-specific components
-│   ├── song-form.tsx           # Song create/edit form
-│   ├── minister-form.tsx       # Minister create/edit form
-│   ├── cifra-viewer.tsx        # Cipher content viewer
-│   ├── header.tsx              # Navigation header
-│   └── pwa-register.tsx        # PWA registration
-│
-├── lib/                         # Utilities & configs
-│   ├── supabase/               # Supabase clients
-│   │   ├── server.ts          # Server-side client (SSR)
-│   │   ├── client.ts          # Browser client (CSR)
-│   │   └── admin.ts           # Admin bypass client
-│   ├── types.ts               # TypeScript interfaces
-│   ├── routes.ts              # Route constants
-│   ├── permissions.ts         # Permission helpers
-│   ├── cifra-*.ts             # Cipher scraping/storage
-│   ├── youtube-search-cache.ts # YouTube caching
-│   ├── notifications/         # Email scheduling
-│   └── utils.ts               # General utilities
-│
-├── scripts/                    # Database & data scripts
-│   ├── 001_create_tables.sql          # Initial schema
-│   ├── 016-023_*.sql                  # Migrations
-│   ├── backfill-cifras.mjs            # Fetch missing ciphers
-│   ├── audit-song-tones.mjs           # Tone validation
-│   └── generate-original-schedule.mjs # Export to Excel
-│
-├── public/                     # Static files
-│   ├── sw.js                  # Service Worker
-│   ├── logo.jpg               # App icon
-│   └── manifest.webmanifest   # PWA manifest
-│
-└── .github/workflows/          # CI/CD
-    └── schedule-email-reminders.yml  # Runs every 15 minutes
-```
+Verifique:
 
-## 👥 Perfis e Permissões
+- `RESEND_API_KEY` e `RESEND_FROM_EMAIL`.
+- `CRON_SECRET` no ambiente e no GitHub Actions.
+- `churches.email_mode` da igreja.
+- `churches.environment` da igreja.
+- Logs do workflow `schedule-email-reminders`.
 
-Acesso controlado por **Row-Level Security (RLS)** no Supabase + validação de roles em API routes.
+### Service Worker/PWA Desatualizado
 
-| Role | Descrição | Permissões |
-|------|-----------|-----------|
-| **admin** | Administrador | ✅ Gerenciar ministros, todas as músicas, escala, repertório |
-| **minister** | Ministro | ✅ Criar/editar próprias músicas, visualizar sua escala |
-| **midia** | Mídia/Gravação | ✅ Visualizar repertório e escala (read-only) |
+No navegador:
 
-### Exemplos de Acesso
+1. DevTools > Application > Service Workers > Unregister.
+2. Limpar Cache Storage.
+3. Fechar e abrir o app novamente.
+4. Se instalado como PWA, reinstalar.
 
-- **Admin**: Vê todos os ministros, todas as músicas, monta a escala bimestral
-- **Ministro**: Vê apenas suas músicas, visualiza sua escala
-- **Mídia**: Vê repertório e quem toca (não pode editar)
+## Documentos Internos
 
-Políticas RLS aplicadas em:
-- `public.ministers` — Only admin can list all
-- `public.songs` — Only owner or admin can edit
-- `public.repertoire` — Minister sees only their scheduled songs
-- `public.schedule_assignments` — Only admin manages
-
-## 🔧 Troubleshooting
-
-### Erro: "Permission denied" ao consultar dados
-
-**Causa**: RLS policy bloqueando acesso ou usuário não mapeado na tabela `ministers`
-
-**Solução**:
-1. Verifique em Supabase → **SQL Editor** se o usuário existe em `public.ministers`
-2. Confirme que `user_id` em `ministers` corresponde ao UUID do usuário em `auth.users`
-3. Verifique o `role` está correto (admin/minister/midia)
-
-### Erro: "pnpm-lock.yaml out of sync" em CI
-
-**Solução**:
-```bash
-pnpm install --frozen-lockfile=false
-git add pnpm-lock.yaml
-git commit -m "chore: update lockfile"
-git push
-```
-
-### Emails não são enviados
-
-**Verificar**:
-1. `RESEND_API_KEY` é válido em `.env.production.local`?
-2. Workflow em GitHub Actions tem permissão para rodar?
-3. Se testando, configure `SCHEDULE_EMAIL_TEST_RECIPIENT`
-4. Cheque logs em GitHub Actions → **schedule-email-reminders**
-
-### YouTube search não retorna resultados
-
-**Verificar**:
-1. API quota esgotada? (limit de 100 requests/dia por IP)
-2. Video URL é válida e pública?
-3. Confirme em cache: `public.youtube_search_cache`
-
-### Cifras não carregam (PDF/conteúdo vazio)
-
-**Soluções**:
-1. Rode `pnpm backfill:cifras` manualmente
-2. Verifique se Cifralize/CifraClub está acessível
-3. Song pode não ter correspondência no site (tone diferente)
-
-### Service Worker não atualiza
-
-**Solução**:
-1. DevTools → Application → Service Workers → **Unregister**
-2. Limpe cache: DevTools → Application → Cache Storage → Delete
-3. Feche aba e abra novamente
-4. Se instalado como PWA, desinstale e reinstale
-
-## 📚 Próximas Melhorias
-
-- [ ] Testes automatizados (Vitest/Jest) para fluxos críticos
-- [ ] UI de drag-and-drop para reordenar repertório
-- [ ] Integração com WhatsApp/Telegram para notificações
-- [ ] Catálogo de eventos sazonais/recorrentes
-- [ ] Dashboard com analytics de ministério
-- [ ] Export de escala em múltiplos formatos (PDF, iCal)
-- [ ] Configuração de roles/permissões por UI (atualmente SQL)
-
-## 📞 Suporte
-
-Para dúvidas ou bugs, abra uma issue no repositório.
+- `sdd/spec/simple-tenant-multitenancy-spec.md`
+- `sdd/plan/simple-tenant-multitenancy-plan.md`
+- `sdd/plan/new-church-setup-readme.md`
