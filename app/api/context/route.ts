@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
 export async function GET() {
   try {
     const context = await getCurrentMinisterContext()
-    return NextResponse.json({ context })
+    const admin = createAdminClient()
+    const { data: church } = await admin
+      .from('churches')
+      .select('id, name, slug, environment')
+      .eq('id', context.churchId)
+      .maybeSingle()
+
+    return NextResponse.json({ context, church: church ?? null })
   } catch (error) {
     if (error instanceof AuthContextError) {
       return NextResponse.json({ error: error.message }, { status: error.status })

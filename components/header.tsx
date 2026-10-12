@@ -70,11 +70,24 @@ export function Header() {
   const [userRole, setUserRole] = useState<string>('')
   const [userAvatar, setUserAvatar] = useState<string | null>(null)
   const [impersonatedChurch, setImpersonatedChurch] = useState<{ id: string; name: string; slug: string } | null>(null)
+  const [activeChurch, setActiveChurch] = useState<{ id: string; name: string; slug: string; environment?: string } | null>(null)
 
   useEffect(() => {
     loadUser()
     loadImpersonation()
+    loadActiveChurch()
   }, [])
+
+  const loadActiveChurch = async () => {
+    try {
+      const response = await fetch('/api/context')
+      if (!response.ok) return
+      const result = await response.json()
+      setActiveChurch(result.church ?? null)
+    } catch {
+      setActiveChurch(null)
+    }
+  }
 
   const loadImpersonation = async () => {
     try {
@@ -140,10 +153,18 @@ export function Header() {
       <nav className="mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted">
               <img src="/logo.jpg" alt="Logo da Igreja" className="h-full w-full object-contain" />
             </div>
-            <span className="text-xl font-semibold text-foreground">Worship Flow</span>
+            <div className="min-w-0">
+              <span className="block text-xl font-semibold leading-tight text-foreground">Worship Flow</span>
+              {activeChurch && (
+                <span className="block max-w-[180px] truncate text-xs text-muted-foreground sm:max-w-[260px]">
+                  {activeChurch.name}
+                  {activeChurch.environment && activeChurch.environment !== 'production' ? ` · ${activeChurch.environment}` : ''}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Desktop Navigation */}
