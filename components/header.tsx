@@ -120,6 +120,7 @@ export function Header() {
   }
 
   const handleLogout = async () => {
+    window.dispatchEvent(new Event('wf:cifra-context-reset'))
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push(ROUTES.AUTH_LOGIN)
@@ -127,6 +128,7 @@ export function Header() {
   }
 
   const stopImpersonation = async () => {
+    window.dispatchEvent(new Event('wf:cifra-context-reset'))
     await fetch('/api/platform/impersonation', { method: 'DELETE' })
     setImpersonatedChurch(null)
     router.push('/platform/churches')

@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { PwaRegister } from '@/components/pwa-register'
 import { ThemeProvider } from '@/components/theme-provider'
+import { CifraImportProvider } from '@/components/cifra-import-provider'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -49,7 +50,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isProduction ? <PwaRegister /> : null}
-          {children}
+          <CifraImportProvider>{children}</CifraImportProvider>
           <Analytics />
         </ThemeProvider>
       </body>

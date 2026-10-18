@@ -33,6 +33,7 @@ export interface Song {
   youtube_url: string | null
   youtube_video_title?: string | null
   cifra_content: string[] | null
+  cifra_original?: import('./cifra/contract').OriginalCifra | null
   available_tones?: string[] | null
   cifra_pdf_path?: string | null
   capo_frets?: number | null

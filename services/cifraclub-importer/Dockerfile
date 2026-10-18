@@ -2,8 +2,8 @@ FROM mcr.microsoft.com/playwright:v1.49.1-noble
 
 WORKDIR /app
 
-COPY package.json package.json
-RUN npm install --omit=dev
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY src ./src
 

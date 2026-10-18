@@ -31,8 +31,13 @@ import { uploadCifraFile, validateCifraFile } from '@/lib/cifra-storage'
 import { buildYoutubeSearchCacheKey } from '@/lib/youtube-search-cache'
 import { isCifralizeUrl } from '@/lib/cifralize-url'
 import { isCifraClubUrl } from '@/lib/cifraclub-url'
-import { normalizeCifraClubTone, tonesAreEquivalent } from '@/lib/cifraclub-scraper'
+import { normalizeCifraClubTone, tonesAreEquivalent } from '@/lib/cifra/tone'
 import { cn } from '@/lib/utils'
+import { useCifraImport } from '@/components/cifra-import-provider'
+import { transposeOriginal, hasTablature } from '@/lib/cifra/transpose'
+import { toneOptions } from '@/lib/cifra/tone'
+import { canonicalizeCifraUrl } from '@/lib/cifra/url'
+import type { OriginalCifra } from '@/lib/cifra/contract'
 
 interface SongFormProps {
   open: boolean
@@ -94,6 +99,14 @@ function cifraSourceLabel(url: string): string {
 }
 
 export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister, effectiveChurchId }: SongFormProps) {
+  const importContext = useCifraImport()
+  const useV2 = Boolean(importContext?.available && importContext.validated)
+  const [originalCifra, setOriginalCifra] = useState<OriginalCifra | null>(song?.cifra_original ?? null)
+  const [confirmedTone, setConfirmedTone] = useState('')
+  const [capoConfirmed, setCapoConfirmed] = useState(false)
+  const [ownerMinisterId, setOwnerMinisterId] = useState('')
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null)
+  const [churchMinisters, setChurchMinisters] = useState<Minister[]>([])
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [tone, setTone] = useState('')
@@ -168,6 +181,23 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
         return false
       }
 
+      if (useV2 && importContext?.scope) {
+        try {
+          const parsed = canonicalizeCifraUrl(url)
+          const draft = importContext.controller.getSnapshot().draft
+          if (draft && draft.url !== parsed.canonicalUrl) {
+            setPendingUrl(url)
+            setImportError('Existe outra importação ou rascunho. Descarte o anterior antes de importar este link.')
+            return false
+          }
+          await importContext.controller.start({ url, tone: toneValue, title, artist, youtubeUrl, youtubeVideoTitle, songId: song?.id, songSnapshot: song ?? undefined, ministerId: ownerMinisterId || undefined }, importContext.scope)
+          return true
+        } catch {
+          setImportError('Link não suportado. Verifique a versão e remova parâmetros ou fragmentos desconhecidos.')
+          return false
+        }
+      }
+
       setImportingCifra(true)
       setImportError(null)
 
@@ -204,8 +234,8 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
 
         applyImportedCifra(data)
         setCipherUrl(data.cipher_url || url)
-        lastImportedUrlRef.current = url
-        lastImportedToneRef.current = toneValue
+        lastImportedUrlRef.current = data.cipher_url || url
+        lastImportedToneRef.current = data.tone
         return true
       } catch {
         setImportError('Erro de rede. Tente de novo ou use a aba PDF.')
@@ -216,7 +246,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
         setLoadingToneForImport(null)
       }
     },
-    [applyImportedCifra]
+    [applyImportedCifra, useV2, importContext?.controller, importContext?.scope, title, artist, youtubeUrl, youtubeVideoTitle, song, ownerMinisterId]
   )
 
   useEffect(() => {
@@ -236,6 +266,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
     setYoutubeSearchError(null)
     setImportError(null)
     setImportingCifra(false)
+    setOriginalCifra(song?.cifra_original ?? null)
+    setCapoConfirmed(false)
+    setConfirmedTone('')
+    setOwnerMinisterId(song?.minister_id ?? currentMinister?.id ?? '')
+    setPendingUrl(null)
     setLoadingToneForImport(null)
     lastYoutubeSearchKeyRef.current = null
     lastImportedUrlRef.current = null
@@ -278,6 +313,43 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
     setYoutubeQuery('')
   }, [open, song])
 
+  const draftOriginal = importContext?.snapshot.draft?.original
+  useEffect(() => {
+    if (!open || !importContext) return
+    const draft = importContext.controller.getSnapshot().draft
+    if (!draft || draft.songId !== song?.id) return
+    setCipherUrl(draft.url)
+    setTitle(draft.title ?? '')
+    setArtist(draft.artist ?? '')
+    setYoutubeUrl(draft.youtubeUrl ?? '')
+    setYoutubeVideoTitle(draft.youtubeVideoTitle ?? '')
+    setConfirmedTone(draft.confirmedTone ?? '')
+    setCapoConfirmed(draft.confirmedCapoFrets !== undefined)
+    setOwnerMinisterId(draft.ministerId || song?.minister_id || currentMinister?.id || '')
+    if (draft.original) {
+      setOriginalCifra(draft.original)
+      const desiredTone = draft.tone || draft.original.original_tone || ''
+      setTone(desiredTone)
+      setCapoFrets(draft.original.capo_frets ?? draft.confirmedCapoFrets ?? 0)
+      setAvailableTones(draft.original.transposition_supported ? toneOptions(desiredTone) : desiredTone ? [desiredTone] : [])
+      try {
+        const selected = transposeOriginal(draft.original, desiredTone, draft.confirmedTone)
+        setCifraContent(selected.lines)
+        setCifraContentKey(buildImportKey(draft.url, selected.tone))
+      } catch {
+        setCifraContent(draft.original.original_lines)
+        setCifraContentKey(null)
+      }
+    }
+  }, [open, song, useV2, draftOriginal])
+
+  useEffect(() => {
+    if (!importContext) return
+    const busy = ['starting', 'queued', 'extracting', 'validating'].includes(importContext.snapshot.phase)
+    setImportingCifra(busy)
+    if (importContext.snapshot.error) setImportError(importContext.snapshot.error.message)
+  }, [useV2, importContext?.snapshot.phase, importContext?.snapshot.error])
+
   useEffect(() => {
     const q = `${artist} ${title}`.trim()
     if (open && q.length >= 3) setYoutubeQuery(q)
@@ -285,11 +357,12 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
 
   useEffect(() => {
     if (!open || cifraTab !== 'link') return
-
     const url = ensureHttps(cipherUrl)
     if (!url || !isSupportedCifraUrl(url) || importingCifra) return
 
     const importKey = buildImportKey(url, tone)
+    if (cifraContent?.length && importKey === cifraContentKey) return
+    if (originalCifra) return
     if (importKey === lastAutoImportKeyRef.current) return
 
     if (importDebounceRef.current) clearTimeout(importDebounceRef.current)
@@ -308,7 +381,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
     return () => {
       if (importDebounceRef.current) clearTimeout(importDebounceRef.current)
     }
-  }, [cipherUrl, tone, open, cifraTab, importingCifra, importFromUrl])
+  }, [cipherUrl, tone, open, cifraTab, importingCifra, importFromUrl, cifraContent, cifraContentKey, originalCifra])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -367,12 +440,14 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
   const selectYoutubeVideo = (item: YouTubeSearchResult) => {
     setYoutubeUrl(youtubeWatchUrl(item.videoId))
     setYoutubeVideoTitle(item.title)
+    if (useV2) importContext?.controller.updateDraft({ youtubeUrl: youtubeWatchUrl(item.videoId), youtubeVideoTitle: item.title })
     setYoutubeSearchError(null)
   }
 
   const clearYoutubeSelection = () => {
     setYoutubeUrl('')
     setYoutubeVideoTitle('')
+    if (useV2) importContext?.controller.updateDraft({ youtubeUrl: '', youtubeVideoTitle: '' })
   }
 
   const hasTextCifra = Boolean(cifraContent && cifraContent.some((l) => l.trim().length > 0))
@@ -382,6 +457,14 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
   const toneChips = availableTones.length > 0 ? availableTones : importReady ? [tone] : []
 
   const handleToneChipClick = (t: string) => {
+    if (originalCifra) {
+      try {
+        const selected = transposeOriginal(originalCifra, t, confirmedTone)
+        setTone(t); setCifraContent(selected.lines); setCifraContentKey(buildImportKey(ensureHttps(cipherUrl), t)); setImportError(null)
+        if (useV2 && importContext?.controller) importContext?.controller.updateDraft({ tone: t })
+      } catch { setImportError('Não é possível transpor esta cifra com segurança. Confira o tom original e possíveis tablaturas.') }
+      return
+    }
     if (importingCifra && loadingToneForImport === t) return
 
     setTone(t)
@@ -409,9 +492,10 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
   const currentCifraContentKey = buildImportKey(ensureHttps(cipherUrl), tone)
   const hasCurrentTextCifra = hasTextCifra && cifraContentKey === currentCifraContentKey
 
+  const hasRequiredConfirmations = !useV2 || !originalCifra || ((originalCifra.original_tone !== null || Boolean(confirmedTone)) && (originalCifra.capo_frets !== null || capoConfirmed))
   const canSave =
     cifraTab === 'link'
-      ? Boolean(!importingCifra && hasCurrentTextCifra && title.trim() && artist.trim() && tone.trim() && hasYoutube)
+      ? Boolean(!importingCifra && hasCurrentTextCifra && title.trim() && artist.trim() && tone.trim() && hasYoutube && (!useV2 || hasRequiredConfirmations))
       : Boolean(hasPdfSource && title.trim() && artist.trim() && tone.trim())
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -458,6 +542,16 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
     const supabase = createClient()
 
     try {
+      if (useV2 && cifraTab === 'link' && originalCifra) {
+        const response = await fetch(song ? `/api/songs/${song.id}` : '/api/songs', {
+          method: song ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title.trim(), artist: artist.trim(), tone, youtube_url: ensureHttps(youtubeUrl), youtube_video_title: youtubeVideoTitle || null, original: originalCifra, ...(confirmedTone ? { confirmedOriginalTone: confirmedTone } : {}), ...(capoConfirmed ? { confirmedCapoFrets: capoFrets } : {}), ...(ownerMinisterId ? { ministerId: ownerMinisterId } : {}) }),
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.code === 'SELECT_MINISTER' ? 'Selecione um ministro da igreja para esta música.' : result.code === 'RECORD_CHANGED' || response.status === 404 ? 'A música foi removida ou alterada. Revise antes de tentar novamente.' : result.error || 'Erro ao salvar música.')
+        importContext?.controller.discard()
+        onSuccess(); onOpenChange(false); return
+      }
       const resolvedYoutube = ensureHttps(youtubeUrl) || null
       const resolvedCipherUrl = ensureHttps(cipherUrl) || null
 
@@ -544,7 +638,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
         <Input
           id="title"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => { setTitle(e.target.value); if (useV2) importContext?.controller.updateDraft({ title: e.target.value }) }}
           placeholder="Nome da música"
           required
         />
@@ -556,7 +650,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
         <Input
           id="artist"
           value={artist}
-          onChange={(e) => setArtist(e.target.value)}
+          onChange={(e) => { setArtist(e.target.value); if (useV2) importContext?.controller.updateDraft({ artist: e.target.value }) }}
           placeholder="Artista ou banda"
           required
         />
@@ -568,7 +662,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
     toneChips.length > 0 && cifraTab === 'link' ? (
       <div className="flex flex-wrap gap-1.5">
         <span className="w-full text-xs text-muted-foreground">
-          Tom{required ? ' *' : ''} — toque em outro tom para recarregar a cifra
+          Tom{required ? ' *' : ''} — {originalCifra ? 'transposição local, sem nova busca' : 'toque em outro tom para recarregar a cifra'}
         </span>
         {loadingToneForImport && importingCifra && (
           <div
@@ -621,7 +715,7 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
         <Label htmlFor="tone" className="text-xs">
           Tom{required ? ' *' : ''}
         </Label>
-        <Select value={tone || undefined} onValueChange={setTone}>
+        <Select value={tone || undefined} onValueChange={(value) => { if (originalCifra) handleToneChipClick(value); else setTone(value) }}>
           <SelectTrigger id="tone" className={cn('font-mono', !tone && required && 'border-destructive/60')}>
             <SelectValue placeholder="Selecione o tom" />
           </SelectTrigger>
@@ -785,6 +879,11 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
                   </Button>
                 </div>
               )}
+              {pendingUrl && originalCifra && <div className="space-y-2 rounded-md border p-3">
+                <p className="text-sm">Descartar a importação anterior para usar este link?</p>
+                <Button type="button" variant="outline" onClick={() => { const next = pendingUrl; importContext?.controller.discard(); setOriginalCifra(null); setCifraContent(null); setCifraContentKey(null); setPendingUrl(null); setImportError(null); setCipherUrl(next); void importFromUrl(next, '') }}>Descartar anterior e importar</Button>
+                <Button type="button" variant="ghost" onClick={() => { setCipherUrl(importContext?.snapshot.draft?.url || ''); setPendingUrl(null); setImportError(null) }}>Voltar ao rascunho</Button>
+              </div>}
 
               {importReady && (
                 <div
@@ -813,6 +912,13 @@ export function SongForm({ open, onOpenChange, song, onSuccess, currentMinister,
                   )}
                   {songDetailsFields()}
                   {toneField(true)}
+                  {useV2 && originalCifra && <>
+                    <p className="text-xs text-muted-foreground">Fonte: {originalCifra.source === 'cifraclub' ? 'CifraClub' : 'Cifralize'} · <a href={originalCifra.cipher_url} target="_blank" rel="noopener noreferrer" className="underline">Conferir versão original</a></p>
+                    {originalCifra.original_tone === null && <div className="space-y-1"><Label htmlFor="original-tone">Confirme o tom original</Label><Input id="original-tone" value={confirmedTone} placeholder="Ex.: G ou Em" onChange={(e) => { setConfirmedTone(e.target.value); importContext?.controller.updateDraft({ confirmedTone: e.target.value }) }} /><Button type="button" variant="outline" onClick={() => handleToneChipClick(tone || confirmedTone)}>Aplicar tom confirmado</Button></div>}
+                    {originalCifra.capo_frets === null && <div className="space-y-1"><Label htmlFor="confirmed-capo">Capotraste não identificado — confirme a casa (0 = sem capo)</Label><Input id="confirmed-capo" type="number" min={0} max={12} value={capoFrets} onChange={(e) => { setCapoFrets(Number(e.target.value)); setCapoConfirmed(false) }} /><Button type="button" variant={capoConfirmed ? 'secondary' : 'outline'} onClick={() => { setCapoConfirmed(true); importContext?.controller.updateDraft({ confirmedCapoFrets: capoFrets }) }}>{capoConfirmed ? 'Capotraste confirmado' : 'Confirmar capotraste'}</Button></div>}
+                    {!originalCifra.transposition_supported && <p className="text-sm text-amber-700">Esta versão contém tablatura. A transposição automática está desativada.</p>}
+                  </>}
+                  {originalCifra && <pre aria-label="Prévia da cifra" className="max-h-52 overflow-auto whitespace-pre font-mono text-xs">{cifraContent?.join('\n')}</pre>}
                   {capoFrets > 0 && (
                     <p className="text-xs text-muted-foreground">Capo: {capoFrets}ª casa</p>
                   )}

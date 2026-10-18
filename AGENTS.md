@@ -1,10 +1,28 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the shared guidance for AI coding agents working in this repository. Keep it aligned with the implementation; do not treat historical plans as proof that a feature is implemented.
+
+## Agent Working Agreement
+
+- Read the relevant implementation and nearby patterns before editing. Keep changes focused on the user's request; do not add unrelated refactors, dependencies, or infrastructure.
+- Preserve existing user changes. Never discard, reset, or overwrite unrelated work.
+- Use pnpm and the existing UI, authentication, and data-access helpers. Do not invent helpers or endpoints: verify their existence first.
+- Never read or print secret-bearing `.env` files, tokens, cookies, service-role keys, or production credentials. Use documented variable names and placeholders. Ask for sanitized diagnostics if configuration is needed.
+- Do not run migrations, backfills, data rewrites, production requests, notification delivery, deployments, or destructive commands without explicit authorization for the target environment. A development server can still connect to a production database.
+- Treat authentication, RLS, tenant boundaries, impersonation, and service-role access as security-sensitive. Follow the invariants below even when nearby legacy code does not.
+- For schema changes, add a dedicated SQL migration following the existing naming conventions; do not rewrite previously applied migrations. Include constraints, indexes, tenant isolation, and a safe verification procedure as appropriate. Creating a migration does not authorize running it.
+- For behavior changes, add or update tests when a test harness exists. Otherwise describe concrete manual checks and explicitly disclose the lack of automated coverage; do not add a new test framework unless it is within scope.
+
+### Definition of Done
+
+- Review the final diff for unintended changes, secrets, tenant leaks, and missing error handling.
+- Run the relevant available checks described below for code changes. For documentation-only changes, review accuracy and run `git diff --check`; application builds are not required.
+- If a check fails, distinguish pre-existing failures from regressions where possible. Do not silently weaken types, validation, RLS, or checks to make a command pass.
+- Report what changed, which checks actually ran and their results, and any unverified behavior, manual steps, or migrations still required. Never claim tests passed when they were not run.
 
 ## Project Overview
 
-**Worship Flow** is a Next.js web application for managing music repertoires and schedules for worship ministries. It includes role-based authentication (admin/minister), music management with cifra/YouTube links, and quarterly schedule management with email notifications.
+**Worship Flow** is a multitenant Next.js web application for managing music repertoires and schedules for worship ministries. Operational data is isolated by church (`church_id`), with church-level roles and separate platform administration/impersonation. Features include music management with cifra/YouTube links and schedule management with email notifications.
 
 **Tech Stack**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Supabase (Auth + Postgres + RLS), pnpm
 
@@ -20,8 +38,17 @@ pnpm prod             # Build and start production server
 **Build & Testing**
 ```bash
 pnpm build            # Build for production
-pnpm lint             # Run ESLint on all files
+pnpm exec tsc --noEmit # Explicit TypeScript check (no typecheck script yet)
+pnpm test:cifra       # Cifra import tests (vitest, jsdom)
+pnpm lint             # Intended ESLint check; currently incomplete (see below)
+git diff --check      # Check patch whitespace/errors
 ```
+
+**Current validation limitations**:
+- `next.config.mjs` enables `typescript.ignoreBuildErrors`; a successful build is NOT proof of type safety. Run the explicit TypeScript check for TypeScript changes.
+- `package.json` defines `lint`, but does not currently declare ESLint or a versioned ESLint configuration. Report this limitation rather than claiming lint passed or installing tools implicitly.
+- There is no project test script or configured automated test suite yet. Do not invent `pnpm test` results. Prioritize tenant isolation, role authorization, impersonation, and repertoire/schedule flows when tests are introduced.
+- Builds and checks may need dependencies or environment configuration. If blocked, report the exact limitation without accessing secrets or production to unblock them.
 
 **Data Management**
 ```bash
@@ -32,7 +59,7 @@ pnpm audit:tones:fix           # Fix individual song tones
 pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
 ```
 
-> **Note on dev mode**: The dev script uses WATCHPACK_POLLING and CHOKIDAR_USEPOLLING for Windows file watching compatibility.
+> **Note on dev mode**: The dev script uses Windows `set` syntax with WATCHPACK_POLLING and CHOKIDAR_USEPOLLING. Do not assume it works unchanged in Linux/macOS shells.
 
 ## Architecture
 
@@ -44,10 +71,11 @@ pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
   - `app/repertoire/` — View minister's scheduled songs
   - `app/schedule/` — Schedule views and admin builder
   - `app/api/` — Backend API endpoints (grouped by feature: `/schedule`, `/songs`, `/notifications`, etc.)
-  - `app/api/notifications/schedule/` — Email reminder scheduling (7 days, 1 day, publish notifications)
+  - `app/api/notifications/schedule/` — Configurable offset reminders, publish notifications, and queue processing
   
 - **`lib/`** — Utilities and clients
   - `lib/supabase/` — Supabase client factories (server, client, admin)
+  - `lib/auth-context.ts` — Authenticated church context, platform-admin authorization, and impersonation helpers
   - `lib/types.ts` — Core TypeScript interfaces (Minister, Song, RepertoireItem, etc.)
   - `lib/permissions.ts` — Permission checks (e.g., `hasLeadVoiceRole()`)
   - `lib/routes.ts` — Route constants for navigation
@@ -64,6 +92,10 @@ pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
 - **`scripts/`** — Migration scripts (SQL) and utilities (Node.js)
   - SQL migrations: create tables, RLS policies, schedule rehearsal tables
   - Node.js backfill/audit utilities for data management
+
+- **`sdd/`** — Feature specifications and implementation plans; verify their status against code
+  - `sdd/plan/simple-tenant-multitenancy-plan.md` — Tenant-isolation principles and migration plan
+  - `sdd/plan/new-church-setup-readme.md` — Church onboarding and isolation verification guidance
 
 ### Core Entities & Relationships
 
@@ -86,15 +118,26 @@ pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
 
 - **Supabase Auth** with implicit flow for mobile/webview compatibility
 - **Role-based access control** via RLS policies and `lib/permissions.ts`
-- **Roles**: `admin` (full access), `minister` (own songs/schedule), `midia` (limited access)
-- Admin can manage ministers; ministers see only their own data
-- User identification via `supabase.auth.getUser()` and mapping to `ministers` table
+- **Church roles**: `admin`, `minister`, `midia`. Church admins are not global admins; role-specific access must stay within the effective church.
+- Resolve church-scoped server access through `getCurrentMinisterContext()` in `lib/auth-context.ts`; use `{ requireAdmin: true }` for church-admin-only operations.
+- Platform administration is separate from `ministers.role`, uses `platform_admins`, and must be authorized with `authenticatePlatformAdmin()`.
+
+### Tenant Isolation and Impersonation (Mandatory)
+
+- Resolve the effective `churchId` from authenticated server context, including authorized impersonation. Never trust a `church_id` from request bodies, query parameters, or client state as authorization.
+- Every query on tenant-scoped data must be scoped by `church_id` or protected by verified equivalent RLS. Inspect the actual schema and policies rather than assuming RLS covers a new access path.
+- `createAdminClient()` bypasses RLS. For church-scoped operations, explicitly filter reads, updates, and deletes by the effective `churchId`, and set `church_id` from server context on inserts. A filter by record ID alone is insufficient.
+- Validate that referenced records (minister, song, quarter, assignment, event, etc.) belong to the same effective church before linking them. Validate permissions in addition to tenant ownership.
+- The impersonation cookie alone is not authorization. Reuse the context helpers, which verify platform-admin membership. Do not implement a second cookie-based authorization path.
+- During impersonation, use the effective `churchId`; do not derive it from the platform user's original minister record. Do not assume the context's `ministerId` identifies a minister in the impersonated church.
+- Keep intentionally cross-tenant platform operations and scheduled jobs separate from ordinary church routes. Verify their platform-admin/cron authorization and preserve per-church scoping during processing; do not turn a church endpoint into an unscoped service-role query.
+- Check isolation for all affected access paths: pages, APIs, scripts, storage, integrations, and notifications. Do not expose another church's records through related-record lookups or error responses.
 
 ### Key Features
 
 **1. Song Management**
 - Ministers create/edit/delete their own songs
-- Admin can view all songs, manage musician assignments
+- Admin can view songs and manage musician assignments within the effective church, subject to feature-specific permissions
 - Each song tracks: title, artist, tone, cipher URL, YouTube URL, capo frets, cifra PDF content
 - Tones are validated against `TONES` constant (13 major + 13 minor keys)
 
@@ -106,8 +149,8 @@ pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
 - Ministers view their assigned songs for upcoming services
 
 **3. Email Notifications**
-- Cron workflow (GitHub Actions) runs daily at 11:00 UTC
-- Enqueues 7-day and 1-day reminders for upcoming services
+- Cron workflow (`.github/workflows/schedule-email-reminders.yml`) is scheduled every 15 minutes; GitHub Actions execution is best-effort
+- Enqueues configurable offset reminders for upcoming services
 - Sends schedule-published notifications
 - Email queue processed asynchronously
 - Configurable test recipient for development
@@ -127,31 +170,32 @@ pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
 
 ### Server-Side Data Fetching
 - Use `lib/supabase/server.ts` for server components and API routes
-- Authenticates via cookies; respects RLS policies automatically
-- Common pattern in page components:
-  ```typescript
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data } = await supabase.from('table').select('*')
-  ```
+- The session client uses cookies and is subject to RLS, but does not replace permission checks or effective-church scoping, especially during impersonation.
+- Resolve context before church-scoped access. Example for a session/RLS-backed query (not a complete impersonation data-access implementation):
+   ```typescript
+   import { getCurrentMinisterContext } from '@/lib/auth-context'
+   import { createClient } from '@/lib/supabase/server'
+
+   const { churchId } = await getCurrentMinisterContext()
+   const supabase = await createClient()
+   const { data, error } = await supabase
+     .from('songs')
+     .select('id, title')
+     .eq('church_id', churchId)
+   // Handle errors and apply any additional role/ownership restrictions.
+   ```
+- For impersonation-capable operations, follow the relevant existing route's authorized access pattern. Do not disable RLS or switch to the admin client merely to fix an access error.
 
 ### Client-Side Data Fetching
 - Use `lib/supabase/client.ts` for client components (`'use client'`)
 - Call API routes instead of querying Supabase directly for complex logic
-- Example: fetch `/api/songs` instead of direct `supabase.from('songs')`
+- Reuse actual existing API routes where available; verify their paths and authorization rather than assuming a generic `/api/songs` endpoint exists.
 
 ### API Route Convention
 - All API routes are async and return `NextResponse`
-- Authenticate and authorize early; use `createAdminClient()` for operations that bypass RLS (rare)
+- Authenticate and authorize early using the appropriate context helper; service-role operations require explicit tenant scoping as described above
 - Validate request bodies with Zod when receiving form data
-- Example structure:
-  ```typescript
-  export async function POST(request: Request) {
-    const { user } = await authenticateRequest()
-    const body = await request.json()
-    // validate, execute, return NextResponse.json()
-  }
-  ```
+- Handle `AuthContextError` with its intended HTTP status; do not turn authentication/authorization failures into generic server errors. Follow nearby route patterns for validation and database errors.
 
 ### Form Handling
 - Use `react-hook-form` + `zod` for validation
@@ -167,15 +211,16 @@ pnpm audit:tones:rewrite       # Rewrite cipra content based on tone
 ## Database Notes
 
 **RLS Policies**:
-- Admins bypass certain policies to manage all data
-- Ministers only see/edit their own songs
+- Church admin privileges do not grant cross-church access
+- Apply feature-specific role/ownership rules in addition to church isolation
 - Schedule assignments controlled by role and quarter ownership
 - Check `scripts/` SQL files for exact policy definitions
 
 **Migrations**:
 - Scripts numbered sequentially (001, 003, 004, etc.)
-- Always run in order; some depend on earlier tables
-- Import new migrations in Supabase SQL Editor before deploying
+- Read each script's header and dependencies before proposing an execution order. Not every SQL file is an executable migration.
+- `scripts/001_create_tables.sql` is a reference snapshot explicitly marked not to execute; do not use it as a clean-database bootstrap or run every SQL file blindly.
+- Document required migrations and verification steps for deployment. Do not execute them against any database without explicit authorization and a confirmed target environment.
 
 ## Environment Variables
 
@@ -196,14 +241,15 @@ SCHEDULE_EMAIL_TEST_RECIPIENT=<optional-test-email>
 ## Development Tips
 
 **Debugging**:
-- Use `console.log()` freely; it appears in server terminal and browser console
+- Use focused diagnostics; never log credentials, auth headers, cookies, or sensitive user/church data. Remove temporary debugging before delivery.
 - Check Supabase dashboard for RLS errors during development
 - YouTube search and cipher fetch can be slow; add loading spinners for UX
 
 **Testing Workflows**:
-- Test auth flows by creating test accounts in Supabase
-- Test admin vs. minister access by logging in as different roles
-- For email notifications, set `SCHEDULE_EMAIL_TEST_RECIPIENT` to intercept all mail
+- Use an explicitly approved test environment and synthetic accounts/data; do not create accounts or modify a shared/production database implicitly
+- Check unauthenticated requests, each affected role, and access attempts between two churches (including foreign record IDs in reads and mutations)
+- For impersonation changes, check normal church access, authorized impersonation, rejected non-platform-admin attempts, and exiting impersonation
+- For notification changes, verify the effective church's email mode and recipient routing. A configured `SCHEDULE_EMAIL_TEST_RECIPIENT` is not permission to send email; obtain authorization before triggering delivery
 - Use browser DevTools → Application → Manifest to verify PWA installability
 
 **Common Issues**:

@@ -12,7 +12,7 @@ export async function GET() {
       .eq('id', context.churchId)
       .maybeSingle()
 
-    return NextResponse.json({ context, church: church ?? null })
+    return NextResponse.json({ context, church: church ?? null, features: { cifraImportV2: process.env.CIFRA_IMPORT_V2_ENABLED === 'true' } }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     if (error instanceof AuthContextError) {
       return NextResponse.json({ error: error.message }, { status: error.status })

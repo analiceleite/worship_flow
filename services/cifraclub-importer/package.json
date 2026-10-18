@@ -7,6 +7,9 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "cheerio": "1.2.0",
+    "ipaddr.js": "2.2.0",
+    "zod": "3.25.76",
     "playwright": "1.49.1"
   }
 }
