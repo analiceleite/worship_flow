@@ -1,0 +1,15 @@
+.git
+.opencode
+**/node_modules
+.next
+.next-local
+.env
+.env.*
+**/.env
+**/.env.*
+supabase/.local
+supabase/.temp
+supabase/.branches
+supabase/migrations
+*.tsbuildinfo
+**/*.log

@@ -1,7 +1,6 @@
-import ResetPasswordClient from '../../reset/ResetPasswordClient'
+import ResetPasswordClient from '../ResetPasswordClient'
 
-export default function Page({ params }: { params: { token: string } }) {
-  const token = params.token || null
-  console.log('[page /auth/reset/:token] params.token=', token)
-  return <ResetPasswordClient token={token} />
+// Older links intentionally require a fresh recovery request.
+export default function Page() {
+  return <ResetPasswordClient legacy />
 }

@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { ROUTES } from '@/lib/routes'
+import { serverSupabaseFetch } from '@/lib/supabase/server-fetch'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -11,7 +12,6 @@ export async function middleware(request: NextRequest) {
 
   const isAuthFlow = request.nextUrl.searchParams.has('code')
 
-  console.log('[middleware] incoming:', request.nextUrl.href)
   console.log('[middleware] isAuthFlow:', isAuthFlow)
 
   if (isAuthFlow) {
@@ -22,6 +22,7 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: serverSupabaseFetch },
       // cast to any to satisfy differing cookie method typings in @supabase/ssr
       cookies: ({
         // read cookie value from incoming request
@@ -108,6 +109,12 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route =>
     request.nextUrl.pathname.startsWith(route)
   )
+  const isRecoveryRoute = request.nextUrl.pathname === ROUTES.AUTH_RESET || request.nextUrl.pathname.startsWith(`${ROUTES.AUTH_RESET}/`)
+  if (isRecoveryRoute) {
+    response.headers.set('Cache-Control', 'no-store')
+    response.headers.set('Referrer-Policy', 'no-referrer')
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  }
 
   // Se não está autenticado e tenta acessar rota protegida
   if (!user && !isPublicRoute && !isAuthFlow) {
@@ -164,7 +171,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Se está autenticado e tenta acessar login/forgot-password, redireciona para home
-  if (user && isPublicRoute && request.nextUrl.pathname !== ROUTES.AUTH_SET_PASSWORD && !isAuthFlow) {
+  if (user && isPublicRoute && request.nextUrl.pathname !== ROUTES.AUTH_SET_PASSWORD && !isRecoveryRoute && !isAuthFlow) {
     const { data: minister } = await supabase
       .from('ministers')
       .select('is_active, role')

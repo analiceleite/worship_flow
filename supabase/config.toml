@@ -1,0 +1,67 @@
+# Local Docker development only. Not linked to a hosted Supabase project.
+project_id = "worship_flow_local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+auto_expose_new_tables = true
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+health_timeout = "2m"
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+# Synthetic users are created through local Auth by pnpm local:seed.
+enabled = false
+sql_paths = []
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+openai_api_key = ""
+
+[local_smtp]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.vector]
+enabled = false
+
+[realtime]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3001"
+additional_redirect_urls = ["http://127.0.0.1:3001/auth/reset", "http://127.0.0.1:3001/auth/set-password"]
+jwt_expiry = 3600
+enable_signup = false
+enable_anonymous_sign_ins = false
+minimum_password_length = 6
+
+[auth.email]
+enabled = true
+enable_confirmations = false
+secure_password_change = false
+max_frequency = "1s"
+otp_expiry = 1800
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.LOCAL_SUPABASE === 'true' ? '.next-local' : '.next',
   typescript: {
     ignoreBuildErrors: true,
   },

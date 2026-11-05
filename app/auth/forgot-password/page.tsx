@@ -42,8 +42,8 @@ export default function ForgotPasswordPage() {
       }
 
       setSuccess(true)
-    } catch (err: any) {
-      setError(err.message || 'Erro ao enviar e-mail')
+    } catch {
+      setError('Não foi possível processar a solicitação. Tente novamente.')
     } finally {
       setLoading(false)
     }
@@ -57,9 +57,9 @@ export default function ForgotPasswordPage() {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
             <CheckCircle2 className="h-7 w-7 text-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">E-mail enviado!</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Verifique sua caixa de entrada e clique no link para redefinir sua senha.
+          <h1 className="text-xl font-bold text-foreground">Verifique seu e-mail</h1>
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            Se houver uma conta elegível, você receberá as instruções. Verifique também a pasta de spam. O envio pode levar alguns minutos.
           </p>
           <Link href={ROUTES.AUTH_LOGIN} className="mt-4 inline-block">
             <Button variant="outline" className="w-full">
