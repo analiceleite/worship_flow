@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 import { Bell, CalendarCheck } from 'lucide-react'
+import { getAppVersion } from '@/lib/release-notes'
 
 const ALARM_OPTIONS = [
   { value: 1440, label: '1 dia antes' },
@@ -179,6 +180,16 @@ export default function ProfilePage() {
 
         <div className="space-y-6">
           {/* Google Calendar Connection Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Sobre o Worship Flow</CardTitle>
+              <CardDescription>Versão em execução</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">{getAppVersion() ? `Versão ${getAppVersion()}` : 'Versão não informada neste ambiente'}</p>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

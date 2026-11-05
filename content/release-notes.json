@@ -1,0 +1,20 @@
+[
+  {
+    "id": "wf-31-password-reset-reliability",
+    "version": "1.0.0",
+    "date": "2026-11-05",
+    "title": "Redefinição de senha corrigida",
+    "summary": "O fluxo de recuperação de conta foi corrigido para ajudar você a voltar a acessar o Worship Flow quando esquecer sua senha.",
+    "published": true,
+    "notify": false
+  },
+  {
+    "id": "wf-34-release-notes-center",
+    "version": "1.1.0",
+    "date": "2026-11-05",
+    "title": "Acompanhe as novidades do Worship Flow",
+    "summary": "A nova central reúne melhorias recentes em um só lugar e indica quando há novidades para você consultar, sem interromper suas tarefas.",
+    "published": true,
+    "notify": true
+  }
+]

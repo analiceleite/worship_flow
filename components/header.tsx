@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3, Settings } from 'lucide-react'
+import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3, Settings, Sparkles } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/lib/routes'
@@ -54,6 +54,12 @@ const navigation = [
     icon: FileSpreadsheet,
   },
   {
+    name: 'Novidades',
+    description: 'Conheça as melhorias recentes',
+    href: ROUTES.RELEASE_NOTES,
+    icon: Sparkles,
+  },
+  {
     name: 'Usuários',
     description: 'Administrar contas e permissões dos usuários',
     href: ROUTES.USERS,
@@ -71,11 +77,18 @@ export function Header() {
   const [userAvatar, setUserAvatar] = useState<string | null>(null)
   const [impersonatedChurch, setImpersonatedChurch] = useState<{ id: string; name: string; slug: string } | null>(null)
   const [activeChurch, setActiveChurch] = useState<{ id: string; name: string; slug: string; environment?: string } | null>(null)
+  const [unreadReleaseNotes, setUnreadReleaseNotes] = useState(0)
 
   useEffect(() => {
     loadUser()
     loadImpersonation()
     loadActiveChurch()
+    const clearReleaseNoteIndicator = () => setUnreadReleaseNotes(0)
+    window.addEventListener('release-notes-read', clearReleaseNoteIndicator)
+    fetch('/api/release-notes').then(async (response) => {
+      if (response.ok) setUnreadReleaseNotes((await response.json()).unreadCount ?? 0)
+    }).catch(() => {})
+    return () => window.removeEventListener('release-notes-read', clearReleaseNoteIndicator)
   }, [])
 
   const loadActiveChurch = async () => {
@@ -185,7 +198,8 @@ export function Header() {
                     )}
                   >
                     <item.icon className="h-4 w-4" />
-                    {item.name}
+                    <span>{item.name}</span>
+                    {item.href === ROUTES.RELEASE_NOTES && unreadReleaseNotes > 0 && <span aria-label={`${unreadReleaseNotes} novidades não lidas`} className="h-2 w-2 rounded-full bg-primary" />}
                   </Link>
                 )
               })}
@@ -278,7 +292,7 @@ export function Header() {
                           <div className="flex items-center gap-3">
                             <item.icon className="h-5 w-5 shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium leading-none">{item.name}</p>
+                              <p className="flex items-center gap-2 text-sm font-medium leading-none">{item.name}{item.href === ROUTES.RELEASE_NOTES && unreadReleaseNotes > 0 && <span aria-label="Novidades não lidas" className="h-2 w-2 rounded-full bg-primary" />}</p>
                               <p
                                 className={cn(
                                   'mt-1 text-xs',

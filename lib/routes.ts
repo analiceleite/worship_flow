@@ -9,6 +9,7 @@ export const ROUTES = {
   SCHEDULE_ADMIN_BUILDER: '/schedule/admin/builder',
   SCHEDULE_ADMIN_QUARTERS: '/schedule/admin/quarters',
   PROFILE: '/profile',
+  RELEASE_NOTES: '/release-notes',
   PLATFORM_CHURCHES: '/platform/churches',
   AUTH_LOGIN: '/auth/login',
   AUTH_SET_PASSWORD: '/auth/set-password',
