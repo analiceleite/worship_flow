@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Header } from '@/components/header'
 import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -73,6 +72,7 @@ interface SavePayload {
 	event_type: 'thursday' | 'sunday'
 	minister_id: string | null
 	minister_name: string | null
+	minister_avatar_url?: string | null
 	is_trainee: boolean
 }
 
@@ -255,7 +255,7 @@ function EscalaBuilderContent() {
 			minister_id: payload.minister_id,
 			is_trainee: payload.is_trainee,
 			minister: payload.minister_id && payload.minister_name
-				? { id: payload.minister_id, name: payload.minister_name }
+				? { id: payload.minister_id, name: payload.minister_name, avatar_url: payload.minister_avatar_url ?? null }
 				: null,
 		}
 
@@ -541,7 +541,6 @@ function EscalaBuilderContent() {
 
 	return (
 		<div className="min-h-screen bg-background">
-			<Header />
 
 			<main className="mx-auto  px-4 py-6 sm:px-6 lg:px-8">
 				<div className="mb-6 flex flex-wrap items-start justify-between gap-3">

@@ -16,5 +16,24 @@
     "summary": "A nova central reúne melhorias recentes em um só lugar e indica quando há novidades para você consultar, sem interromper suas tarefas.",
     "published": true,
     "notify": true
+  },
+  {
+    "id": "wf-110-responsive-navigation",
+    "version": "1.1.0",
+    "date": "2026-11-05",
+    "title": "Navegação mais organizada no computador e no celular",
+    "summary": "No computador, o menu agora fica à esquerda e pode ser recolhido para liberar espaço. As opções estão agrupadas para facilitar o acesso às tarefas e à administração. No celular, o menu continua abrindo pela direita. Novidades exibe um ícone de alerta enquanto houver atualizações que você ainda não leu, e a escolha do tema claro ou escuro agora fica em Meu Perfil, na seção Aparência.",
+    "published": true,
+    "notify": true
+  },
+  {
+    "id": "wf-110-profile-photos",
+    "version": "1.1.0",
+    "date": "2026-11-05",
+    "title": "Sua foto de perfil no Worship Flow",
+    "summary": "Agora você pode adicionar, trocar ou remover sua foto em Meu Perfil, com pré-visualização antes de salvar. A foto aparece no menu da conta, no seu perfil, na escala, no repertório e ao lado de quem adicionou cada música no repertório geral. Administradores também veem as fotos na lista de usuários. São aceitas imagens JPG, PNG e WebP de até 2 MB; quem não tem foto continua sendo identificado pelas iniciais do nome.",
+    "href": "/profile",
+    "published": true,
+    "notify": true
   }
 ]

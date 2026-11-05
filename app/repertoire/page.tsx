@@ -1,12 +1,13 @@
 'use client'
 
+import { UserAvatar } from '@/components/user-avatar'
+
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Song, Minister, RepertoireItem } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
 import { openPdfCifraInSystemBrowserFromUserGesture } from '@/lib/open-cifra-pdf-browser'
-import { Header } from '@/components/header'
 import { CifraViewer } from '@/components/cifra-viewer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -626,7 +627,6 @@ export default function RepertorioPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <Header />
 
             <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 
@@ -967,10 +967,14 @@ export default function RepertorioPage() {
                                                     <span className="truncate text-sm font-semibold text-foreground">{item.song?.title}</span>
                                                     <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{item.song?.tone}</span>
                                                 </div>
-                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                                    {item.song?.artist}
-                                                    {item.minister && <> · <span>{item.minister.name}</span></>}
-                                                </p>
+                                                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                                                    <span className="truncate">{item.song?.artist}</span>
+                                                    {item.minister && <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                                                        <span aria-hidden="true">·</span>
+                                                        <UserAvatar name={item.minister.name} avatarUrl={item.minister.avatar_url} className="h-5 w-5 text-2xl" />
+                                                        <span className="truncate">{item.minister.name}</span>
+                                                    </span>}
+                                                </div>
                                             </div>
                                             <div className="flex shrink-0 items-center">
                                                 {item.song && (item.song.cifra_pdf_path || (item.song.cifra_content && item.song.cifra_content.length > 0)) ? (

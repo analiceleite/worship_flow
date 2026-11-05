@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { format, getISOWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Header } from '@/components/header'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
 import { ROUTES } from '@/lib/routes'
@@ -329,7 +328,6 @@ export default function EscalaPage() {
 
 	return (
 		<div className="min-h-screen bg-background">
-			<Header />
 
 			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 				<div className="mb-6">

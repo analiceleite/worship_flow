@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const adminSupabase = createAdminClient()
   let query = adminSupabase
     .from('ministers')
-    .select('id, name, email')
+    .select('id, name, email, avatar_url')
     .eq('church_id', context.churchId)
     .eq('is_active', true)
     .order('name', { ascending: true })

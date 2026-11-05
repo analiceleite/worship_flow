@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Header } from '@/components/header'
 import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,7 +56,6 @@ export default function EscalaQuartersPage() {
 
 	return (
 		<div className="min-h-screen bg-background">
-			<Header />
 
 			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 				<div className="mb-6 flex flex-wrap items-start justify-between gap-3">

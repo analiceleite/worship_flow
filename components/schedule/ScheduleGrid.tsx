@@ -5,6 +5,7 @@ import { format, getISOWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Check, ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { UserAvatar } from '@/components/user-avatar'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import {
@@ -32,6 +33,7 @@ export interface ScheduleRole {
 export interface AssignmentMinister {
     id: string
     name: string
+    avatar_url?: string | null
 }
 
 export interface ScheduleAssignment {
@@ -58,6 +60,7 @@ interface MinisterOption {
     id: string
     name: string
     email: string | null
+    avatar_url?: string | null
 }
 
 interface SavePayload {
@@ -68,6 +71,7 @@ interface SavePayload {
     event_type: 'thursday' | 'sunday'
     minister_id: string | null
     minister_name: string | null
+    minister_avatar_url?: string | null
     is_trainee: boolean
 }
 
@@ -362,6 +366,7 @@ function CellEditor({
             event_type: assignment.event_type,
             minister_id: minister?.id ?? null,
             minister_name: minister?.name ?? null,
+            minister_avatar_url: minister?.avatar_url ?? null,
             is_trainee: minister ? assignment.is_trainee : false,
         })
         setOpen(false)
@@ -378,6 +383,7 @@ function CellEditor({
             event_type: assignment.event_type,
             minister_id: assignment.minister_id,
             minister_name: assignment.minister?.name ?? null,
+            minister_avatar_url: assignment.minister?.avatar_url ?? null,
             is_trainee: checked,
         })
     }
@@ -396,8 +402,9 @@ function CellEditor({
                     ].join(' ')}
                     disabled={saving}
                 >
-                    <span className="truncate">
-                        {assignment.minister?.name ?? (ministerRoleFilter === 'midia' ? 'Selecionar mídia' : 'Selecionar ministro')}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        {assignment.minister && <UserAvatar name={assignment.minister.name} avatarUrl={assignment.minister.avatar_url} className="h-5 w-5 text-2xl" />}
+                        <span className="truncate">{assignment.minister?.name ?? (ministerRoleFilter === 'midia' ? 'Selecionar mídia' : 'Selecionar ministro')}</span>
                     </span>
                     {assignment.minister_id && assignment.is_trainee && (
                         <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
@@ -433,6 +440,7 @@ function CellEditor({
                             {options.map((option) => (
                                 <CommandItem key={option.id} value={option.id} onSelect={() => handlePick(option)}>
                                     <Check className={assignment.minister_id === option.id ? 'opacity-100' : 'opacity-0'} />
+                                    <UserAvatar name={option.name} avatarUrl={option.avatar_url} className="h-7 w-7 text-3xl" />
                                     <div className="min-w-0">
                                         <p className="truncate">{option.name}</p>
                                         {option.email && (
@@ -499,7 +507,7 @@ export function ScheduleGrid({
             return (
                 <div
                     className={[
-                        'flex h-8 items-center rounded-md border px-2 text-xs',
+                        'flex h-9 items-center gap-1.5 rounded-md border px-2 text-xs',
                         assignment.minister_id
                             ? assignment.minister_id === highlightedMinisterId
                                 ? 'border-primary/40 bg-primary/10 font-medium text-foreground'
@@ -507,6 +515,7 @@ export function ScheduleGrid({
                             : 'border-dashed border-muted-foreground/30 bg-muted/20 text-muted-foreground',
                     ].join(' ')}
                 >
+                    {assignment.minister && <UserAvatar name={assignment.minister.name} avatarUrl={assignment.minister.avatar_url} className="h-5 w-5 text-2xl" />}
                     <span className="truncate">{assignment.minister?.name ?? 'Vazio'}</span>
                     {assignment.minister_id && assignment.is_trainee && (
                         <span className="ml-1.5 shrink-0 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
@@ -592,43 +601,7 @@ export function ScheduleGrid({
 
                                     return (
                                         <TableCell key={cellKey}>
-                                            {readOnly ? (
-                                                <div
-                                                    className={[
-                                                        'flex h-9 items-center rounded-md border px-2 text-xs',
-                                                        assignment.minister_id
-                                                            ? assignment.minister_id === highlightedMinisterId
-                                                                ? 'border-primary/40 bg-primary/10 font-medium text-foreground'
-                                                                : 'border-border bg-background text-foreground'
-                                                            : 'border-dashed border-muted-foreground/30 bg-muted/20 text-muted-foreground',
-                                                    ].join(' ')}
-                                                >
-                                                    <span className="truncate">{assignment.minister?.name ?? 'Vazio'}</span>
-                                                    {assignment.minister_id && assignment.is_trainee && (
-                                                        <span className="ml-1.5 shrink-0 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
-                                                            aprendiz
-                                                        </span>
-                                                    )}
-                                                    {assignment.minister_id === highlightedMinisterId && highlightedMinisterId && (
-                                                        <span className="ml-auto shrink-0 pl-1 text-[10px] text-primary">você</span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-1">
-                                                    {onSaveAssignment ? (
-                                                        <CellEditor
-                                                            assignment={assignment}
-                                                            saving={Boolean(savingKeys[assignment.id])}
-                                                            onSave={onSaveAssignment}
-                                                            ministerRoleFilter={ministerRoleFilterFor(role)}
-                                                        />
-                                                    ) : (
-                                                        <div className="flex h-9 items-center rounded-md border border-border bg-background px-2 text-xs text-muted-foreground">
-                                                            Seleção indisponível
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
+                                            {renderCell(assignment, cellKey, role)}
                                         </TableCell>
                                     )
                                 })}

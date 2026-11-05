@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3, Settings, Sparkles } from 'lucide-react'
+import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3, Settings, Sparkles, PanelLeftClose, PanelLeftOpen, CircleAlert } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/lib/routes'
+import { getActiveNavigationHref } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
-import { ThemeToggle } from '@/components/theme-toggle'
 import {
   Sheet,
   SheetContent,
@@ -68,7 +68,10 @@ const navigation = [
   },
 ]
 
-export function Header() {
+export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
+  desktopMenuCollapsed: boolean
+  onDesktopMenuToggle: () => void
+}) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -80,16 +83,42 @@ export function Header() {
   const [unreadReleaseNotes, setUnreadReleaseNotes] = useState(0)
 
   useEffect(() => {
+    const updateAvatar = (event: Event) => {
+      setUserAvatar((event as CustomEvent<{ avatarUrl: string | null }>).detail.avatarUrl)
+    }
+    window.addEventListener('profile-avatar-updated', updateAvatar)
+    return () => window.removeEventListener('profile-avatar-updated', updateAvatar)
+  }, [])
+
+  useEffect(() => {
     loadUser()
     loadImpersonation()
     loadActiveChurch()
-    const clearReleaseNoteIndicator = () => setUnreadReleaseNotes(0)
-    window.addEventListener('release-notes-read', clearReleaseNoteIndicator)
-    fetch('/api/release-notes').then(async (response) => {
-      if (response.ok) setUnreadReleaseNotes((await response.json()).unreadCount ?? 0)
-    }).catch(() => {})
-    return () => window.removeEventListener('release-notes-read', clearReleaseNoteIndicator)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    let latestRequest = 0
+    const refreshUnreadNotes = async () => {
+      const requestId = ++latestRequest
+      try {
+        const response = await fetch('/api/release-notes', { cache: 'no-store' })
+        if (!response.ok) return
+        const result = await response.json()
+        if (active && requestId === latestRequest) setUnreadReleaseNotes(result.unreadCount ?? 0)
+      } catch {
+        // Keep the last known indicator when the network is unavailable.
+      }
+    }
+    void refreshUnreadNotes()
+    window.addEventListener('release-notes-read', refreshUnreadNotes)
+    window.addEventListener('focus', refreshUnreadNotes)
+    return () => {
+      active = false
+      window.removeEventListener('release-notes-read', refreshUnreadNotes)
+      window.removeEventListener('focus', refreshUnreadNotes)
+    }
+  }, [pathname])
 
   const loadActiveChurch = async () => {
     try {
@@ -153,8 +182,86 @@ export function Header() {
     && (userRole !== 'midia' || item.href === ROUTES.REPERTOIRE)
   )
 
+  const primaryNavigation = visibleNavigation.filter(item => !item.adminOnly && item.href !== ROUTES.RELEASE_NOTES)
+  const secondaryNavigation = visibleNavigation.filter(item => item.href === ROUTES.RELEASE_NOTES)
+  const administrationNavigation = visibleNavigation.filter(item => item.adminOnly)
+  const activeHref = getActiveNavigationHref(pathname, visibleNavigation)
+
+  const renderNavigationItems = (items: typeof visibleNavigation, mobile = false) => items.map((item) => {
+    const isActive = item.href === activeHref
+    const isReleaseNotes = item.href === ROUTES.RELEASE_NOTES
+    const hasUnreadNotes = isReleaseNotes && unreadReleaseNotes > 0
+    const unreadLabel = `${unreadReleaseNotes} novidade${unreadReleaseNotes === 1 ? '' : 's'} não lida${unreadReleaseNotes === 1 ? '' : 's'}`
+    return (
+      <Link
+        key={item.name}
+        href={item.href}
+        aria-label={hasUnreadNotes ? `${item.name}: ${unreadLabel}` : item.name}
+        onClick={mobile ? () => setMobileMenuOpen(false) : undefined}
+        title={hasUnreadNotes ? unreadLabel : desktopMenuCollapsed && !mobile ? item.name : undefined}
+        aria-current={isActive ? 'page' : undefined}
+        className={cn(
+          'relative flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors',
+          isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+          desktopMenuCollapsed && !mobile && 'justify-center px-2'
+        )}
+      >
+        <item.icon className="h-5 w-5 shrink-0" />
+        {(!desktopMenuCollapsed || mobile) && <span className="min-w-0 flex-1 truncate">{item.name}</span>}
+        {hasUnreadNotes && <CircleAlert aria-hidden="true" className={cn(
+          'h-4 w-4 shrink-0',
+          isActive ? 'text-primary-foreground' : 'text-primary',
+          desktopMenuCollapsed && !mobile && 'absolute right-0 top-0 rounded-full bg-card'
+        )} />}
+      </Link>
+    )
+  })
+
   return (
-    <header className="sticky top-0 z-50 bg-card border-b border-border">
+    <>
+      <aside
+        data-wf-sidebar
+        data-state={desktopMenuCollapsed ? 'collapsed' : 'expanded'}
+        className={cn('fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-border bg-card md:flex', desktopMenuCollapsed ? 'w-16' : 'w-60')}
+      >
+        <div className={cn('flex h-16 shrink-0 items-center gap-3 border-b border-border px-4', desktopMenuCollapsed && 'justify-center px-2')}>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
+            <img src="/logo.jpg" alt="Logo da Igreja" className="h-full w-full object-contain" />
+          </div>
+          {!desktopMenuCollapsed && <div className="min-w-0"><span className="block truncate text-base font-semibold">Worship Flow</span>{activeChurch && <span className="block truncate text-xs text-muted-foreground">{activeChurch.name}{activeChurch.environment && activeChurch.environment !== 'production' ? ` · ${activeChurch.environment}` : ''}</span>}</div>}
+        </div>
+        <nav aria-label="Navegação principal" className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">
+          <div className="space-y-1">
+            {!desktopMenuCollapsed && <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Principal</p>}
+            {renderNavigationItems(primaryNavigation)}
+          </div>
+          {administrationNavigation.length > 0 && <div className="space-y-1">
+            {!desktopMenuCollapsed && <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Administração</p>}
+            {renderNavigationItems(administrationNavigation)}
+          </div>}
+          <div className="mt-auto space-y-1 border-t border-border pt-3">
+            {renderNavigationItems(secondaryNavigation)}
+            {userName && <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button variant="ghost" className={cn('h-14 w-full justify-start gap-3 px-3', desktopMenuCollapsed && 'justify-center px-2')} aria-label={`Conta de ${userName}`}>
+                <Avatar className="h-8 w-8 shrink-0"><AvatarImage src={userAvatar || undefined} alt={userName} /><AvatarFallback>{userName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}</AvatarFallback></Avatar>
+                {!desktopMenuCollapsed && <span className="min-w-0 text-left"><span className="block truncate text-sm">{userName}</span><span className="block text-xs font-normal text-muted-foreground">{userRole === 'admin' ? 'Administrador' : userRole === 'midia' ? 'Mídia' : 'Ministro'}</span></span>}
+              </Button></DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="start" side="right" forceMount>
+                <DropdownMenuLabel className="font-normal"><div className="flex flex-col space-y-1"><p className="text-sm font-medium">{userName}</p><p className="text-xs text-muted-foreground">{userRole === 'admin' ? 'Administrador' : userRole === 'midia' ? 'Mídia' : 'Ministro'}</p></div></DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild><Link href={ROUTES.PROFILE} className="cursor-pointer"><Settings className="mr-2 h-4 w-4" />Meu Perfil</Link></DropdownMenuItem>
+                <DropdownMenuItem onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>}
+          </div>
+        </nav>
+        <div className="border-t border-border p-2">
+          <Button variant="ghost" size="icon" className="h-11 w-full" onClick={onDesktopMenuToggle} aria-expanded={!desktopMenuCollapsed} aria-label={desktopMenuCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} title={desktopMenuCollapsed ? 'Expandir menu' : 'Recolher menu'}>
+            {desktopMenuCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </Button>
+        </div>
+      </aside>
+      <header className="sticky top-0 z-40 border-b border-border bg-card">
       {impersonatedChurch && (
         <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-950">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
@@ -163,7 +270,7 @@ export function Header() {
           </div>
         </div>
       )}
-      <nav className="mx-auto px-4 sm:px-6 lg:px-8">
+      <nav className="mx-auto px-4 sm:px-6 md:hidden">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted">
@@ -180,68 +287,6 @@ export function Header() {
             </div>
           </div>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex md:items-center md:gap-4">
-            <ThemeToggle />
-            <div className="flex items-center gap-1">
-              {visibleNavigation.map((item) => {
-                const isActive = pathname === item.href
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span>{item.name}</span>
-                    {item.href === ROUTES.RELEASE_NOTES && unreadReleaseNotes > 0 && <span aria-label={`${unreadReleaseNotes} novidades não lidas`} className="h-2 w-2 rounded-full bg-primary" />}
-                  </Link>
-                )
-              })}
-            </div>
-
-            {userName && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={userAvatar || undefined} alt={userName} />
-                      <AvatarFallback>
-                        {userName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                      </AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{userName}</p>
-                      <p className="text-xs leading-none text-muted-foreground">
-                        {userRole === 'admin' ? 'Administrador' : userRole === 'midia' ? 'Mídia' : 'Ministro'}
-                      </p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/profile" className="cursor-pointer">
-                      <Settings className="mr-2 h-4 w-4" />
-                      Meu Perfil
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleLogout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sair
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-
           {/* Mobile menu button */}
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild>
@@ -249,71 +294,29 @@ export function Header() {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="md:hidden p-0">
-              <SheetHeader className="border-b border-border">
-                <SheetTitle>Menu</SheetTitle>
+            <SheetContent side="right" className="md:hidden overflow-y-auto p-0 [&>button]:flex [&>button]:h-11 [&>button]:w-11 [&>button]:items-center [&>button]:justify-center [&>button]:top-1 [&>button]:right-1">
+              <SheetHeader className="shrink-0 border-b border-border pr-12">
+                <SheetTitle className="text-left">Worship Flow</SheetTitle>
               </SheetHeader>
 
-              <div className="space-y-4 p-4">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Aparência
-                  </p>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Tema</p>
-                      <p className="text-xs text-muted-foreground">
-                        Alterne entre modo claro e escuro
-                      </p>
-                    </div>
-                    <ThemeToggle />
-                  </div>
-                </div>
-
+              <div className="flex shrink-0 flex-col gap-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                {activeChurch && <p className="truncate text-xs text-muted-foreground">{activeChurch.name}</p>}
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Navegação
-                  </p>
-                  <div className="flex flex-col gap-1">
-                    {visibleNavigation.map((item) => {
-                      const isActive = pathname === item.href
-                      return (
-                        <Link
-                          key={item.name}
-                          href={item.href}
-                          onClick={() => setMobileMenuOpen(false)}
-                          className={cn(
-                            'rounded-lg px-4 py-3 transition-colors',
-                            isActive
-                              ? 'bg-primary text-primary-foreground'
-                              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <item.icon className="h-5 w-5 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="flex items-center gap-2 text-sm font-medium leading-none">{item.name}{item.href === ROUTES.RELEASE_NOTES && unreadReleaseNotes > 0 && <span aria-label="Novidades não lidas" className="h-2 w-2 rounded-full bg-primary" />}</p>
-                              <p
-                                className={cn(
-                                  'mt-1 text-xs',
-                                  isActive ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                                )}
-                              >
-                                {item.description}
-                              </p>
-                            </div>
-                          </div>
-                        </Link>
-                      )
-                    })}
-                  </div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Principal</p>
+                  <div className="flex flex-col gap-1">{renderNavigationItems(primaryNavigation, true)}</div>
                 </div>
+                {administrationNavigation.length > 0 && <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Administração</p>
+                  <div className="flex flex-col gap-1">{renderNavigationItems(administrationNavigation, true)}</div>
+                </div>}
+                {secondaryNavigation.length > 0 && <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mais</p>
+                  <div className="flex flex-col gap-1">{renderNavigationItems(secondaryNavigation, true)}</div>
+                </div>}
 
                 {userName && (
                   <div className="space-y-2 border-t border-border pt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Conta
-                    </p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Conta</p>
                     <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-3">
                       <Avatar className="h-10 w-10">
                         <AvatarImage src={userAvatar || undefined} alt={userName} />
@@ -328,7 +331,7 @@ export function Header() {
                         </p>
                       </div>
                     </div>
-                    <Link href="/profile" className="block">
+                    <Link href={ROUTES.PROFILE} className="block">
                       <Button
                         variant="outline"
                         className="w-full justify-start"
@@ -356,6 +359,7 @@ export function Header() {
           </Sheet>
         </div>
       </nav>
-    </header>
+      </header>
+    </>
   )
 }

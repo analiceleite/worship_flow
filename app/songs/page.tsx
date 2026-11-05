@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { Song, Minister } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/header'
 import { SongCard } from '@/components/song-card'
 import { SongForm } from '@/components/song-form'
 import { DeleteDialog } from '@/components/delete-dialog'
@@ -110,7 +109,7 @@ export default function HomePage() {
 
         let query = supabase
             .from('songs')
-            .select('*, minister:ministers(id, name, instrument)', { count: 'exact' })
+            .select('*, minister:ministers(id, name, instrument, avatar_url)', { count: 'exact' })
             .eq('church_id', effectiveChurchId)
             .order('title', { ascending: true })
             .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
@@ -195,7 +194,6 @@ export default function HomePage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <Header />
 
             <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
                 <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
