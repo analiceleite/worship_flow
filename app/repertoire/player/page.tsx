@@ -7,7 +7,6 @@ import { ptBR } from 'date-fns/locale'
 import { ChevronLeft, ExternalLink, FileText, Maximize2, SkipBack, SkipForward, Youtube } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { CifraPanel, CifraViewer } from '@/components/cifra-viewer'
-import { Header } from '@/components/header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -471,7 +470,6 @@ function RepertoirePlayerContent() {
 
     return (
         <div className="min-h-screen w-full bg-background">
-            <Header />
 
             <main className="w-full p-4 sm:px-6">
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -879,7 +877,6 @@ export default function RepertoirePlayerPage() {
         <Suspense
             fallback={
                 <div className="min-h-screen bg-background">
-                    <Header />
                     <main className="w-full px-4 sm:px-6">
                         <div className="rounded-xl border bg-muted/10 p-6 text-sm text-muted-foreground">
                             Carregando playlist...

@@ -188,7 +188,7 @@ export async function PATCH(request: Request) {
 
   const query = adminSupabase
     .from('schedule_assignments')
-    .select('id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)')
+    .select('id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name, avatar_url)')
     .eq('church_id', context.churchId)
 
   const { data: assignment, error: assignmentError } = assignmentId

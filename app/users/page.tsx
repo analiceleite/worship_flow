@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Minister } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/header'
 import { MinisterForm } from '@/components/minister-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -116,7 +116,6 @@ export default function MinistrosPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <Header />
 
             <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 
@@ -189,10 +188,18 @@ export default function MinistrosPage() {
                                             key={minister.id}
                                             className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 transition-shadow hover:shadow-sm"
                                         >
-                                            {/* Avatar initial */}
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-muted-foreground">
-                                                {minister.name.charAt(0).toUpperCase()}
-                                            </div>
+                                            <Avatar className="h-9 w-9 shrink-0 rounded-lg">
+                                                {currentMinister?.role === 'admin' && minister.avatar_url && (
+                                                    <AvatarImage
+                                                        src={minister.avatar_url}
+                                                        alt={`Foto de ${minister.name}`}
+                                                        className="object-cover"
+                                                    />
+                                                )}
+                                                <AvatarFallback className="rounded-lg text-sm font-semibold text-muted-foreground">
+                                                    {minister.name.charAt(0).toUpperCase()}
+                                                </AvatarFallback>
+                                            </Avatar>
 
                                             {/* Info */}
                                             <div className="min-w-0 flex-1">

@@ -18,7 +18,7 @@ interface AssignmentRow {
   event_date: string
   event_type: 'thursday' | 'sunday'
   church_id: string
-  minister: { id: string; name: string } | null
+  minister: { id: string; name: string; avatar_url: string | null } | null
 }
 
 function uniqueSorted(values: string[]) {
@@ -57,7 +57,7 @@ export async function GET(
     adminSupabase
       .from('schedule_assignments')
       .select(
-        'id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name)'
+        'id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name, avatar_url)'
       )
       .eq('church_id', context.churchId)
       .eq('quarter_id', id),

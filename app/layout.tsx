@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { PrivacyAwareAnalytics } from '@/components/privacy-aware-analytics'
 import { PwaRegister } from '@/components/pwa-register'
 import { ThemeProvider } from '@/components/theme-provider'
+import { ApplicationShell } from '@/components/application-shell'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -49,7 +50,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {isProduction ? <PwaRegister /> : null}
-          {children}
+          <ApplicationShell>{children}</ApplicationShell>
           <PrivacyAwareAnalytics />
         </ThemeProvider>
       </body>

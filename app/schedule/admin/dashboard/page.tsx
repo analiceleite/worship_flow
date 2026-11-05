@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Header } from '@/components/header'
 import { ROUTES } from '@/lib/routes'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -372,7 +371,6 @@ export default function ScheduleAdminDashboardPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <Header />
 
             <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8 w-full max-w-full overflow-x-hidden">
 

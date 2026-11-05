@@ -5,6 +5,7 @@ import { Song } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { UserAvatar } from '@/components/user-avatar'
 import { Music, Youtube, FileText, Pencil, Trash2, Copy } from 'lucide-react'
 import { CifraViewer } from '@/components/cifra-viewer'
 import { songHasCifra } from '@/lib/cifra-storage'
@@ -140,9 +141,12 @@ export function SongCard({ song, onEdit, onDelete, canEdit = true, showMinister 
           {(showMinister || duplicateCount > 1) && (
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               {showMinister && song.minister && (
-                <Badge variant="outline" className="text-xs">
-                  {song.minister.name} • {song.minister.instrument}
-                </Badge>
+                <div className="flex min-w-0 max-w-full items-center gap-2 text-xs text-muted-foreground">
+                  <UserAvatar name={song.minister.name} avatarUrl={song.minister.avatar_url} className="h-6 w-6 text-3xl" />
+                  <div className="min-w-0">
+                    <p className="truncate" title={`Adicionada por ${song.minister.name}`}>Adicionada por <span className="font-medium">{song.minister.name}</span></p>
+                  </div>
+                </div>
               )}
               {duplicateCount > 1 && (
                 <Badge

@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { ProfilePhoto } from '@/components/profile-photo'
+import { UserAvatar } from '@/components/user-avatar'
 import { toast } from 'sonner'
 import { Bell, CalendarCheck } from 'lucide-react'
 import { getAppVersion } from '@/lib/release-notes'
@@ -30,7 +32,7 @@ const EMAIL_REMINDER_OPTIONS = [
 
 export default function ProfilePage() {
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
@@ -169,16 +171,41 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
 
       <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {/* Header Section */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Meu Perfil</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Configurar minhas preferências de notificação e calendário</p>
+        <div className="mb-6 flex items-center gap-4">
+          <UserAvatar name={minister.name} avatarUrl={minister.avatar_url} className="h-20 w-20 text-5xl" />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-foreground">Meu Perfil</h1>
+            <p className="mt-1 break-words font-medium">{minister.name}</p>
+            <p className="text-sm text-muted-foreground">{minister.role === 'admin' ? 'Administrador' : minister.role === 'midia' ? 'Mídia' : 'Ministro'}{minister.instrument ? ` · ${minister.instrument}` : ''}</p>
+            <p className="mt-2 text-sm text-muted-foreground">Configurar minhas preferências de aparência, notificação e calendário</p>
+          </div>
         </div>
 
         <div className="space-y-6">
+          <ProfilePhoto
+            name={minister.name}
+            avatarUrl={minister.avatar_url}
+            onSaved={avatarUrl => setMinister((current: any) => ({ ...current, avatar_url: avatarUrl }))}
+          />
+          <Card>
+            <CardHeader>
+              <CardTitle>Aparência</CardTitle>
+              <CardDescription>Personalize a aparência da plataforma neste dispositivo.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Tema claro ou escuro</p>
+                  <p className="text-xs text-muted-foreground">A alteração é aplicada e salva automaticamente.</p>
+                </div>
+                <ThemeToggle />
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Google Calendar Connection Card */}
           <Card>
             <CardHeader>
