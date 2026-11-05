@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { serverSupabaseFetch } from './server-fetch'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -8,6 +9,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: serverSupabaseFetch },
       auth: {
         // Use implicit flow for better compatibility with mobile/webviews
         flowType: 'implicit',

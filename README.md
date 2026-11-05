@@ -108,6 +108,20 @@ The demo tenant contains fake data only and is isolated from production church d
 
 ## Requirements
 
+### Local development with Docker Compose
+
+```sh
+docker compose up -d --build
+```
+
+Starts the app at http://127.0.0.1:3001, Supabase Studio at http://127.0.0.1:54323,
+and captured test emails at http://127.0.0.1:54324. Migrations and synthetic accounts
+are initialized automatically. No production `.env.local` or hosted database is used.
+See [local Compose instructions](docker/local/README.md) for accounts, tests and stopping safely.
+
+The older Supabase CLI environment must be stopped first (`pnpm local:stop`) because
+it uses the same ports. Data volumes are separate and are not deleted or migrated.
+
 - Node.js 20+
 - pnpm 9.15+
 - Supabase project

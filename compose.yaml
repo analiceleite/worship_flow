@@ -1,0 +1,322 @@
+# Local development ONLY. All credentials below are public test fixtures.
+# Do not deploy this file or reuse its credentials in production.
+name: worship-flow-local
+
+x-jwt-secret: &jwt-secret worship-flow-compose-local-only-jwt-secret-never-use-in-production
+x-db-password: &db-password worship-flow-compose-local-password
+x-anon-key: &anon-key eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjQxMDI0NDQ4MDB9.iUCyRS77W4QUYKXqkn_HlrCsVsE2iYAA7d5-D_0hFNU
+x-service-key: &service-key eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1sb2NhbCIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE3MDQwNjcyMDAsImV4cCI6NDEwMjQ0NDgwMH0.Z2LmMPbmvrVJSBlHdk9bRJxnK-OSAjfet-qiC3EFj3A
+x-app-image: &app-image
+  image: worship-flow-local-app
+  pull_policy: never
+x-local-env: &local-env
+  NODE_ENV: development
+  LOCAL_SUPABASE: "true"
+  LOCAL_DOCKER: "true"
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: *anon-key
+  SUPABASE_SERVICE_ROLE_KEY: *service-key
+  SUPABASE_INTERNAL_URL: http://gateway:8000
+  LOCAL_MAILPIT_URL: http://mailpit:8025
+  APP_BASE_URL: http://127.0.0.1:3001
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
+  RESEND_API_KEY: ""
+  RESEND_FROM: ""
+  RESEND_FROM_EMAIL: ""
+  GOOGLE_CLIENT_ID: ""
+  GOOGLE_CLIENT_SECRET: ""
+  YOUTUBE_API_KEY: ""
+  CIFRACLUB_IMPORTER_URL: ""
+  CIFRACLUB_IMPORTER_TOKEN: ""
+  CRON_SECRET: ""
+  SCHEDULE_EMAIL_TEST_RECIPIENT: ""
+  NEXT_TELEMETRY_DISABLED: "1"
+  SUPABASE_TELEMETRY_DISABLED: "1"
+  WATCHPACK_POLLING: "true"
+  CHOKIDAR_USEPOLLING: "true"
+
+services:
+  prepare:
+    <<: *app-image
+    command: ["node", "docker/local/prepare.mjs"]
+    environment: *local-env
+    volumes:
+      - local-state:/local
+    restart: "no"
+
+  db:
+    image: public.ecr.aws/supabase/postgres:17.11.0.011
+    environment:
+      POSTGRES_PASSWORD: *db-password
+      POSTGRES_DB: postgres
+      JWT_SECRET: *jwt-secret
+      JWT_EXP: "3600"
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
+    ports:
+      - "127.0.0.1:54322:5432"
+    volumes:
+      - database:/var/lib/postgresql/data
+      - database-config:/etc/postgresql-custom
+      - ./docker/local/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-local-roles.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  db-bootstrap:
+    image: public.ecr.aws/supabase/postgres:17.11.0.011
+    depends_on:
+      db: { condition: service_healthy }
+    entrypoint: ["psql"]
+    command: ["-v", "ON_ERROR_STOP=1", "-f", "/config/roles.sql"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: postgres
+      PGUSER: postgres
+      PGPASSWORD: *db-password
+      POSTGRES_PASSWORD: *db-password
+    volumes:
+      - ./docker/local/roles.sql:/config/roles.sql:ro
+    restart: "no"
+
+  mailpit:
+    image: public.ecr.aws/supabase/mailpit:v1.31.3
+    ports:
+      - "127.0.0.1:54324:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    volumes:
+      - mail:/data
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    depends_on:
+      db: { condition: service_healthy }
+      db-bootstrap: { condition: service_completed_successfully }
+      mailpit: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://127.0.0.1:54321/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:worship-flow-compose-local-password@db:5432/postgres
+      GOTRUE_SITE_URL: http://127.0.0.1:3001
+      GOTRUE_URI_ALLOW_LIST: http://127.0.0.1:3001/auth/reset,http://127.0.0.1:3001/auth/set-password
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_JWT_SECRET: *jwt-secret
+      GOTRUE_JWT_ISSUER: http://127.0.0.1:54321/auth/v1
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_PASSWORD_MIN_LENGTH: "6"
+      GOTRUE_MAILER_OTP_EXP: "1800"
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
+      GOTRUE_SMTP_HOST: mailpit
+      GOTRUE_SMTP_PORT: "1025"
+      GOTRUE_SMTP_ADMIN_EMAIL: no-reply@worship.local.test
+      GOTRUE_SMTP_SENDER_NAME: Worship Flow LOCAL
+      GOTRUE_SMTP_MAX_FREQUENCY: 1s
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v16.5
+    depends_on:
+      db: { condition: service_healthy }
+      db-bootstrap: { condition: service_completed_successfully }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:worship-flow-compose-local-password@db:5432/postgres
+      # This local stack uses REST; pg_graphql is not installed by this image.
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: *jwt-secret
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_ADMIN_SERVER_PORT: "3001"
+      PGRST_ADMIN_SERVER_HOST: 127.0.0.1
+    healthcheck:
+      test: ["CMD", "/bin/postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.88.0
+    depends_on:
+      db: { condition: service_healthy }
+      db-bootstrap: { condition: service_completed_successfully }
+      rest: { condition: service_healthy }
+    environment:
+      ANON_KEY: *anon-key
+      SERVICE_KEY: *service-key
+      AUTH_JWT_SECRET: *jwt-secret
+      POSTGREST_URL: http://rest:3000
+      DATABASE_URL: postgres://supabase_storage_admin:worship-flow-compose-local-password@db:5432/postgres
+      STORAGE_PUBLIC_URL: http://127.0.0.1:54321
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      FILE_SIZE_LIMIT: "52428800"
+      TENANT_ID: local
+      REGION: local
+      GLOBAL_S3_BUCKET: local
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5000/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *app-image
+    command: ["node", "docker/local/migrate.mjs"]
+    depends_on:
+      prepare: { condition: service_completed_successfully }
+      auth: { condition: service_healthy }
+      storage: { condition: service_healthy }
+    environment:
+      LOCAL_DOCKER: "true"
+      LOCAL_DATABASE_URL: postgres://postgres:worship-flow-compose-local-password@db:5432/postgres
+    volumes:
+      - local-state:/local
+    restart: "no"
+
+  gateway:
+    image: public.ecr.aws/supabase/kong:2.8.1
+    depends_on:
+      prepare: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+      rest: { condition: service_healthy }
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /local/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: cors,key-auth,acl
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - local-state:/local:ro
+    ports:
+      - "127.0.0.1:54321:8000"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  meta:
+    image: public.ecr.aws/supabase/postgres-meta:v0.100.0
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: "5432"
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: *db-password
+      CRYPTO_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+    restart: unless-stopped
+
+  studio:
+    image: public.ecr.aws/supabase/studio:2026.11.02-sha-a05e7ec
+    depends_on:
+      gateway: { condition: service_healthy }
+      meta: { condition: service_started }
+    environment:
+      HOSTNAME: 0.0.0.0
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: *db-password
+      POSTGRES_USER_READ_WRITE: postgres
+      PG_META_CRYPTO_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      DEFAULT_ORGANIZATION_NAME: Worship Flow LOCAL
+      DEFAULT_PROJECT_NAME: Testes locais
+      SUPABASE_URL: http://gateway:8000
+      SUPABASE_PUBLIC_URL: http://127.0.0.1:54321
+      SUPABASE_ANON_KEY: *anon-key
+      SUPABASE_SERVICE_KEY: *service-key
+      AUTH_JWT_SECRET: *jwt-secret
+      ENABLED_FEATURES_LOGS_ALL: "false"
+    ports:
+      - "127.0.0.1:54323:3000"
+    restart: unless-stopped
+
+  seed:
+    <<: *app-image
+    command: ["node", "scripts/supabase-local.mjs", "seed"]
+    depends_on:
+      gateway: { condition: service_healthy }
+    environment: *local-env
+    volumes:
+      - local-state:/local
+    restart: "no"
+
+  app:
+    <<: *app-image
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    command: ["pnpm", "exec", "next", "dev", "--webpack", "--hostname", "0.0.0.0", "--port", "3001"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+    environment: *local-env
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - next-cache:/app/.next-local
+      - local-state:/local:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/auth/forgot-password').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 20s
+      start_period: 60s
+      retries: 5
+    restart: unless-stopped
+
+  test:
+    <<: *app-image
+    profiles: [test]
+    command: ["node", "--test", "tests/password-recovery.local.test.cjs"]
+    depends_on:
+      gateway: { condition: service_healthy }
+    environment:
+      <<: *local-env
+      LOCAL_DATABASE_URL: postgres://postgres:worship-flow-compose-local-password@db:5432/postgres
+    restart: "no"
+
+volumes:
+  database:
+  database-config:
+  storage:
+  mail:
+  local-state:
+  next-cache:
