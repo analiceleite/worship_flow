@@ -192,6 +192,9 @@ importers:
       pg:
         specifier: 8.23.1
         version: 8.23.1
+      playwright-core:
+        specifier: ^1.64.1
+        version: 1.64.1
       postcss:
         specifier: ^8.5
         version: 8.5.16
@@ -2147,6 +2150,11 @@ packages:
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
+
+  playwright-core@1.64.1:
+    resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   postal-mime@2.7.4:
     resolution: {integrity: sha512-0WdnFQYUrPGGTFu1uOqD2s7omwua8xaeYGdO6rb88oD5yJ/4pPHDA4sdWqfD8wQVfCny563n/HQS7zTFft+f/g==}
@@ -4321,6 +4329,8 @@ snapshots:
       split2: 4.2.0
 
   picocolors@1.1.1: {}
+
+  playwright-core@1.64.1: {}
 
   postal-mime@2.7.4: {}
 

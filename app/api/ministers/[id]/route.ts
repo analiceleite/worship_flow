@@ -43,33 +43,14 @@ export async function DELETE(
       )
     }
 
-    // Explicit cleanup (service role) to guarantee full removal of related data
-    // 1) Find songs owned by minister
-    const { data: ministerSongs, error: songsFetchError } = await supabaseAdmin
-      .from('songs')
-      .select('id')
-      .eq('church_id', context.churchId)
-      .eq('minister_id', ministerId)
-
-    if (songsFetchError) {
-      console.error('Error fetching minister songs:', songsFetchError)
-      return NextResponse.json(
-        { error: `Erro ao buscar músicas do ministro: ${songsFetchError.message}` },
-        { status: 400 }
-      )
-    }
-
-    const songIds: string[] = []
-    for (const song of (ministerSongs ?? []) as Array<{ id: string }>) {
-      songIds.push(song.id)
-    }
-
-    // 2) Delete repertoire items directly assigned to minister
-    const { error: repertoireByMinisterError } = await supabaseAdmin
-      .from('repertoire')
-      .delete()
-      .eq('church_id', context.churchId)
-      .eq('minister_id', ministerId)
+    // Cleanup all assigned items and owned-song references atomically, including
+    // sequence normalization and revision changes for concurrent editors.
+    const { error: repertoireByMinisterError } = await supabaseAdmin.rpc('wf07_remove_minister_items', {
+      p_actor: context.userId,
+      p_church: context.churchId,
+      p_impersonating: Boolean(context.isImpersonating),
+      p_minister: ministerId,
+    })
 
     if (repertoireByMinisterError) {
       console.error('Error deleting repertoire by minister:', repertoireByMinisterError)
@@ -79,22 +60,7 @@ export async function DELETE(
       )
     }
 
-    // 3) Delete repertoire items that reference songs owned by minister
-    if (songIds.length > 0) {
-      const { error: repertoireBySongsError } = await supabaseAdmin
-        .from('repertoire')
-        .delete()
-        .eq('church_id', context.churchId)
-        .in('song_id', songIds)
-
-      if (repertoireBySongsError) {
-        console.error('Error deleting repertoire by songs:', repertoireBySongsError)
-        return NextResponse.json(
-          { error: `Erro ao excluir itens de repertório vinculados às músicas: ${repertoireBySongsError.message}` },
-          { status: 400 }
-        )
-      }
-    }
+    // RPC also removes references to this minister's songs, under sequence locks.
 
     // 4) Delete songs owned by minister
     const { error: deleteSongsError } = await supabaseAdmin

@@ -1,6 +1,6 @@
 {
   "name": "my-project",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "scripts": {
     "dev": "set WATCHPACK_POLLING=true&& set CHOKIDAR_USEPOLLING=1&& next dev --webpack",
@@ -9,6 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test:recovery": "node --test tests/password-recovery.test.cjs",
+    "test:repertoire": "node --test tests/repertoire.test.cjs",
+    "test:repertoire:browser": "node --test tests/repertoire.browser.test.cjs",
     "test:local-tools": "node --test tests/local-supabase.test.mjs tests/compose-transport.test.cjs",
     "local:prepare": "node scripts/supabase-local.mjs prepare",
     "local:start": "node scripts/supabase-local.mjs start",
@@ -87,6 +89,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "pg": "8.23.1",
+    "playwright-core": "^1.64.1",
     "postcss": "^8.5",
     "supabase": "3.0.0",
     "tailwindcss": "^4.2.0",

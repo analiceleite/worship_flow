@@ -76,7 +76,8 @@ services:
       PGHOST: db
       PGPORT: "5432"
       PGDATABASE: postgres
-      PGUSER: postgres
+      # Only bootstrap needs reserved-role administration; Auth stays unprivileged.
+      PGUSER: supabase_admin
       PGPASSWORD: *db-password
       POSTGRES_PASSWORD: *db-password
     volumes:
@@ -305,7 +306,7 @@ services:
   test:
     <<: *app-image
     profiles: [test]
-    command: ["node", "--test", "tests/password-recovery.local.test.cjs"]
+    command: ["node", "--test", "tests/password-recovery.local.test.cjs", "tests/repertoire.local.test.cjs"]
     depends_on:
       gateway: { condition: service_healthy }
     environment:

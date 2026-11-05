@@ -2,7 +2,10 @@
 
 import { UserAvatar } from '@/components/user-avatar'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import type { RepertoireCommand, RepertoireSnapshot } from '@/lib/repertoire/types'
+import { formatRepertoireWhatsapp } from '@/lib/repertoire/whatsapp'
+import { clampRepertoirePage, repertoirePage, REPERTOIRE_PAGE_SIZE } from '@/lib/repertoire/order'
 import { useRouter } from 'next/navigation'
 import { Song, Minister, RepertoireItem } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
@@ -233,7 +236,7 @@ function WeekDayCell({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = REPERTOIRE_PAGE_SIZE
 
 export default function RepertorioPage() {
     const router = useRouter()
@@ -243,7 +246,13 @@ export default function RepertorioPage() {
     const [selectedCifraSong, setSelectedCifraSong] = useState<Song | null>(null)
 
     const [repertoire, setRepertoire] = useState<RepertoireItem[]>([])
-    const [totalRepertoire, setTotalRepertoire] = useState(0)
+    const totalRepertoire = repertoire.length
+    const [revision, setRevision] = useState('0')
+    const [snapshotContext, setSnapshotContext] = useState<string | null>(null)
+    const [saving, setSaving] = useState(false)
+    const [exporting, setExporting] = useState(false)
+    const operationBusy = useRef(false)
+    const requestGeneration = useRef(0)
     const [page, setPage] = useState(1)
     const [songs, setSongs] = useState<Song[]>([])
     const [ministers, setMinisters] = useState<Minister[]>([])
@@ -253,6 +262,9 @@ export default function RepertorioPage() {
 
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
     const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
+    const contextKey = JSON.stringify([selectedDay ? [toDateStr(selectedDay.date), selectedDay.eventName] : null, effectiveChurchId, toDateStr(weekAnchor)])
+    const currentContext = useRef(contextKey)
+    currentContext.current = contextKey
     const [isAdmin, setIsAdmin] = useState(false)
     const isSinger = hasLeadVoiceRole(currentMinister?.instrument)
     const canAddSongsToRepertoire = isAdmin || isSinger
@@ -352,37 +364,100 @@ export default function RepertorioPage() {
 
     const fetchRepertoire = useCallback(async () => {
         if (!selectedDay || !currentMinister || !effectiveChurchId) return
+        const generation = ++requestGeneration.current
+        const key = currentContext.current
         setLoading(true)
-        const supabase = createClient()
-        const [songsRes, ministersRes, repRes, repCountRes] = await Promise.all([
-            supabase.from('songs').select('*').eq('church_id', effectiveChurchId).order('title'),
-            supabase.from('ministers').select('*').eq('church_id', effectiveChurchId).order('name'),
-            supabase.from('repertoire')
-                .select('*, song:songs(*), minister:ministers(*)', { count: 'exact' })
-                .eq('church_id', effectiveChurchId)
-                .eq('event_date', toDateStr(selectedDay.date))
-                .eq('event_name', selectedDay.eventName)
-                .order('order_index')
-                .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
-            supabase.from('repertoire')
-                .select('id', { count: 'exact', head: true })
-                .eq('church_id', effectiveChurchId)
-                .eq('event_date', toDateStr(selectedDay.date))
-                .eq('event_name', selectedDay.eventName),
-        ])
-        if (songsRes.data) setSongs(songsRes.data)
-        if (ministersRes.data) setMinisters(ministersRes.data)
-        if (repRes.data) setRepertoire(repRes.data)
-        setTotalRepertoire(repCountRes.count || 0)
-        setLoading(false)
-    }, [selectedDay, page, currentMinister, effectiveChurchId])
+        try {
+            const params = new URLSearchParams({ date: toDateStr(selectedDay.date), eventName: selectedDay.eventName })
+            const response = await fetch(`/api/repertoire?${params}`, { cache: 'no-store' })
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Não foi possível carregar o repertório.')
+            if (generation !== requestGeneration.current || key !== currentContext.current) return
+            const snapshot = result as RepertoireSnapshot
+            setRepertoire(snapshot.items)
+            setRevision(snapshot.revision)
+            setSnapshotContext(key)
+            setPage(p => clampRepertoirePage(p, snapshot.total))
+            return snapshot
+        } catch (error) {
+            if (generation === requestGeneration.current && key === currentContext.current) {
+                setRepertoire([])
+                setSnapshotContext(null)
+                setReorderError(error instanceof Error ? error.message : 'Erro ao carregar repertório.')
+            }
+        } finally {
+            if (generation === requestGeneration.current && key === currentContext.current) setLoading(false)
+        }
+    }, [selectedDay, currentMinister, effectiveChurchId, weekAnchor])
 
-    useEffect(() => { if (selectedDay) fetchRepertoire() }, [fetchRepertoire, selectedDay, page])
+    useEffect(() => {
+        setPage(1)
+        setRepertoire([])
+        setReorderError(null)
+        setDraggingIndex(null)
+        setDragOverIndex(null)
+        setFormOpen(false)
+        setDeletingItem(null)
+        setDeletingEvent(null)
+        setSelectedCifraSong(null)
+        void fetchRepertoire()
+        return () => { requestGeneration.current++ }
+    }, [fetchRepertoire])
+
+    useEffect(() => {
+        if (!effectiveChurchId) return
+        let active = true
+        setSongs([])
+        setMinisters([])
+        void fetch('/api/repertoire/catalog', { cache: 'no-store' }).then(async response => {
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error)
+            if (!active) return
+            setSongs(result.songs.sort((a: Song, b: Song) => a.title.localeCompare(b.title, 'pt-BR')))
+            setMinisters(result.ministers.sort((a: Minister, b: Minister) => a.name.localeCompare(b.name, 'pt-BR')))
+        }).catch(() => {
+            if (active) setReorderError('Não foi possível carregar músicas e ministros. Atualize a página.')
+        })
+        return () => { active = false }
+    }, [effectiveChurchId])
+
+    const mutateRepertoire = async (command: RepertoireCommand, event = selectedDay, expectedRevision = revision) => {
+        if (!event || operationBusy.current || loading || snapshotContext !== currentContext.current) return false
+        const key = currentContext.current
+        operationBusy.current = true
+        setSaving(true)
+        setReorderError(null)
+        requestGeneration.current++
+        try {
+            const response = await fetch('/api/repertoire', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: toDateStr(event.date), eventName: event.eventName, expectedRevision, command }),
+            })
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Não foi possível salvar o repertório.')
+            if (key !== currentContext.current) return false
+            setRepertoire(result.items)
+            setRevision(result.revision)
+            setPage(p => clampRepertoirePage(p, result.total))
+            return true
+        } catch (error) {
+            if (key === currentContext.current) {
+                await fetchRepertoire()
+                if (key === currentContext.current) setReorderError(error instanceof Error ? error.message : 'Falha ao salvar. Confira o repertório antes de tentar novamente.')
+            }
+            return false
+        } finally {
+            operationBusy.current = false
+            setSaving(false)
+        }
+    }
 
     // ── Handlers ───────────────────────────────────────────────────────────────
 
-    const handleWeekChange = (dir: 'prev' | 'next') =>
+    const handleWeekChange = (dir: 'prev' | 'next') => {
+        setPage(1)
         setWeekAnchor(a => dir === 'next' ? addWeeks(a, 1) : subWeeks(a, 1))
+    }
 
     const handleAddToRepertoire = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -397,20 +472,10 @@ export default function RepertorioPage() {
             return
         }
         if (!currentMinister || !effectiveChurchId) { setFormError('Não foi possível identificar a igreja atual.'); return }
-        const supabase = createClient()
-        const maxOrder = repertoire.length > 0 ? Math.max(...repertoire.map(r => r.order_index)) : 0
-        const { error } = await supabase.from('repertoire').insert({
-            church_id: effectiveChurchId,
-            song_id: formData.song_id,
-            minister_id: isAdmin ? (formData.minister_id || null) : currentMinister?.id,
-            event_name: selectedDay.eventName,
-            event_date: toDateStr(selectedDay.date),
-            order_index: maxOrder + 1,
-        })
-        if (error) { setFormError(error.message || 'Erro ao adicionar.'); return }
+        const success = await mutateRepertoire({ action: 'add', songId: formData.song_id, ministerId: isAdmin ? formData.minister_id : currentMinister.id })
+        if (!success) { setFormError('Não foi possível adicionar. Confira o aviso na tela e tente novamente.'); return }
         setFormOpen(false)
         setFormData({ song_id: '', minister_id: '' })
-        fetchRepertoire()
     }
 
     const handleDeleteItem = async () => {
@@ -419,29 +484,14 @@ export default function RepertorioPage() {
             setDeletingItem(null)
             return
         }
-        await createClient()
-            .from('repertoire')
-            .delete()
-            .eq('id', deletingItem.id)
-            .eq('church_id', effectiveChurchId)
+        await mutateRepertoire({ action: 'remove', itemId: deletingItem.id })
         setDeletingItem(null)
-        fetchRepertoire()
     }
 
     const handleDeleteEvent = async () => {
         if (!deletingEvent || !effectiveChurchId) return
-        const supabase = createClient()
-        await supabase
-            .from('repertoire')
-            .delete()
-            .eq('church_id', effectiveChurchId)
-            .eq('event_name', deletingEvent.name)
-            .eq('event_date', deletingEvent.event_date)
-        await supabase
-            .from('special_events')
-            .delete()
-            .eq('id', deletingEvent.id)
-            .eq('church_id', effectiveChurchId)
+        const success = await mutateRepertoire({ action: 'deleteEvent', eventId: deletingEvent.id })
+        if (!success) return
         setDeletingEvent(null)
         if (selectedDay?.specialEventId === deletingEvent.id) setSelectedDay(getNearestServiceDay(new Date()))
         const events = await fetchSpecialEvents()
@@ -503,44 +553,42 @@ export default function RepertorioPage() {
         router.push(`/repertoire/player?${params.toString()}`)
     }
 
-    const handleExportWhatsapp = () => {
-        if (!selectedDay) return
-        if (!repertoire || repertoire.length === 0) {
-            window.alert('Nenhuma música no repertório para exportar.')
-            return
-        }
-
-        const dateLabel = format(selectedDay.date, 'dd/MM/yyyy')
-        const header = `Repertório - ${selectedDay.eventName} (${dateLabel})`
-        const lines = repertoire.map((item, idx) => {
-            const title = item.song?.title ?? 'Sem título'
-            const artist = item.song?.artist ?? 'Artista desconhecido'
-            const tone = item.song?.tone ? ` (Tom ${item.song.tone}${item.song?.capo_frets && item.song.capo_frets > 0 ? ` · Capo ${item.song.capo_frets}ª` : ''})` : ''
-            return `${idx + 1}. ${title} — ${artist}${tone}`
-        })
-
-        const message = [header, '', ...lines].join('\n')
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
-        window.open(waUrl, '_blank', 'noopener,noreferrer')
+    const exportBusy = useRef(false)
+    const handleExportWhatsapp = async () => {
+        if (!selectedDay || exportBusy.current || saving || loading) return
+        const key = currentContext.current
+        const event = selectedDay
+        exportBusy.current = true
+        setExporting(true)
+        // Reserve a window during the gesture; remove opener before navigating externally.
+        const popup = window.open('about:blank', '_blank')
+        if (popup) popup.opener = null
+        try {
+            const params = new URLSearchParams({ date: toDateStr(event.date), eventName: event.eventName })
+            const response = await fetch(`/api/repertoire?${params}`, { cache: 'no-store' })
+            const snapshot = await response.json()
+            if (!response.ok) throw new Error(snapshot.error || 'Não foi possível exportar.')
+            if (key !== currentContext.current) { popup?.close(); return }
+            if (!snapshot.items.length) throw new Error('Nenhuma música no repertório para exportar.')
+            const message = formatRepertoireWhatsapp(event.eventName, toDateStr(event.date), snapshot.items)
+            if (!popup || popup.closed) throw new Error('Permita pop-ups neste navegador e tente exportar novamente.')
+            popup.location.replace(`https://wa.me/?text=${encodeURIComponent(message)}`)
+        } catch (error) {
+            popup?.close()
+            if (key === currentContext.current) setReorderError(error instanceof Error ? error.message : 'Erro ao exportar.')
+        } finally { exportBusy.current = false; setExporting(false) }
     }
 
-    const saveRepertoireOrder = async (items: RepertoireItem[]) => {
-        setReorderError(null)
-        const supabase = createClient()
-        const updates = items.map(item =>
-            supabase
-                .from('repertoire')
-                .update({ order_index: item.order_index })
-                .eq('id', item.id)
-                .eq('church_id', effectiveChurchId)
-        )
-        const results = await Promise.all(updates)
-        for (const result of results) {
-            if (result.error) {
-                setReorderError(result.error.message || 'Não foi possível salvar a nova ordem.')
-                fetchRepertoire()
-                return
-            }
+    const openSongCifra = async (song: Song) => {
+        if (openPdfCifraInSystemBrowserFromUserGesture(song)) return
+        const key = currentContext.current
+        try {
+            const response = await fetch(`/api/repertoire/cifra?songId=${encodeURIComponent(song.id)}`, { cache: 'no-store' })
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error)
+            if (key === currentContext.current) setSelectedCifraSong(result)
+        } catch {
+            if (key === currentContext.current) setReorderError('Não foi possível carregar a cifra. Tente novamente.')
         }
     }
 
@@ -549,17 +597,13 @@ export default function RepertorioPage() {
             return
         }
 
-        const updated = [...repertoire]
-        const [moved] = updated.splice(from, 1)
-        updated.splice(to, 0, moved)
-        const normalized = updated.map((item, idx) => ({ ...item, order_index: idx + 1 }))
-
-        setRepertoire(normalized)
-        await saveRepertoireOrder(normalized)
+        if (await mutateRepertoire({ action: 'move', itemId: repertoire[from].id, position: to + 1 })) {
+            setPage(repertoirePage(to + 1))
+        }
     }
 
     const handleDragStart = (index: number) => {
-        if (!reorderEnabled) return
+        if (!reorderEnabled || saving || loading) return
         setDraggingIndex(index)
         setDragOverIndex(index)
         setReorderError(null)
@@ -594,8 +638,9 @@ export default function RepertorioPage() {
     const weekDays = getWeekDays(weekAnchor)
     const weekLabel = getWeekLabel(weekAnchor)
 
+    const addedSongIds = new Set(repertoire.map(item => item.song_id))
     const availableSongs = songs.filter(
-        s => !repertoire.some(r => r.song_id === s.id) && (isAdmin || s.minister_id === currentMinister?.id)
+        s => !addedSongIds.has(s.id) && (isAdmin || s.minister_id === currentMinister?.id)
     )
 
     const filteredSongsForForm = availableSongs.filter((song) => {
@@ -653,7 +698,7 @@ export default function RepertorioPage() {
 
                     {/* Navigation header */}
                     <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-2 sm:px-3">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleWeekChange('prev')}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Semana anterior" onClick={() => handleWeekChange('prev')}>
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
                         <div className="min-w-0 flex-1 px-1 text-center">
@@ -662,7 +707,7 @@ export default function RepertorioPage() {
                                 {format(weekDays[0], 'd MMM', { locale: ptBR })} – {format(weekDays[6], "d MMM yyyy", { locale: ptBR })}
                             </p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleWeekChange('next')}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Próxima semana" onClick={() => handleWeekChange('next')}>
                             <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
@@ -788,7 +833,7 @@ export default function RepertorioPage() {
                         <div className="flex items-center justify-between">
                             {!loading && (
                                 <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                                    {repertoire.length} {repertoire.length === 1 ? 'música' : 'músicas'}
+                                    {totalRepertoire} {totalRepertoire === 1 ? 'música' : 'músicas'}
                                 </p>
                             )}
                             <div className="flex items-center gap-2">
@@ -818,14 +863,14 @@ export default function RepertorioPage() {
                                             {reorderEnabled ? 'Parar ordenação' : 'Ordenar'}
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
-                                            disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
+                                            disabled={loading || saving || !canAddSongsToRepertoire || availableSongs.length === 0}
                                             onSelect={handleOpenAddForm}
                                         >
                                             <Plus className="mr-2 h-3.5 w-3.5" />
                                             Adicionar
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
-                                            disabled={repertoire.length === 0}
+                                            disabled={loading || saving || exporting || repertoire.length === 0}
                                             onSelect={() => void handleExportWhatsapp()}
                                         >
                                             <Share className="mr-2 h-3.5 w-3.5" />
@@ -848,7 +893,7 @@ export default function RepertorioPage() {
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={repertoire.length === 0}
+                                    disabled={loading || saving || exporting || repertoire.length === 0}
                                     onClick={() => void handleExportWhatsapp()}
                                 >
                                     <Share className="mr-1.5 h-3.5 w-3.5" />
@@ -874,7 +919,7 @@ export default function RepertorioPage() {
                                 <Button
                                     size="sm"
                                     onClick={handleOpenAddForm}
-                                    disabled={!canAddSongsToRepertoire || availableSongs.length === 0}
+                                    disabled={loading || saving || !canAddSongsToRepertoire || availableSongs.length === 0}
                                     title={!canAddSongsToRepertoire ? 'Apenas administradores e usuários com a função Voz podem adicionar músicas ao repertório.' : undefined}
                                 >
                                     <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -900,15 +945,21 @@ export default function RepertorioPage() {
                             </Alert>
                         )}
 
+                        {saving && <p role="status" className="text-sm text-muted-foreground">Salvando repertório…</p>}
+                        {exporting && <p role="status" className="text-sm text-muted-foreground">Preparando exportação…</p>}
                         {reorderError && (
                             <Alert variant="destructive">
                                 <AlertDescription>{reorderError}</AlertDescription>
+                                <Button type="button" variant="outline" size="sm" disabled={saving || loading}
+                                    onClick={() => { setReorderError(null); void fetchRepertoire() }}>Atualizar repertório</Button>
                             </Alert>
                         )}
 
                         {/* ── List + Pagination ── */}
                         {loading ? (
                             <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+                        ) : snapshotContext !== contextKey ? (
+                            <p role="status" className="py-8 text-center text-sm text-muted-foreground">Aguardando carregamento do repertório. Use “Atualizar repertório” se houver erro.</p>
                         ) : repertoire.length === 0 ? (
                             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-14 text-center">
                                 <div className="mb-3 rounded-2xl bg-muted p-4">
@@ -931,11 +982,13 @@ export default function RepertorioPage() {
                         ) : (
                             <>
                                 <div className="space-y-2">
-                                    {repertoire.map((item, index) => (
+                                    {repertoire.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((item, localIndex) => {
+                                        const index = (page - 1) * PAGE_SIZE + localIndex
+                                        return (
                                         <div
                                             key={item.id}
                                             data-reorder-index={index}
-                                            draggable={reorderEnabled}
+                                            draggable={reorderEnabled && !saving}
                                             onDragStart={() => handleDragStart(index)}
                                             onDragOver={e => handleDragOver(e, index)}
                                             onDrop={() => void handleDrop(index)}
@@ -950,17 +1003,19 @@ export default function RepertorioPage() {
                                             {reorderEnabled && (
                                                 <div className="flex flex-col items-center mr-2 space-y-0.5 sm:space-y-1">
                                                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
-                                                        onClick={() => void moveRepertoireItem(index, index - 1)} disabled={index === 0}>
+                                                        aria-label={`Mover ${item.song?.title ?? 'música'} para cima`}
+                                                        onClick={() => void moveRepertoireItem(index, index - 1)} disabled={saving || index === 0}>
                                                         <ArrowUp className="h-3.5 w-3.5" />
                                                     </Button>
                                                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
-                                                        onClick={() => void moveRepertoireItem(index, index + 1)} disabled={index === repertoire.length - 1}>
+                                                        aria-label={`Mover ${item.song?.title ?? 'música'} para baixo`}
+                                                        onClick={() => void moveRepertoireItem(index, index + 1)} disabled={saving || index === repertoire.length - 1}>
                                                         <ArrowDown className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </div>
                                             )}
                                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
-                                                {((page - 1) * PAGE_SIZE) + index + 1}
+                                                {index + 1}
                                             </span>
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2">
@@ -977,15 +1032,14 @@ export default function RepertorioPage() {
                                                 </div>
                                             </div>
                                             <div className="flex shrink-0 items-center">
-                                                {item.song && (item.song.cifra_pdf_path || (item.song.cifra_content && item.song.cifra_content.length > 0)) ? (
+                                                {item.song && (item.song.cifra_pdf_path || item.song.cifra_available || (item.song.cifra_content && item.song.cifra_content.length > 0)) ? (
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-7 w-7"
                                                         onClick={() => {
                                                             const s = item.song
-                                                            if (s && openPdfCifraInSystemBrowserFromUserGesture(s)) return
-                                                            setSelectedCifraSong(s ?? null)
+                                                            if (s) void openSongCifra(s)
                                                         }}
                                                         title="Ver cifra no app"
                                                         aria-label="Ver cifra no app"
@@ -999,18 +1053,19 @@ export default function RepertorioPage() {
                                                 ) : null}
                                                 {item.song?.youtube_url && (
                                                     <Button variant="ghost" size="icon" className="h-9 w-9 touch-manipulation sm:h-7 sm:w-7" asChild>
-                                                        <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
+                                                        <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube" aria-label="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
                                                     </Button>
                                                 )}
                                                 {(isAdmin || isSinger) && (
                                                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                        aria-label={`Remover ${item.song?.title ?? 'música'}`} disabled={saving}
                                                         onClick={() => setDeletingItem(item)}>
                                                         <Trash2 className="h-3.5 w-3.5" />
                                                     </Button>
                                                 )}
                                             </div>
                                         </div>
-                                    ))}
+                                    )})}
                                 </div>
                                 {/* Pagination */}
                                 {totalRepertoire > PAGE_SIZE && (
@@ -1112,7 +1167,7 @@ export default function RepertorioPage() {
                         </div>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Cancelar</Button>
-                            <Button type="submit" disabled={!canAddSongsToRepertoire || !formData.song_id || (isAdmin && !formData.minister_id)}>Adicionar</Button>
+                            <Button type="submit" disabled={loading || saving || !canAddSongsToRepertoire || !formData.song_id || (isAdmin && !formData.minister_id)}>Adicionar</Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>
