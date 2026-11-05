@@ -60,9 +60,10 @@ export async function getCifraSignedUrl(
 export function songHasCifra(song: {
   cifra_content?: string[] | null
   cifra_pdf_path?: string | null
+  cifra_available?: boolean
 }): boolean {
   return Boolean(
-    (song.cifra_pdf_path && song.cifra_pdf_path.length > 0) ||
+    song.cifra_available || (song.cifra_pdf_path && song.cifra_pdf_path.length > 0) ||
       (song.cifra_content && song.cifra_content.length > 0)
   )
 }

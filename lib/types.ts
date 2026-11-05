@@ -32,7 +32,9 @@ export interface Song {
   cipher_url: string | null
   youtube_url: string | null
   youtube_video_title?: string | null
-  cifra_content: string[] | null
+  // Metadata-only repertoire snapshots load the full content on demand.
+  cifra_content?: string[] | null
+  cifra_available?: boolean
   available_tones?: string[] | null
   cifra_pdf_path?: string | null
   capo_frets?: number | null

@@ -194,25 +194,21 @@ async function main() {
 
   const sunday = nextDow(new Date(), 0)
   const sundayStr = toDateString(sunday)
-  await ok('delete existing demo Sunday repertoire', supabase
-    .from('repertoire')
-    .delete()
-    .eq('church_id', demoChurch.id)
-    .eq('event_date', sundayStr)
-    .eq('event_name', 'Culto de Domingo'))
-
-  if (demoSongs.length) {
-    await ok('insert demo Sunday repertoire', supabase.from('repertoire').insert(
-      demoSongs.slice(0, 6).map((song, index) => ({
-        church_id: demoChurch.id,
-        song_id: song.id,
-        minister_id: songOwner.id,
-        event_name: 'Culto de Domingo',
-        event_date: sundayStr,
-        order_index: index + 1,
+  async function replaceDemoRepertoire(date, name, songs) {
+    const args = { p_actor: demoUserId, p_church: demoChurch.id, p_impersonating: false, p_date: date, p_name: name }
+    let snapshot = await ok('read demo repertoire', supabase.rpc('wf07_read', args))
+    for (const item of snapshot.items) {
+      snapshot = await ok('remove demo repertoire item', supabase.rpc('wf07_mutate', {
+        ...args, p_revision: snapshot.revision, p_command: { action: 'remove', itemId: item.id },
       }))
-    ))
+    }
+    for (const song of songs) {
+      snapshot = await ok('append demo repertoire item', supabase.rpc('wf07_mutate', {
+        ...args, p_revision: snapshot.revision, p_command: { action: 'add', songId: song.id, ministerId: song.minister_id },
+      }))
+    }
   }
+  await replaceDemoRepertoire(sundayStr, 'Culto de Domingo', demoSongs.slice(0, 6))
 
   const specialDate = toDateString(nextDow(sunday, 4))
   const existingEvent = await ok('find special event', supabase
@@ -232,25 +228,7 @@ async function main() {
     }))
   }
 
-  await ok('delete special event repertoire', supabase
-    .from('repertoire')
-    .delete()
-    .eq('church_id', demoChurch.id)
-    .eq('event_date', specialDate)
-    .eq('event_name', 'Noite de Louvor Demo'))
-
-  if (demoSongs.length) {
-    await ok('insert special repertoire', supabase.from('repertoire').insert(
-      demoSongs.slice(4, 10).map((song, index) => ({
-        church_id: demoChurch.id,
-        song_id: song.id,
-        minister_id: songOwner.id,
-        event_name: 'Noite de Louvor Demo',
-        event_date: specialDate,
-        order_index: index + 1,
-      }))
-    ))
-  }
+  await replaceDemoRepertoire(specialDate, 'Noite de Louvor Demo', demoSongs.slice(4, 10))
 
   const start = new Date()
   start.setDate(1)

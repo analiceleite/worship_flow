@@ -319,6 +319,7 @@ function RepertoirePlayerContent() {
     }, [])
 
     useEffect(() => {
+        let active = true
         const fetchItems = async () => {
             if (!date || !eventName) {
                 setError('Informações do repertório inválidas.')
@@ -331,33 +332,48 @@ function RepertoirePlayerContent() {
             setLoading(true)
             setError(null)
 
-            const supabase = createClient()
-            const { data, error: repError } = await supabase
-                .from('repertoire')
-                .select('*, song:songs(*), minister:ministers(*)')
-                .eq('church_id', effectiveChurchId)
-                .eq('event_date', date)
-                .eq('event_name', eventName)
-                .order('order_index')
+            try {
+                const params = new URLSearchParams({ date, eventName })
+                const response = await fetch(`/api/repertoire?${params}`, { cache: 'no-store' })
+                const result = await response.json()
+                if (!response.ok) throw new Error(result.error || 'Não foi possível carregar a playlist.')
+                if (!active) return
+                const loaded: RepertoireItem[] = result.items
+                setItems(loaded)
 
-            if (repError) {
-                setError(repError.message || 'Não foi possível carregar a playlist.')
+                const firstPlayable = loaded.findIndex((item) => extractYouTubeVideoId(item.song?.youtube_url))
+                setCurrentIndex(firstPlayable >= 0 ? firstPlayable : 0)
                 setLoading(false)
-                return
+            } catch (error) {
+                if (!active) return
+                setItems([])
+                setError(error instanceof Error ? error.message : 'Não foi possível carregar a playlist.')
+                setLoading(false)
             }
-
-            const loaded: RepertoireItem[] = (data ?? []) as RepertoireItem[]
-            setItems(loaded)
-
-            const firstPlayable = loaded.findIndex((item) => extractYouTubeVideoId(item.song?.youtube_url))
-            setCurrentIndex(firstPlayable >= 0 ? firstPlayable : 0)
-            setLoading(false)
         }
 
         void fetchItems()
+        return () => { active = false }
     }, [date, eventName, currentMinister, effectiveChurchId])
 
     const currentItem = items[currentIndex]
+    const currentSongId = currentItem?.song?.id
+    const needsCifraContent = Boolean(currentItem?.song?.cifra_available && !currentItem.song.cifra_content)
+    const [cifraLoading, setCifraLoading] = useState(false)
+    useEffect(() => {
+        if (!currentSongId || !needsCifraContent) return
+        let active = true
+        setCifraLoading(true)
+        void fetch(`/api/repertoire/cifra?songId=${encodeURIComponent(currentSongId)}`, { cache: 'no-store' })
+            .then(async response => {
+                const song = await response.json()
+                if (!response.ok) throw new Error(song.error)
+                if (active) setItems(previous => previous.map(item => item.song_id === currentSongId ? { ...item, song } : item))
+            })
+            .catch(() => { if (active) setError('Não foi possível carregar a cifra. Selecione a música novamente para tentar.') })
+            .finally(() => { if (active) setCifraLoading(false) })
+        return () => { active = false; setCifraLoading(false) }
+    }, [currentSongId, needsCifraContent, effectiveChurchId])
     const isMobile = useIsMobile()
     const currentSongHasPdf = Boolean(currentItem?.song?.cifra_pdf_path)
     const currentVideoId = useMemo(
@@ -787,7 +803,7 @@ function RepertoirePlayerContent() {
                                                 Abrir PDF no navegador
                                             </Button>
                                         ) : (
-                                            <CifraPanel
+                                            cifraLoading ? <p role="status" className="p-4 text-sm text-muted-foreground">Carregando cifra…</p> : <CifraPanel
                                                 song={currentItem.song}
                                                 heightClassName={
                                                     currentSongHasPdf

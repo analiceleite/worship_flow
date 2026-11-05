@@ -35,5 +35,15 @@
     "href": "/profile",
     "published": true,
     "notify": true
+  },
+  {
+    "id": "wf-07-complete-repertoire",
+    "version": "1.1.1",
+    "date": "2026-11-05",
+    "title": "Repertório completo, na ordem certa",
+    "summary": "Agora, o compartilhamento pelo WhatsApp inclui todas as músicas do evento, mesmo quando o repertório tem várias páginas. Novas músicas entram no final da lista completa, as setas permitem mover músicas entre páginas e músicas já adicionadas não aparecem novamente como opção. Ao trocar de evento ou semana, a navegação volta à primeira página. Se outra pessoa alterar o repertório durante sua edição, você recebe um aviso e a lista é atualizada para evitar sobrescrever o trabalho dela.",
+    "href": "/repertoire",
+    "published": true,
+    "notify": true
   }
 ]
