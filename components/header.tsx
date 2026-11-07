@@ -87,8 +87,15 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
     const updateAvatar = (event: Event) => {
       setUserAvatar((event as CustomEvent<{ avatarUrl: string | null }>).detail.avatarUrl)
     }
+    const updateName = (event: Event) => {
+      setUserName((event as CustomEvent<{ name: string }>).detail.name)
+    }
     window.addEventListener('profile-avatar-updated', updateAvatar)
-    return () => window.removeEventListener('profile-avatar-updated', updateAvatar)
+    window.addEventListener('profile-name-updated', updateName)
+    return () => {
+      window.removeEventListener('profile-avatar-updated', updateAvatar)
+      window.removeEventListener('profile-name-updated', updateName)
+    }
   }, [])
 
   useEffect(() => {

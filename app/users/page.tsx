@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { MinisterForm } from '@/components/minister-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
     AlertDialog,
@@ -17,7 +18,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Search, Users, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 
 export default function MinistrosPage() {
@@ -26,7 +27,9 @@ export default function MinistrosPage() {
     const [searchQuery, setSearchQuery] = useState('')
     const [formOpen, setFormOpen] = useState(false)
     const [editingMinister, setEditingMinister] = useState<Minister | null>(null)
-    const [deletingMinister, setDeletingMinister] = useState<Minister | null>(null)
+    const [accessMinister, setAccessMinister] = useState<Minister | null>(null)
+    const [accessSaving, setAccessSaving] = useState(false)
+    const [accessError, setAccessError] = useState<string | null>(null)
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
     const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
 
@@ -78,19 +81,24 @@ export default function MinistrosPage() {
         fetchMinisters()
     }, [fetchMinisters])
 
-    const handleDeleteMinister = async () => {
-        if (!deletingMinister) return
+    const handleChangeAccess = async () => {
+        if (!accessMinister || accessSaving) return
+        setAccessSaving(true)
+        setAccessError(null)
         try {
-            const response = await fetch(`/api/ministers/${deletingMinister.id}`, {
-                method: 'DELETE',
+            const response = await fetch(`/api/ministers/${accessMinister.id}/access`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'x-wf-church-id': effectiveChurchId ?? accessMinister.church_id },
+                body: JSON.stringify({ state: accessMinister.access_state === 'suspended' ? 'active' : 'suspended' }),
             })
             const result = await response.json()
-            if (!response.ok) throw new Error(result.error || 'Erro ao excluir ministro')
-            setDeletingMinister(null)
+            if (!response.ok) throw new Error(result.error || 'Erro ao alterar o acesso')
+            setAccessMinister(null)
             await fetchMinisters()
-        } catch (error: any) {
-            console.error('Erro ao excluir ministro:', error)
-            alert(error.message || 'Erro ao excluir ministro')
+        } catch (error: unknown) {
+            setAccessError(error instanceof Error ? error.message : 'Erro ao alterar o acesso')
+        } finally {
+            setAccessSaving(false)
         }
     }
 
@@ -209,6 +217,9 @@ export default function MinistrosPage() {
                                                 <p className="text-xs text-muted-foreground">
                                                     {minister.role === 'midia' ? 'Midia' : minister.instrument}
                                                 </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {minister.access_state === 'suspended' ? 'Acesso suspenso' : minister.access_state === 'pending' ? 'Acesso pendente' : 'Ativo'}
+                                                </p>
                                             </div>
 
                                             {/* Actions */}
@@ -217,6 +228,7 @@ export default function MinistrosPage() {
                                                     variant="ghost"
                                                     size="icon"
                                                     className="text-muted-foreground hover:text-foreground"
+                                                    aria-label={`Editar funções de ${minister.name}`}
                                                     onClick={() => {
                                                         setEditingMinister(minister)
                                                         setFormOpen(true)
@@ -228,9 +240,14 @@ export default function MinistrosPage() {
                                                     variant="ghost"
                                                     size="icon"
                                                     className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                                    onClick={() => setDeletingMinister(minister)}
+                                                    disabled={minister.access_state === 'pending'}
+                                                    aria-label={`${minister.access_state === 'suspended' ? 'Reativar' : 'Suspender'} acesso de ${minister.name}`}
+                                                    onClick={() => {
+                                                        setAccessError(null)
+                                                        setAccessMinister(minister)
+                                                    }}
                                                 >
-                                                    <Trash2 className="h-4 w-4" />
+                                                    {minister.access_state === 'suspended' ? <UserRoundCheck className="h-4 w-4" /> : <UserRoundX className="h-4 w-4" />}
                                                 </Button>
                                             </div>
                                         </div>
@@ -255,25 +272,29 @@ export default function MinistrosPage() {
                 onSuccess={fetchMinisters}
             />
 
-            {/* ── Delete dialog ── */}
+            {/* Access changes preserve the global account and musical history. */}
             <AlertDialog
-                open={!!deletingMinister}
-                onOpenChange={(open) => !open && setDeletingMinister(null)}
+                open={!!accessMinister}
+                onOpenChange={(open) => { if (!open && !accessSaving) setAccessMinister(null) }}
             >
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Excluir Ministro</AlertDialogTitle>
+                        <AlertDialogTitle>{accessMinister?.access_state === 'suspended' ? 'Reativar acesso' : 'Suspender acesso'}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Tem certeza que deseja excluir "{deletingMinister?.name}"? Esta ação não pode ser desfeita.
+                            {accessMinister?.access_state === 'suspended'
+                                ? `Reativar o acesso de ${accessMinister?.name} a esta igreja?`
+                                : `Suspender o acesso de ${accessMinister?.name} somente nesta igreja? A conta, as músicas e o histórico serão preservados.`}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    {accessError && <Alert variant="destructive"><AlertDescription role="alert">{accessError}</AlertDescription></Alert>}
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogCancel disabled={accessSaving}>Cancelar</AlertDialogCancel>
                         <AlertDialogAction
-                            onClick={handleDeleteMinister}
+                            disabled={accessSaving}
+                            onClick={(event) => { event.preventDefault(); void handleChangeAccess() }}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                            Excluir
+                            {accessSaving ? 'Salvando...' : accessMinister?.access_state === 'suspended' ? 'Reativar acesso' : 'Suspender acesso'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

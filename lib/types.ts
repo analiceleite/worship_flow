@@ -10,6 +10,16 @@ export interface Church {
   updated_at: string
 }
 
+export type MembershipState = 'pending' | 'active' | 'suspended'
+
+export interface UserProfile {
+  user_id: string
+  name: string
+  avatar_url: string | null
+  optional_notifications_paused: boolean
+  last_church_id: string | null
+}
+
 export interface Minister {
   id: string
   church_id: string
@@ -19,6 +29,7 @@ export interface Minister {
   role: 'admin' | 'minister' | 'midia'
   user_id: string | null
   is_active: boolean
+  access_state: MembershipState
   avatar_url: string | null
   created_at: string
 }

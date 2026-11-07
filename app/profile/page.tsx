@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { ProfilePhoto } from '@/components/profile-photo'
+import { ProfileName } from '@/components/profile-name'
 import { UserAvatar } from '@/components/user-avatar'
 import { toast } from 'sonner'
 import { Bell, CalendarCheck } from 'lucide-react'
@@ -185,6 +186,7 @@ export default function ProfilePage() {
         </div>
 
         <div className="space-y-6">
+          <ProfileName name={minister.name} onSaved={name => setMinister((current: any) => ({ ...current, name }))} />
           <ProfilePhoto
             name={minister.name}
             avatarUrl={minister.avatar_url}

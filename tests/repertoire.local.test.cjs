@@ -51,8 +51,8 @@ test('WF-07 real database: integrity, concurrent edits, rollback, grants and ten
       users.push(id)
     }
     await query("INSERT INTO public.churches(id,name,slug,environment,email_mode) VALUES($1::uuid,'WF07 local',$1::uuid::text,'test','disabled'),($2::uuid,'WF07 other',$2::uuid::text,'test','disabled')", [church, otherChurch])
-    await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument) VALUES($1,$2,$3,'Admin teste','admin','Voz'),($4,$5,$3,'Voz teste','minister',' Violão, Voz '),($6,$7,$3,'Mídia teste','midia','Sonoplasta')", [minister, actor, church, vocalMinister, vocal, mediaMinister, media])
-    await query("INSERT INTO public.ministers(id,church_id,name,role,instrument) VALUES($1,$2,'Outra igreja','minister','Voz')", [foreignMinister, otherChurch])
+    await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,access_state) VALUES($1,$2,$3,'Admin teste','admin','Voz','active'),($4,$5,$3,'Voz teste','minister',' Violão, Voz ','active'),($6,$7,$3,'Mídia teste','midia','Sonoplasta','active')", [minister, actor, church, vocalMinister, vocal, mediaMinister, media])
+    await query("INSERT INTO public.ministers(id,church_id,name,role,instrument,access_state) VALUES($1,$2,'Outra igreja','minister','Voz','active')", [foreignMinister, otherChurch])
     await query("INSERT INTO public.songs(id,church_id,minister_id,title,artist,tone) VALUES($1,$2,$3,'Outra música','Artista fictício','D')", [foreignSong, otherChurch, foreignMinister])
     await query('INSERT INTO public.platform_admins(user_id) VALUES($1)', [actor])
     const foreignState = await mutate({ action: 'add', songId: foreignSong, ministerId: foreignMinister }, '0', db, actor, otherChurch, name, true)
@@ -157,7 +157,7 @@ test('WF-07 real database: integrity, concurrent edits, rollback, grants and ten
         IF NEW.church_id='${church}'::uuid THEN RAISE EXCEPTION 'WF07_INJECTED_FAILURE'; END IF; RETURN NEW; END $$`)
       await query('CREATE TRIGGER wf07_test_failure BEFORE UPDATE ON public.repertoire_sequences FOR EACH ROW EXECUTE FUNCTION public.wf07_test_failure()')
       try {
-        await assert.rejects(mutate({ action: 'move', itemId: snapshot.items[0].id, position: 25 }, snapshot.revision), /WF07_INJECTED_FAILURE/)
+        await assert.rejects(mutate({ action: 'move', itemId: snapshot.items[0].id, position: snapshot.total }, snapshot.revision), /WF07_INJECTED_FAILURE/)
         assert.deepEqual(await read(), snapshot)
       } finally {
         await query('DROP TRIGGER wf07_test_failure ON public.repertoire_sequences')
@@ -229,6 +229,7 @@ test('WF-07 real database: integrity, concurrent edits, rollback, grants and ten
     await query('BEGIN')
     try {
       await query("SELECT set_config('wf07.writing','on',true)")
+      await query("SELECT set_config('wf04.maintenance','on',true)")
       await query('DELETE FROM public.repertoire WHERE church_id=ANY($1::uuid[])', [[church, otherChurch]])
       await query('DELETE FROM public.repertoire_sequences WHERE church_id=ANY($1::uuid[])', [[church, otherChurch]])
       await query('DELETE FROM public.special_events WHERE church_id=ANY($1::uuid[])', [[church, otherChurch]])

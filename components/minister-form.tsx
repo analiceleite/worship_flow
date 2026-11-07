@@ -110,8 +110,6 @@ export function MinisterForm({
         const { error } = await supabase
           .from('ministers')
           .update({
-            name: formData.name,
-            email: formData.email || null,
             role: formData.role,
             instrument: instrumentValue,
           })
@@ -233,7 +231,9 @@ export function MinisterForm({
               }
               placeholder="Nome do ministro"
               required
+              disabled={!!minister}
             />
+            {minister && <p className="text-xs text-muted-foreground">O nome e a foto são globais e editados pela própria pessoa no perfil.</p>}
           </div>
 
           <div className="space-y-2">

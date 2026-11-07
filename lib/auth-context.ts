@@ -1,9 +1,12 @@
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import type { CurrentMinisterContext, Minister, PlatformAdminContext } from '@/lib/types'
+import type { Church, CurrentMinisterContext, Minister, PlatformAdminContext } from '@/lib/types'
+import { getAuthenticatedIdentity } from '@/lib/auth/identity'
+import { resolveMembership, type MembershipCandidate } from '@/lib/auth/membership'
 
 export const IMPERSONATED_CHURCH_COOKIE = 'wf_impersonated_church_id'
+export const CHURCH_CONTEXT_HEADER = 'x-wf-church-id'
 
 type AuthContextOptions = {
   requireAdmin?: boolean
@@ -22,13 +25,8 @@ export class AuthContextError extends Error {
 export async function getCurrentMinisterContext(
   options: AuthContextOptions = {},
 ): Promise<CurrentMinisterContext> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !user) {
+  const user = await getAuthenticatedIdentity()
+  if (!user) {
     throw new AuthContextError('Usuário não autenticado.', 401)
   }
 
@@ -42,22 +40,37 @@ export async function getCurrentMinisterContext(
         .maybeSingle()
     : { data: null }
 
-  const { data: minister, error: ministerError } = await supabase
-    .from('ministers')
-    .select('id, church_id, role')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (ministerError || (!minister?.church_id && !platformAdmin)) {
-    throw new AuthContextError('Ministro não encontrado para o usuário autenticado.', 403)
+  const isImpersonating = Boolean(platformAdmin && impersonatedChurchId)
+  const requestHeaders = await headers()
+  const requestedChurchId = requestHeaders.get(CHURCH_CONTEXT_HEADER)
+  if (requestedChurchId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedChurchId)) {
+    throw new AuthContextError('Identificador da igreja inválido.', 400)
   }
 
-  const isImpersonating = Boolean(platformAdmin && impersonatedChurchId)
-  const role = isImpersonating ? 'admin' : minister!.role as Minister['role']
+  let membership: MembershipCandidate | undefined
+  if (isImpersonating) {
+    if (requestedChurchId && requestedChurchId !== impersonatedChurchId) {
+      throw new AuthContextError('A igreja solicitada difere do contexto de suporte.', 409)
+    }
+    const { data: church, error } = await admin.from('churches').select('status')
+      .eq('id', impersonatedChurchId!).maybeSingle()
+    if (error) throw new AuthContextError('Não foi possível verificar a igreja.', 503)
+    if (church?.status !== 'active') throw new AuthContextError('Igreja indisponível.', 403)
+  } else {
+    const resolution = resolveMembership(await getOwnMemberships(user.id), requestedChurchId)
+    if (resolution.kind === 'selection_required') {
+      throw new AuthContextError('Selecione uma igreja para continuar.', 409)
+    }
+    if (resolution.kind === 'unavailable') {
+      throw new AuthContextError('Você não possui acesso ativo à igreja solicitada.', 403)
+    }
+    membership = resolution.membership
+  }
+  const role = isImpersonating ? 'admin' : membership!.role
   const context: CurrentMinisterContext = {
     userId: user.id,
-    ministerId: minister?.id ?? user.id,
-    churchId: isImpersonating ? impersonatedChurchId! : minister!.church_id,
+    ministerId: membership?.id ?? user.id,
+    churchId: isImpersonating ? impersonatedChurchId! : membership!.church_id,
     role,
     isAdmin: role === 'admin',
     isImpersonating,
@@ -69,6 +82,29 @@ export async function getCurrentMinisterContext(
   }
 
   return context
+}
+
+// Call only with the identity returned by auth.getUser(), never an HTTP user ID.
+export async function getOwnMemberships(userId: string): Promise<Array<MembershipCandidate & { church_name: string }>> {
+  const admin = createAdminClient()
+  const { data: memberships, error } = await admin.from('ministers')
+    .select('id, church_id, role, access_state').eq('user_id', userId)
+  if (error) throw new AuthContextError('Não foi possível consultar seus vínculos.', 503)
+  if (!memberships?.length) return []
+  const membershipRows = memberships as Array<Pick<Minister, 'id' | 'church_id' | 'role' | 'access_state'>>
+  const { data: churches, error: churchError } = await admin.from('churches')
+    .select('id, name, status').in('id', [...new Set(membershipRows.map(item => item.church_id))])
+  if (churchError) throw new AuthContextError('Não foi possível consultar suas igrejas.', 503)
+  const churchRows = (churches ?? []) as Array<Pick<Church, 'id' | 'name' | 'status'>>
+  const byId = new Map(churchRows.map(church => [church.id, church]))
+  return membershipRows.flatMap(item => {
+    const church = byId.get(item.church_id)
+    if (!church) return []
+    return [{
+      id: item.id, church_id: item.church_id, role: item.role as Minister['role'],
+      access_state: item.access_state, church_status: church.status, church_name: church.name,
+    }]
+  })
 }
 
 export async function authenticatePlatformAdmin(): Promise<PlatformAdminContext> {

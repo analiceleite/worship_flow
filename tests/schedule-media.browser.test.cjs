@@ -39,8 +39,8 @@ test('WF-11 browser: media navigation, published schedule, preparation, errors a
     await query('BEGIN')
     try {
       await query("INSERT INTO public.churches(id,name,slug,environment,email_mode) VALUES($1,'WF11 browser',$1::uuid::text,'test','disabled'),($2,'WF11 other browser',$2::uuid::text,'test','disabled')", [church, otherChurch])
-      await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,is_active,email_reminders_enabled) VALUES($1,$2,$3,'Mídia WF11','midia','Sonoplasta',true,false)", [minister, actor, church])
-      await query("INSERT INTO public.ministers(id,church_id,name,role,instrument,is_active,email_reminders_enabled) VALUES($1,$2,'Colega WF11','midia','Sonoplasta',true,false)", [peer, church])
+      await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,is_active,email_reminders_enabled,access_state) VALUES($1,$2,$3,'Mídia WF11','midia','Sonoplasta',true,false,'active')", [minister, actor, church])
+      await query("INSERT INTO public.ministers(id,church_id,name,role,instrument,is_active,email_reminders_enabled,access_state) VALUES($1,$2,'Colega WF11','midia','Sonoplasta',true,false,'active')", [peer, church])
       for (const [id, tenant, isPublished] of [[published, church, true], [draft, church, false], [foreign, otherChurch, true]]) {
         await query("INSERT INTO public.schedule_quarters(id,church_id,name,start_date,end_date,is_published,sunday_arrival_time,sunday_service_time) VALUES($1,$2,'WF11 período browser','2000-01-01','2099-12-31',$3,'16:15','18:45')", [id, tenant, isPublished])
       }
@@ -204,6 +204,7 @@ test('WF-11 browser: media navigation, published schedule, preparation, errors a
       if (fixtures) {
         await query('BEGIN')
         try {
+          await query("SELECT set_config('wf04.maintenance','on',true)")
           for (const table of ['schedule_rehearsals', 'schedule_assignments', 'schedule_quarters', 'ministers', 'churches']) {
             await query(`DELETE FROM public.${table} WHERE ${table === 'churches' ? 'id' : 'church_id'}=ANY($1::uuid[])`, [[church, otherChurch]])
           }

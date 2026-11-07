@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
+import { getAuthenticatedIdentity } from '@/lib/auth/identity'
+import { getImpersonatedChurchId } from '@/lib/auth-context'
+import { isTrustedMutationOrigin } from '@/lib/auth/request-origin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AVATAR_BUCKET, AVATAR_MAX_BYTES, avatarExtension } from '@/lib/profile-avatar'
 
@@ -8,21 +10,26 @@ export const runtime = 'nodejs'
 
 async function updateAvatar(request: Request, remove: boolean) {
   try {
-    const context = await getCurrentMinisterContext()
-    if (context.isImpersonating) {
-      return NextResponse.json({ error: 'Encerre a visualização de outra igreja para alterar sua foto.' }, { status: 403 })
+    const user = await getAuthenticatedIdentity()
+    if (!user) {
+      return NextResponse.json({ error: 'Usuário não autenticado.' }, { status: 401 })
+    }
+    if (await getImpersonatedChurchId()) {
+      return NextResponse.json({ error: 'Encerre o contexto de suporte para alterar seu perfil pessoal.' }, { status: 403 })
+    }
+    if (!isTrustedMutationOrigin(request)) {
+      return NextResponse.json({ error: 'Origem da solicitação inválida.' }, { status: 403 })
     }
 
     const admin = createAdminClient()
-    const { data: minister, error: readError } = await admin.from('ministers')
-      .select('avatar_url').eq('id', context.ministerId)
-      .eq('church_id', context.churchId).eq('user_id', context.userId).single()
-    if (readError || !minister) {
+    const { data: profile, error: readError } = await admin.from('user_profiles')
+      .select('avatar_url').eq('user_id', user.id).single()
+    if (readError || !profile) {
       return NextResponse.json({ error: 'Não foi possível localizar seu perfil.' }, { status: 403 })
     }
 
     const bucket = admin.storage.from(AVATAR_BUCKET)
-    const prefix = `${context.churchId}/${context.userId}/`
+    const prefix = `${user.id}/`
     let newPath: string | null = null
     let avatarUrl: string | null = null
 
@@ -57,9 +64,9 @@ async function updateAvatar(request: Request, remove: boolean) {
       avatarUrl = bucket.getPublicUrl(newPath).data.publicUrl
     }
 
-    const { error: updateError } = await admin.from('ministers').update({ avatar_url: avatarUrl })
-      .eq('id', context.ministerId).eq('church_id', context.churchId).eq('user_id', context.userId)
-      .select('id').single()
+    const { error: updateError } = await admin.from('user_profiles')
+      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+      .eq('user_id', user.id).select('user_id').single()
     if (updateError) {
       if (newPath) await bucket.remove([newPath])
       return NextResponse.json({ error: 'Não foi possível salvar sua foto. Tente novamente.' }, { status: 500 })
@@ -67,8 +74,9 @@ async function updateAvatar(request: Request, remove: boolean) {
 
     // Never delete an arbitrary URL or an object belonging to a different user.
     const publicPrefix = bucket.getPublicUrl(prefix).data.publicUrl
-    if (minister.avatar_url?.startsWith(publicPrefix)) {
-      const filename = minister.avatar_url.slice(publicPrefix.length)
+    // Legacy church-scoped objects are retained until a dedicated cleanup.
+    if (profile.avatar_url?.startsWith(publicPrefix)) {
+      const filename = profile.avatar_url.slice(publicPrefix.length)
       if (/^[a-f0-9-]+\.(jpg|png|webp)$/.test(filename)) {
         const { error } = await bucket.remove([`${prefix}${filename}`])
         if (error) console.error('Erro ao remover foto antiga:', error)
@@ -77,9 +85,6 @@ async function updateAvatar(request: Request, remove: boolean) {
 
     return NextResponse.json({ avatar_url: avatarUrl })
   } catch (error) {
-    if (error instanceof AuthContextError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
-    }
     console.error('Erro ao atualizar foto de perfil:', error)
     return NextResponse.json({ error: 'Não foi possível atualizar sua foto.' }, { status: 500 })
   }
