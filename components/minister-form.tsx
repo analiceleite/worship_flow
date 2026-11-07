@@ -202,7 +202,7 @@ export function MinisterForm({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" role="alert">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -236,15 +236,17 @@ export function MinisterForm({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Papel</Label>
-            <div className="flex flex-wrap gap-2">
+            <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Papel</legend>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Papel">
               {roles.map((r) => (
                 <Button
                   key={r.id}
                   type="button"
                   variant={formData.role === r.id ? 'default' : 'outline'}
                   size="sm"
+                  className="min-h-11"
+                  aria-pressed={formData.role === r.id}
                   onClick={() => setFormData(prev => ({ ...prev, role: r.id, instruments: r.id === 'midia' ? ['Midia'] : prev.instruments.length && prev.instruments[0] !== 'Midia' ? prev.instruments : ['Voz'] }))}
                 >
                   {r.label}
@@ -252,11 +254,11 @@ export function MinisterForm({
               ))}
             </div>
             <p className="text-xs text-muted-foreground">Escolha o papel do usuário.</p>
-          </div>
+          </fieldset>
 
-          <div className="space-y-2">
-            <Label>Funções</Label>
-            <div className="flex flex-wrap gap-2">
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Funções</legend>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Funções musicais">
               {INSTRUMENTS.map((instrument) => {
                 const selected = formData.instruments.includes(instrument)
                 return (
@@ -265,6 +267,8 @@ export function MinisterForm({
                     type="button"
                     variant={selected ? 'default' : 'outline'}
                     size="sm"
+                    className="min-h-11"
+                    aria-pressed={selected}
                     onClick={() => toggleInstrument(instrument)}
                     disabled={formData.role === 'midia'}
                     title={formData.role === 'midia' ? 'Usuário de mídia não pode ter funções musicais.' : undefined}
@@ -279,7 +283,7 @@ export function MinisterForm({
                 ? 'Usuários de mídia recebem automaticamente a função Midia.'
                 : 'Selecione uma ou mais funções. Exemplo: Voz, Violão, Teclado.'}
             </p>
-          </div>
+          </fieldset>
 
             <DialogFooter>
               <Button
