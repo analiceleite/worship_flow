@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/lib/routes'
 import { getActiveNavigationHref } from '@/lib/navigation'
+import { canShowMediaNavigation } from '@/lib/schedule/access'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -178,8 +179,8 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
   const visibleNavigation = navigation.filter(item =>
     // Admin-only pages only visible to admin
     (!item.adminOnly || userRole === 'admin')
-    // 'midia' users should only see the Repertório page in primary navigation
-    && (userRole !== 'midia' || item.href === ROUTES.REPERTOIRE)
+    // Mídia consulta repertório e escala publicada, sem gestão administrativa.
+    && (userRole !== 'midia' || canShowMediaNavigation(item.href))
   )
 
   const primaryNavigation = visibleNavigation.filter(item => !item.adminOnly && item.href !== ROUTES.RELEASE_NOTES)

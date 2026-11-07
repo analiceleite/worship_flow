@@ -93,6 +93,8 @@ function generateServiceDates(startDate: string, endDate: string): ServiceDate[]
   return dates
 }
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   let context
   try {
@@ -105,11 +107,14 @@ export async function GET() {
   }
 
   const adminSupabase = createAdminClient()
-  const { data, error } = await adminSupabase
+  let query = adminSupabase
     .from('schedule_quarters')
     .select('id, church_id, name, start_date, end_date, is_published, created_at')
     .eq('church_id', context.churchId)
     .order('start_date', { ascending: false })
+
+  if (context.role === 'midia') query = query.eq('is_published', true)
+  const { data, error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

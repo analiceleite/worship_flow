@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
+export const dynamic = 'force-dynamic'
+
 type EventType = 'thursday' | 'sunday'
 
 interface RehearsalPayload {
@@ -37,6 +39,21 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient()
+  if (context.role === 'midia') {
+    const { data: quarter, error } = await supabase
+      .from('schedule_quarters')
+      .select('id')
+      .eq('id', quarter_id)
+      .eq('church_id', context.churchId)
+      .eq('is_published', true)
+      .maybeSingle()
+    if (error) {
+      return NextResponse.json({ error: 'Não foi possível consultar o período' }, { status: 500 })
+    }
+    if (!quarter) {
+      return NextResponse.json({ error: 'Período indisponível' }, { status: 404 })
+    }
+  }
   const baseQuery = supabase
     .from('schedule_rehearsals')
     .select('*')

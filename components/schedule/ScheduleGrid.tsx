@@ -85,6 +85,7 @@ interface ScheduleGridProps {
     readOnly?: boolean
     highlightedMinisterId?: string | null
     rehearsalByDate?: Record<string, ScheduleRehearsal>
+    rehearsalStatus?: 'ready' | 'loading' | 'error'
     canEditRehearsal?: boolean
     onSaveRehearsal?: (payload: {
         eventDate: string
@@ -129,12 +130,14 @@ function RehearsalEditor({
     eventType,
     rehearsal,
     canEdit,
+    status = 'ready',
     onSave,
 }: {
     eventDate: string
     eventType: 'thursday' | 'sunday'
     rehearsal?: ScheduleRehearsal
     canEdit: boolean
+    status?: 'ready' | 'loading' | 'error'
     onSave?: (payload: {
         eventDate: string
         eventType: 'thursday' | 'sunday'
@@ -253,6 +256,10 @@ function RehearsalEditor({
             </Button>
         </>
     )
+
+    if (status !== 'ready') {
+        return <p className="mt-1 text-[11px] text-muted-foreground">{status === 'loading' ? 'Carregando ensaio...' : 'Informações de ensaio indisponíveis'}</p>
+    }
 
     return (
         <div className="mt-1">
@@ -478,6 +485,7 @@ export function ScheduleGrid({
     readOnly = false,
     highlightedMinisterId = null,
     rehearsalByDate = {},
+    rehearsalStatus = 'ready',
     canEditRehearsal = false,
     onSaveRehearsal,
 }: ScheduleGridProps) {
@@ -569,6 +577,7 @@ export function ScheduleGrid({
                                             eventType={eventType}
                                             rehearsal={rehearsalByDate[`${date}_${eventType}`]}
                                             canEdit={canEditRehearsal}
+                                            status={rehearsalStatus}
                                             onSave={onSaveRehearsal}
                                         />
                                     </div>
@@ -627,6 +636,7 @@ export function ScheduleGrid({
                             eventType={eventType}
                             rehearsal={rehearsalByDate[`${date}_${eventType}`]}
                             canEdit={canEditRehearsal}
+                            status={rehearsalStatus}
                             onSave={onSaveRehearsal}
                         />
 
