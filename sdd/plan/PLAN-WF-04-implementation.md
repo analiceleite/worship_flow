@@ -4,7 +4,9 @@
 
 **PBI:** [WF-04](https://github.com/analiceleite/worship_flow/issues/1) · **Relacionado:** [WF-26](https://github.com/analiceleite/worship_flow/issues/22)
 
-**Estado:** Incrementos anteriores commitados em `2df13aa` e `73efc17`. Incrementos locais seguintes fixam contexto em escala/equipe, migram a credencial Google para a pessoa, mantêm seleção explícita de igrejas e revalidam notificações no envio. WF-04 completa ainda pendente (convites, políticas multigreja e demais consumidores); não pronto para implantação.
+**Estado (fechamento local):** convites, migrações 040/041, contração de unicidade e testes de banco/navegador passam no stack local. Pendentes para liberação: auditoria de acessibilidade, caminhos antigos de set-password, revisão de consultas diretas/PWA, decisão sobre a divergência de checksum da 036 e revisão humana. Nada foi enviado ao remoto. Detalhes em [WF-04-validation.md §11](WF-04-validation.md).
+
+**Estado (anterior):** Incrementos anteriores commitados em `2df13aa` e `73efc17`. Incrementos locais seguintes fixam contexto em escala/equipe, migram a credencial Google para a pessoa, mantêm seleção explícita de igrejas e revalidam notificações no envio. WF-04 completa ainda pendente (convites, políticas multigreja e demais consumidores); não pronto para implantação.
 
 **Data:** 2026-11-07
 
@@ -204,19 +206,19 @@ As fases abaixo ainda não estão integralmente concluídas. O primeiro incremen
 
 - [ ] Mapear todas as consultas por `user_id`, helpers SQL, grants, políticas, RPCs, storage, serviços, jobs e cache/PWA.
 - [ ] Conferir schema efetivo e fixtures de migrações; não ignorar divergências de checksum nem reescrever histórico.
-- [ ] Fechar contrato técnico Auth e de contexto explícito; registrar validade/reenvio e diferenças por fluxo.
+- [x] Fechar contrato técnico Auth e de contexto explícito; registrar validade/reenvio e diferenças por fluxo. (Spike no GoTrue local em WF-04-validation.md §11.)
 - [ ] Prototipar seletor, convite, aceite e estado sem igreja; validar com responsáveis/integrantes.
-- [ ] Preparar banco local isolado, Mailpit e duas igrejas fictícias com identidades compartilhadas e papéis distintos.
+- [x] Preparar banco local isolado, Mailpit e duas igrejas fictícias com identidades compartilhadas e papéis distintos.
 
 **Passagem:** inventário registrado, Auth reproduzível e plano de migração revisado.
 
 ### Fase 1 — Expandir schema e migrar legado
 
-- [ ] Criar migrações novas para perfil global, estados, convite/outbox, auditoria e unicidade composta.
-- [ ] Registrar snapshot/marco de corte do legado; migrar exatamente esses vínculos para ativos uma única vez.
-- [ ] Não reexecutar ativação sobre suspensões posteriores; preservar bloqueios Auth e igrejas inativas.
-- [ ] Backfill perfil global e compatibilidade de nome/foto sem mudar IDs/FKs.
-- [ ] Preparar novas policies/helpers e testes reais antes de remover caminhos antigos.
+- [x] Criar migrações novas para perfil global, estados, convite/outbox, auditoria e unicidade composta. (038, 039, 040, 041.)
+- [x] Registrar snapshot/marco de corte do legado; migrar exatamente esses vínculos para ativos uma única vez.
+- [x] Não reexecutar ativação sobre suspensões posteriores; preservar bloqueios Auth e igrejas inativas.
+- [x] Backfill perfil global e compatibilidade de nome/foto sem mudar IDs/FKs.
+- [x] Preparar novas policies/helpers e testes reais antes de remover caminhos antigos.
 
 **Passagem:** migração repetível no ambiente de teste e histórico íntegro; feature multigreja ainda desligada.
 
@@ -232,11 +234,11 @@ As fases abaixo ainda não estão integralmente concluídas. O primeiro incremen
 
 ### Fase 3 — WF-04: convites e acesso
 
-- [ ] Implementar serviços/transações, contratos, limitação persistente e outbox de convites.
-- [ ] Trocar formulário de criação por convite; listar situação de acesso e de envio separadamente.
-- [ ] Implementar aceite novo/existente, troca de identidade, replay, expiração/revogação e recuperação.
-- [ ] Desativar criação por senha temporária e caminhos antigos de autoativação por senha.
-- [ ] Concluir regressão, acessibilidade e evidências de validação.
+- [x] Implementar serviços/transações, contratos, limitação persistente e outbox de convites.
+- [x] Trocar formulário de criação por convite; listar situação de acesso e de envio separadamente.
+- [x] Implementar aceite novo/existente, troca de identidade, replay, expiração/revogação e recuperação.
+- [ ] Desativar criação por senha temporária e caminhos antigos de autoativação por senha. (Criação por senha desativada; caminhos antigos de set-password ainda não verificados.)
+- [ ] Concluir regressão, acessibilidade e evidências de validação. (Regressão e evidências feitas; auditoria de acessibilidade pendente.)
 
 **Passagem:** critérios de aceite da fundação e WF-04 atendidos em ambiente isolado e revisados humanamente.
 

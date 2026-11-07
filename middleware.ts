@@ -30,7 +30,8 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
   const isRecoveryRoute = matchesPath(pathname, ROUTES.AUTH_RESET)
-  const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD, ROUTES.AUTH_RESET]
+  const isInviteRoute = matchesPath(pathname, ROUTES.AUTH_INVITE)
+  const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD, ROUTES.AUTH_RESET, ROUTES.AUTH_INVITE]
   const isPublicRoute = publicRoutes.some(route => matchesPath(pathname, route))
   const isSelectionRoute = pathname === ROUTES.AUTH_SELECT_CHURCH
 
@@ -42,15 +43,16 @@ export async function middleware(request: NextRequest) {
     return next
   }
 
-  if (user || isRecoveryRoute || isSelectionRoute) response.headers.set('Cache-Control', 'no-store')
-  if (isRecoveryRoute || isSelectionRoute) {
+  if (user || isRecoveryRoute || isSelectionRoute || isInviteRoute) response.headers.set('Cache-Control', 'no-store')
+  if (isRecoveryRoute || isSelectionRoute || isInviteRoute) {
     response.headers.set('Referrer-Policy', 'no-referrer')
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
   if (!user) return isPublicRoute ? response : redirect(ROUTES.AUTH_LOGIN)
-  // Selection and recovery must work without an operational membership. Merely
-  // possessing ?code=... is not authentication or a bypass for protected pages.
-  if (isSelectionRoute || isRecoveryRoute || pathname === ROUTES.AUTH_SET_PASSWORD || pathname === ROUTES.AUTH_FORGOT_PASSWORD) return response
+  // Selection, recovery and invitation pages must work without an operational
+  // membership. Merely possessing ?code=... is not authentication or a bypass
+  // for protected pages.
+  if (isSelectionRoute || isRecoveryRoute || isInviteRoute || pathname === ROUTES.AUTH_SET_PASSWORD || pathname === ROUTES.AUTH_FORGOT_PASSWORD) return response
   if (matchesPath(pathname, '/platform')) return response // APIs enforce platform permissions.
 
   const cookiePreference = readChurchPreference(request.cookies.get(CHURCH_CONTEXT_COOKIE)?.value, user.id)

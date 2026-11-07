@@ -18,12 +18,17 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck } from 'lucide-react'
+import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck, RefreshCw, Ban } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { churchFetch, loadChurchContext } from '@/lib/auth/client-context'
+import type { InvitationSummary } from '@/lib/invitations/types'
 
 export default function MinistrosPage() {
     const [ministers, setMinisters] = useState<Minister[]>([])
+    const [invitations, setInvitations] = useState<InvitationSummary[]>([])
+    const [inviteActionId, setInviteActionId] = useState<string | null>(null)
+    const [inviteError, setInviteError] = useState<string | null>(null)
+    const [revokeInvite, setRevokeInvite] = useState<InvitationSummary | null>(null)
     const [loading, setLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState('')
     const [formOpen, setFormOpen] = useState(false)
@@ -42,15 +47,24 @@ export default function MinistrosPage() {
         setLoadError(null)
         try {
             const { context } = await loadChurchContext(loadedChurchId.current ?? undefined)
-            const { data, error } = await createClient().from('ministers').select('*')
-                .eq('church_id', context.churchId).order('name', { ascending: true })
-            if (error) throw new Error('Não foi possível carregar a equipe.')
-            const rows = (data ?? []) as Minister[]
+            const [membersResult, invitationsResult] = await Promise.all([
+                createClient().from('ministers').select('*')
+                    .eq('church_id', context.churchId).order('name', { ascending: true }),
+                churchFetch(context.churchId, '/api/invitations').catch(() => null),
+            ])
+            if (membersResult.error) throw new Error('Não foi possível carregar a equipe.')
+            const rows = (membersResult.data ?? []) as Minister[]
             setCurrentMinister(rows.find(row => row.id === context.ministerId) ?? null)
             setViewerIsAdmin(context.isAdmin)
             setEffectiveChurchId(context.churchId)
             loadedChurchId.current = context.churchId
             setMinisters(rows)
+            if (invitationsResult?.ok) {
+                const payload = await invitationsResult.json().catch(() => ({}))
+                setInvitations(Array.isArray(payload.invitations) ? payload.invitations : [])
+            } else {
+                setInvitations([])
+            }
         } catch (error) {
             setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar a equipe.')
         } finally {
@@ -80,6 +94,42 @@ export default function MinistrosPage() {
             setAccessError(error instanceof Error ? error.message : 'Erro ao alterar o acesso')
         } finally {
             setAccessSaving(false)
+        }
+    }
+
+    const handleInviteAction = async (invitation: InvitationSummary, action: 'resend' | 'revoke') => {
+        if (!effectiveChurchId || inviteActionId) return
+        setInviteActionId(invitation.id)
+        setInviteError(null)
+        try {
+            const response = await churchFetch(effectiveChurchId, `/api/invitations/${invitation.id}/${action}`, {
+                method: 'POST',
+            })
+            const result = await response.json().catch(() => ({}))
+            if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação do convite.')
+            if (action === 'revoke') setRevokeInvite(null)
+            await fetchMinisters()
+        } catch (error: unknown) {
+            setInviteError(error instanceof Error ? error.message : 'Não foi possível concluir a ação do convite.')
+        } finally {
+            setInviteActionId(null)
+        }
+    }
+
+    const pendingInvitations = invitations.filter(invitation => invitation.state === 'pending')
+
+    const deliveryLabel = (invitation: InvitationSummary) => {
+        if (invitation.delivery?.status === 'sent') return 'E-mail enviado'
+        if (invitation.delivery?.status === 'failed') return 'Falha no envio · use Reenviar'
+        if (invitation.delivery?.status === 'sending') return 'Enviando...'
+        return 'Envio pendente'
+    }
+
+    const formatInviteDate = (value: string) => {
+        try {
+            return new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        } catch {
+            return value
         }
     }
 
@@ -116,7 +166,7 @@ export default function MinistrosPage() {
                             {ministers.length} {ministers.length === 1 ? 'ministro' : 'ministros'} no time
                         </p>
                     </div>
-                    <Button onClick={() => setFormOpen(true)}>
+                    <Button onClick={() => setFormOpen(true)} disabled={!effectiveChurchId}>
                         <Plus className="mr-2 h-4 w-4" />
                         Novo Ministro
                     </Button>
@@ -240,6 +290,69 @@ export default function MinistrosPage() {
                         ))}
                     </div>
                 )}
+
+                {viewerIsAdmin && (
+                    <section className="mt-12" aria-labelledby="invitations-title">
+                        <h2 id="invitations-title" className="mb-1 text-lg font-semibold text-foreground">Convites</h2>
+                        <p className="mb-4 text-sm text-muted-foreground">
+                            {pendingInvitations.length} {pendingInvitations.length === 1 ? 'convite pendente' : 'convites pendentes'}. Convites aceitos e revogados ficam no histórico.
+                        </p>
+                        {inviteError && (
+                            <Alert variant="destructive" className="mb-4"><AlertDescription role="alert">{inviteError}</AlertDescription></Alert>
+                        )}
+                        {invitations.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">Nenhum convite enviado ainda.</p>
+                        ) : (
+                            <ul className="space-y-2">
+                                {invitations.map(invitation => {
+                                    const busy = inviteActionId === invitation.id
+                                    const actionable = invitation.state === 'pending' || invitation.state === 'expired'
+                                    return (
+                                        <li key={invitation.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background px-4 py-3">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate font-semibold text-foreground">{invitation.name}</p>
+                                                <p className="truncate text-xs text-muted-foreground">
+                                                    {invitation.email} · {invitation.role === 'midia' ? 'Mídia' : invitation.instrument}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {invitation.state === 'pending' && `Válido até ${formatInviteDate(invitation.expires_at)} · ${deliveryLabel(invitation)}`}
+                                                    {invitation.state === 'expired' && 'Convite expirado · reenvie para gerar um novo link'}
+                                                    {invitation.state === 'accepted' && 'Aceito'}
+                                                    {invitation.state === 'revoked' && 'Revogado'}
+                                                </p>
+                                            </div>
+                                            {actionable && (
+                                                <div className="flex shrink-0 items-center gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={busy}
+                                                        onClick={() => void handleInviteAction(invitation, 'resend')}
+                                                        aria-label={`Reenviar convite para ${invitation.email}`}
+                                                    >
+                                                        <RefreshCw className="mr-2 h-4 w-4" />
+                                                        Reenviar
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        disabled={busy}
+                                                        className="text-muted-foreground hover:text-destructive"
+                                                        onClick={() => setRevokeInvite(invitation)}
+                                                        aria-label={`Revogar convite de ${invitation.email}`}
+                                                    >
+                                                        <Ban className="mr-2 h-4 w-4" />
+                                                        Revogar
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </li>
+                                    )
+                                })}
+                            </ul>
+                        )}
+                    </section>
+                )}
             </main>
 
             {/* ── Minister form ── */}
@@ -254,6 +367,33 @@ export default function MinistrosPage() {
                 effectiveChurchId={effectiveChurchId}
                 onSuccess={fetchMinisters}
             />
+
+            <AlertDialog
+                open={!!revokeInvite}
+                onOpenChange={(open) => { if (!open && !inviteActionId) setRevokeInvite(null) }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Revogar convite</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            O link enviado para {revokeInvite?.email} deixará de funcionar. Esta ação não remove nenhuma conta existente.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={!!inviteActionId}>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={!!inviteActionId}
+                            onClick={(event) => {
+                                event.preventDefault()
+                                if (revokeInvite) void handleInviteAction(revokeInvite, 'revoke')
+                            }}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {inviteActionId ? 'Revogando...' : 'Revogar convite'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Access changes preserve the global account and musical history. */}
             <AlertDialog

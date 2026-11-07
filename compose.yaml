@@ -306,7 +306,7 @@ services:
   test:
     <<: *app-image
     profiles: [test]
-    command: ["node", "--test", "--test-concurrency=1", "tests/password-recovery.local.test.cjs", "tests/repertoire.local.test.cjs", "tests/schedule-media.local.test.cjs", "tests/onboarding.local.test.cjs"]
+    command: ["node", "--test", "--test-concurrency=1", "tests/password-recovery.local.test.cjs", "tests/repertoire.local.test.cjs", "tests/schedule-media.local.test.cjs", "tests/onboarding.local.test.cjs", "tests/invitations.local.test.cjs"]
     depends_on:
       gateway: { condition: service_healthy }
     environment:

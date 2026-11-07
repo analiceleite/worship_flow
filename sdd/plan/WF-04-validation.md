@@ -260,3 +260,63 @@ Antes de adaptar a persistência Google para usuário global, levantar o schema 
 - A pausa global suprime notificações opcionais da fila; mensagens essenciais de acesso/segurança não passam por essa fila e continuam fora do escopo.
 - ESLint continua indisponível; a auditoria de acessibilidade e a revisão de Storage permanecem pendentes.
 - Nenhuma alteração desta seção foi commitada.
+
+## 11. Fechamento local da WF-04: convites, políticas e contração
+
+Escopo desta rodada: fechar as pendências de implementação da WF-04 em ambiente local. Nada foi enviado ao remoto, implantado ou enviado a destinatários reais.
+
+### Mudanças
+
+- **Migração 040** (`scripts/040_multichurch_invitations.sql`, aplicada no stack local): helpers set-based com igreja explícita, políticas por linha substituindo as permissivas antigas, triggers de imutabilidade de `church_id`, tabelas de convite/outbox/limite e RPCs transacionais.
+- **Migração 041** (`scripts/041_church_scoped_memberships.sql`, aplicada no stack local): remove `ministers_email_key` e `ministers_user_id_unique_idx` e cria unicidade por igreja, `(church_id, user_id)` e `(church_id, lower(email))`. A migração aborta se houver duplicidade. Consumidores de `ministers` por `user_id` foram revisados e aceitam múltiplos vínculos.
+- **Convites**: `POST /api/invitations` (criar/reutilizar, Zod, origem confiável, `no-store`), `GET` (lista com situação de acesso e de envio separadas), `POST /api/invitations/:id/resend`, `POST /api/invitations/:id/revoke`, `POST /api/invitations/inspect` (não consome), `POST /api/invitations/accept` (idempotente), `POST /api/invitations/signup` (conta nova não confirmada) e `POST /api/invitations/process` (fila de envio, protegida por `CRON_SECRET`).
+- **Página `/auth/invite/[token]`**: `no-referrer`, `noindex`, `no-store`; liberada no middleware apenas para esta rota. Expirado, revogado e aceito têm mensagens próprias.
+- **Equipe**: formulário de integrante envia convite. Seção "Convites" lista situação, reenvia e revoga com confirmação. O botão "Novo Ministro" fica desabilitado até a igreja ser resolvida, o que corrigiu um estado em que o formulário abria sem igreja.
+- **Senha temporária desativada**: `POST /api/ministers/create` responde `410`. O formulário não contém mais senha temporária.
+- **Envio no cron**: `.github/workflows/schedule-email-reminders.yml` chama `/api/invitations/process` após a fila de notificações. Alteração local; não enviada ao remoto.
+
+### Spike de Auth (contrato escolhido)
+
+Verificado no GoTrue local (v2.197.0):
+
+1. `auth.admin.createUser` com `email_confirm: false` cria a conta sem e-mail.
+2. `POST /auth/v1/resend` com `type: signup` gera o e-mail de confirmação, capturado pelo Mailpit.
+3. Login antes da confirmação retorna `400` (bloqueado).
+4. O link de confirmação (`/auth/v1/verify`) confirma a conta e redireciona.
+
+Contrato adotado: a conta nova nasce não confirmada; o aceite só ocorre com sessão de conta confirmada, e o aceite verifica o e-mail confirmado contra o e-mail do convite. O token de convite sozinho não autentica. A confirmação não carrega o token do convite na URL de retorno; a pessoa volta pelo link do convite recebido, o que mantém o token fora de redirects do Supabase.
+
+Removido: `email_confirm: true` e o rollback por `deleteUser`, que podia falhar com `ON DELETE RESTRICT` em `user_profiles`.
+
+### Validação desta rodada
+
+| Verificação | Resultado |
+|---|---|
+| `npx tsc --noEmit` | **Passou** (após remover o cache gerado `.next/dev`, que tinha referências a rotas antigas). |
+| `pnpm build` | **Passou**, com as rotas de convite e `/auth/invite/[token]`. |
+| `pnpm test:invitations` (unitário, novo) | **10 passaram**: tokens, cifra AES-GCM com detecção de adulteração, chaves de limite, origem, captura local, URL, mapeamento de erros, escape HTML, máquina de estados, rota 410. |
+| `pnpm test:invitations:local` (banco real, novo) | **9 passaram**: permissões de admin, rotação invalida token anterior, inspeção sem consumo e sem vazar token/e-mail, tabelas não legíveis por `authenticated`, aceite por identidade incorreta recusado, aceite único com replay idempotente, **mesma conta em uma segunda igreja**, expiração e revogação, unicidade e imutabilidade de `church_id`. |
+| Serviço `test` do compose (`docker compose run --rm --no-deps test`) | **44 passaram**: recovery, repertório, mídia, onboarding e convites. |
+| `pnpm test:onboarding` | **34 passaram**. |
+| `pnpm test:notifications` | **2 passaram**. |
+| `pnpm test:schedule-media` | **14 passaram**. |
+| `pnpm test:recovery` | **24 passaram**. |
+| `pnpm test:onboarding:browser` (`WF04_BROWSER_TEST=true`) | **8 passaram**. |
+| `pnpm test:invitations:browser` (novo, `WF04_BROWSER_TEST=true`) | **1 passou**: admin convida pela tela de equipe; e-mail capturado; convidada cria conta; confirmação pelo link do GoTrue; aceite; um único vínculo ativo; convite consumido; replay mostra "Convite já aceito". Fixtures removidos (0 sobras confirmadas no banco). |
+| Smoke HTTP | `/auth/invite/*` → 200 com `noindex` e `no-referrer`; `POST /api/invitations` sem sessão → 401; `POST /api/ministers/create` → 410. |
+| `git diff --check` | Sem erros; apenas avisos LF/CRLF. |
+
+Observação: `pnpm local:test` (Supabase CLI) falhou neste ambiente com erro no CLI. A verificação usou o serviço `test` do compose, que é o stack adotado pela WF-04 (ver `cli-error.log` não publicado).
+
+### Pendências que continuam abertas
+
+- **Acessibilidade e leitor de tela**: as telas novas não passaram por auditoria manual nem por teste de teclado.
+- **Lint**: ESLint continua indisponível.
+- **Cooldown de reenvio (60 s)**: proposto no plano, não implementado. Validade de 7 dias está implementada.
+- **Divergência de checksum da 036** não reconciliada. Em banco local, o checksum registrado foi ajustado manualmente, sem alterar o arquivo. Isso precisa de decisão antes de qualquer implantação.
+- **Remoção de `001_create_tables.sql` da cópia de migrações do volume local**: feita manualmente para o stack de teste; não afeta o repositório.
+- **Caminhos antigos de autoativação por senha**: não verificados nesta rodada; permanecem em aberto na Fase 3.
+- **Consultas diretas e cache/PWA**: revisão de Storage, service worker e consultas diretas restantes não concluída.
+- **Google OAuth real** e **Resend real**: não testados. Somente Mailpit local.
+- **Provisionamento (WF-26) e cadastro público (SaaS)**: fora do critério de conclusão da WF-04, conforme o próprio plano.
+- **Revisão humana e autorização de implantação**: pendentes e separadas da validação automatizada.
