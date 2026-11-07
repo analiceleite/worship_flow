@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
+export const dynamic = 'force-dynamic'
+
 interface QuarterRole {
   id: string
   name: string
@@ -43,13 +45,21 @@ export async function GET(
 
   const adminSupabase = createAdminClient()
 
-  const [quarterRes, rolesRes, assignmentsRes] = await Promise.all([
-    adminSupabase
+  let quarterQuery = adminSupabase
       .from('schedule_quarters')
       .select('id, church_id, name, start_date, end_date, is_published, created_at')
       .eq('id', id)
       .eq('church_id', context.churchId)
-      .single(),
+  if (context.role === 'midia') quarterQuery = quarterQuery.eq('is_published', true)
+  const quarterRes = await quarterQuery.maybeSingle()
+  if (quarterRes.error) {
+    return NextResponse.json({ error: 'Não foi possível consultar o período' }, { status: 500 })
+  }
+  if (!quarterRes.data) {
+    return NextResponse.json({ error: 'Período indisponível' }, { status: 404 })
+  }
+
+  const [rolesRes, assignmentsRes] = await Promise.all([
     adminSupabase
       .from('schedule_roles')
       .select('id, name, category, display_order')
@@ -62,13 +72,6 @@ export async function GET(
       .eq('church_id', context.churchId)
       .eq('quarter_id', id),
   ])
-
-  if (quarterRes.error || !quarterRes.data) {
-    return NextResponse.json(
-      { error: quarterRes.error?.message ?? 'bimestre não encontrado' },
-      { status: 404 }
-    )
-  }
 
   if (rolesRes.error) {
     return NextResponse.json({ error: rolesRes.error.message }, { status: 500 })

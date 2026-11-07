@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { format, getISOWeek } from 'date-fns'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { format, getISOWeek, getISOWeekYear } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
 import { ROUTES } from '@/lib/routes'
+import { getMediaCommitments, getScheduleTimeLabels, type ScheduleTimes } from '@/lib/schedule/media'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,7 +29,12 @@ function formatFullDate(dateStr: string) {
 	return format(new Date(`${dateStr}T12:00:00`), "EEEE, dd 'de' MMMM", { locale: ptBR })
 }
 
-interface BimesterSummary {
+function isoWeekKey(dateStr: string) {
+	const date = new Date(`${dateStr}T12:00:00`)
+	return `${getISOWeekYear(date)}-${String(getISOWeek(date)).padStart(2, '0')}`
+}
+
+interface BimesterSummary extends ScheduleTimes {
 	id: string
 	name: string
 	start_date: string
@@ -110,13 +116,25 @@ export default function EscalaPage() {
 	const [schedule, setSchedule] = useState<CurrentSchedule | null>(null)
 	const [viewer, setViewer] = useState<CurrentScheduleApiResponse['viewer']>(null)
 	const [rehearsalByDate, setRehearsalByDate] = useState<Record<string, ScheduleRehearsal>>({})
+	const [rehearsalError, setRehearsalError] = useState<string | null>(null)
+	const [rehearsalLoading, setRehearsalLoading] = useState(false)
+	const [rehearsalAttempt, setRehearsalAttempt] = useState(0)
+	const scheduleRequest = useRef<AbortController | null>(null)
 	const isMobile = useIsMobile()
 
 	const loadSchedule = useCallback(async () => {
+		scheduleRequest.current?.abort()
+		const controller = new AbortController()
+		scheduleRequest.current = controller
+		setLoading(true)
+		setSchedule(null)
+		setViewer(null)
+		setRehearsalByDate({})
 		try {
 			setError(null)
-			const response = await fetch('/api/schedule/current', { cache: 'no-store' })
+			const response = await fetch('/api/schedule/current', { cache: 'no-store', signal: controller.signal })
 			const body = (await response.json()) as CurrentScheduleApiResponse & { error?: string }
+			if (controller.signal.aborted) return
 
 			if (!response.ok) {
 				throw new Error(body.error || 'Não foi possível carregar a escala')
@@ -134,17 +152,23 @@ export default function EscalaPage() {
 			)
 			setViewer(body.viewer)
 		} catch (err) {
+			if (controller.signal.aborted) return
 			setError(err instanceof Error ? err.message : 'Erro ao carregar escala')
 		} finally {
-			setLoading(false)
+			if (!controller.signal.aborted) setLoading(false)
 		}
 	}, [])
 
 	useEffect(() => {
 		loadSchedule()
+		return () => scheduleRequest.current?.abort()
 	}, [loadSchedule])
 
 	useEffect(() => {
+		const controller = new AbortController()
+		setRehearsalByDate({})
+		setRehearsalError(null)
+		setRehearsalLoading(Boolean(schedule?.bimester.id))
 		const loadRehearsals = async () => {
 			if (!schedule?.bimester.id) {
 				setRehearsalByDate({})
@@ -154,8 +178,10 @@ export default function EscalaPage() {
 			try {
 				const response = await fetch(`/api/schedule/rehearsal?quarter_id=${schedule.bimester.id}`, {
 					cache: 'no-store',
+					signal: controller.signal,
 				})
 				const body = (await response.json()) as { rehearsals?: ScheduleRehearsal[]; error?: string }
+				if (controller.signal.aborted) return
 
 				if (!response.ok) {
 					throw new Error(body.error || 'Erro ao carregar ensaios')
@@ -166,15 +192,24 @@ export default function EscalaPage() {
 				)
 				setRehearsalByDate(byDate)
 			} catch {
-				setRehearsalByDate({})
+				if (!controller.signal.aborted) setRehearsalError('Não foi possível carregar as informações de ensaio.')
+			} finally {
+				if (!controller.signal.aborted) setRehearsalLoading(false)
 			}
 		}
 
 		loadRehearsals()
-	}, [schedule?.bimester.id])
+		return () => controller.abort()
+	}, [schedule?.bimester.id, rehearsalAttempt])
 
 	const isAdmin = viewer?.role === 'admin'
+	const isMedia = viewer?.role === 'midia'
 	const canEditRehearsal = viewer?.role === 'admin' || viewer?.role === 'minister'
+	const today = format(new Date(), 'yyyy-MM-dd')
+	const mediaCommitments = useMemo(
+		() => getMediaCommitments(schedule?.assignments ?? [], schedule?.roles ?? [], viewer?.id ?? '', today),
+		[schedule, viewer?.id, today],
+	)
 
 	const assignedCount = useMemo(() => {
 		if (!schedule || !viewer?.id) return 0
@@ -212,14 +247,14 @@ export default function EscalaPage() {
 	const weekPairs = useMemo(() => {
 		if (!schedule || !viewer?.id) return []
 
-		const weekMap = new Map<number, { thursday: string | null; sunday: string | null }>()
+		const weekMap = new Map<string, { thursday: string | null; sunday: string | null }>()
 		for (const date of schedule.dates.thursday) {
-			const week = getISOWeek(new Date(`${date}T12:00:00`))
+			const week = isoWeekKey(date)
 			if (!weekMap.has(week)) weekMap.set(week, { thursday: null, sunday: null })
 			weekMap.get(week)!.thursday = date
 		}
 		for (const date of schedule.dates.sunday) {
-			const week = getISOWeek(new Date(`${date}T12:00:00`))
+			const week = isoWeekKey(date)
 			if (!weekMap.has(week)) weekMap.set(week, { thursday: null, sunday: null })
 			weekMap.get(week)!.sunday = date
 		}
@@ -236,17 +271,19 @@ export default function EscalaPage() {
 		const today = new Date()
 		today.setHours(0, 0, 0, 0)
 		const currentISOWeek = getISOWeek(today)
-		const currentYear = today.getFullYear()
+		const currentYear = getISOWeekYear(today)
 
 		return Array.from(weekMap.entries())
-			.sort(([a], [b]) => a - b)
-			.map(([week, { thursday, sunday }]) => {
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([weekKey, { thursday, sunday }]) => {
+				const week = Number(weekKey.split('-')[1])
 				const latestDateStr = sunday ?? thursday!
 				const latestDate = new Date(`${latestDateStr}T12:00:00`)
-				const weekYear = latestDate.getFullYear()
+				const weekYear = getISOWeekYear(latestDate)
 				const isPast = latestDate < today
 				const isCurrentWeek = week === currentISOWeek && weekYear === currentYear
 				return {
+					weekKey,
 					week,
 					thursday,
 					sunday,
@@ -340,7 +377,10 @@ export default function EscalaPage() {
 				{error && (
 					<Alert variant="destructive" className="mb-6">
 						<AlertCircle className="h-4 w-4" />
-						<AlertDescription>{error}</AlertDescription>
+						<AlertDescription>
+							{error}
+							<Button variant="outline" className="ml-2" onClick={() => loadSchedule()}>Tentar novamente</Button>
+						</AlertDescription>
 					</Alert>
 				)}
 
@@ -376,11 +416,11 @@ export default function EscalaPage() {
 				)}
 
 				{loading ? (
-					<div className="flex flex-col items-center justify-center gap-3 py-20">
+					<div role="status" className="flex flex-col items-center justify-center gap-3 py-20">
 						<Spinner className="h-7 w-7" />
 						<p className="text-sm text-muted-foreground">Carregando escala...</p>
 					</div>
-				) : !schedule ? (
+				) : error ? null : !schedule ? (
 					<Card>
 						<CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
 							<div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted text-muted-foreground">
@@ -428,32 +468,74 @@ export default function EscalaPage() {
 							</CardHeader>
 						</Card>
 
+						{rehearsalLoading && <p role="status" className="text-sm text-muted-foreground">Carregando informações de ensaio...</p>}
+						{rehearsalError && (
+							<Alert variant="destructive">
+								<AlertCircle className="h-4 w-4" />
+								<AlertDescription>
+									{rehearsalError}
+									<Button variant="outline" className="ml-2" onClick={() => setRehearsalAttempt(value => value + 1)}>Tentar carregar ensaios novamente</Button>
+								</AlertDescription>
+							</Alert>
+						)}
 						<Tabs defaultValue="mine" className="w-full">
 							<TabsList>
-								<TabsTrigger value="mine">Minha Escala</TabsTrigger>
+								<TabsTrigger value="mine">{isMedia ? 'Meus compromissos' : 'Minha Escala'}</TabsTrigger>
 								<TabsTrigger value="all">Escala Geral</TabsTrigger>
 							</TabsList>
 
 							{/* ── Minha Escala ───────────────────────────────── */}
 							<TabsContent value="mine" className="mt-3">
-								{weekPairs.length === 0 ? (
+								{isMedia ? (
+									<div className="space-y-3">
+										<p className="text-sm text-muted-foreground">Seus compromissos de hoje em diante. Consulte também a aba Escala Geral.</p>
+										{mediaCommitments.upcoming.length === 0 ? (
+											<Card>
+												<CardContent className="py-10 text-center text-sm">
+													{mediaCommitments.total === 0
+														? 'Você não possui atribuições neste período publicado.'
+														: 'Você não possui próximos compromissos neste período publicado.'}
+												</CardContent>
+											</Card>
+										) : mediaCommitments.upcoming.map(commitment => {
+											const times = getScheduleTimeLabels(commitment.eventType, schedule.bimester)
+											const rehearsal = rehearsalByDate[`${commitment.date}_${commitment.eventType}`]
+											return (
+												<Card key={`${commitment.date}_${commitment.eventType}`}>
+													<CardHeader className="pb-2">
+														<CardTitle className="text-base">{formatFullDate(commitment.date)}</CardTitle>
+													</CardHeader>
+													<CardContent className="space-y-2 text-sm">
+														<ul>
+															{commitment.roles.map(role => (
+																<li key={role.id}>{role.name}{role.isTrainee ? ' (Aprendiz)' : ''}</li>
+															))}
+														</ul>
+														<p>Chegada: {times.arrival ?? 'não informada'} · Início do culto: {times.service ?? 'não informado'}</p>
+														{!rehearsalLoading && !rehearsalError && <p>Ensaio: {formatRehearsalSummary(rehearsal) ?? 'informações não cadastradas'}</p>}
+													</CardContent>
+												</Card>
+											)
+										})}
+									</div>
+								) : weekPairs.length === 0 ? (
 									<Card>
 										<CardContent className="flex flex-col items-center gap-3 py-16 text-center">
 											<div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted text-muted-foreground">
 												<UserCircle2 className="h-6 w-6" />
 											</div>
 											<div className="space-y-1">
-												<p className="text-sm font-medium text-foreground">Nenhuma escala publicada</p>
+												<p className="text-sm font-medium text-foreground">Nenhuma próxima data neste período publicado</p>
 												<p className="text-xs text-muted-foreground">
-													Não há datas neste bimestre ainda.
+													Consulte a aba Escala Geral para ver as datas disponíveis.
 												</p>
 											</div>
 										</CardContent>
 									</Card>
 								) : (
 									<div className="space-y-3">
-										{weekPairs.map(({ week, thursday, sunday, thursdayRoles, sundayRoles, isCurrentWeek }) => (
-											<Card key={week}>
+										{weekPairs.map(({ weekKey, week, thursday, sunday, thursdayRoles, sundayRoles, isCurrentWeek }) => (
+											<Card key={weekKey}>
 												<CardContent className="p-3">
 													{/* Week tag */}
 													<div className="mb-2.5 flex items-center gap-1.5">
@@ -570,6 +652,7 @@ export default function EscalaPage() {
 
 							{/* ── Escala Geral ───────────────────────────────── */}
 							<TabsContent value="all" className="mt-3">
+								{isMobile && <p className="mb-3 text-sm text-muted-foreground">No celular, a escala geral mostra as datas de hoje em diante.</p>}
 								<Tabs defaultValue="thursday" className="w-full">
 									<TabsList>
 										<TabsTrigger value="thursday">Quintas</TabsTrigger>
@@ -594,6 +677,7 @@ export default function EscalaPage() {
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
 												rehearsalByDate={rehearsalByDate}
+												rehearsalStatus={rehearsalLoading ? 'loading' : rehearsalError ? 'error' : 'ready'}
 												canEditRehearsal={canEditRehearsal}
 												onSaveRehearsal={handleSaveRehearsal}
 											/>
@@ -618,6 +702,7 @@ export default function EscalaPage() {
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
 												rehearsalByDate={rehearsalByDate}
+												rehearsalStatus={rehearsalLoading ? 'loading' : rehearsalError ? 'error' : 'ready'}
 												canEditRehearsal={canEditRehearsal}
 												onSaveRehearsal={handleSaveRehearsal}
 											/>

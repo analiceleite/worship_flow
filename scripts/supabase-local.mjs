@@ -133,7 +133,7 @@ function dev() {
 }
 
 function testRecovery() {
-  const result = spawnSync(process.execPath, ['--test', 'tests/password-recovery.local.test.cjs', 'tests/repertoire.local.test.cjs'], {
+  const result = spawnSync(process.execPath, ['--test', 'tests/password-recovery.local.test.cjs', 'tests/repertoire.local.test.cjs', 'tests/schedule-media.local.test.cjs'], {
     cwd: root, env: localEnvironment(status(), process.env), stdio: 'inherit', timeout: 120000,
   })
   if (result.status !== 0) throw new Error('Local recovery integration tests failed.')

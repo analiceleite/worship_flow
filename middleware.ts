@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { ROUTES } from '@/lib/routes'
 import { serverSupabaseFetch } from '@/lib/supabase/server-fetch'
+import { canMediaAccessSchedule } from '@/lib/schedule/access'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -160,9 +161,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL(target, request.url))
     }
 
-    // 'midia' users: só permitem acessar repertório e perfil
+    // Mídia consulta a escala, mas não sua árvore administrativa.
     if (minister.role === 'midia') {
       const allowed =
+        canMediaAccessSchedule(request.nextUrl.pathname) ||
         request.nextUrl.pathname.startsWith(ROUTES.REPERTOIRE) ||
         request.nextUrl.pathname.startsWith(ROUTES.PROFILE) ||
         isPublicRoute

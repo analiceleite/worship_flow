@@ -1,6 +1,6 @@
 {
   "name": "my-project",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "scripts": {
     "dev": "set WATCHPACK_POLLING=true&& set CHOKIDAR_USEPOLLING=1&& next dev --webpack",
@@ -11,6 +11,8 @@
     "test:recovery": "node --test tests/password-recovery.test.cjs",
     "test:repertoire": "node --test tests/repertoire.test.cjs",
     "test:repertoire:browser": "node --test tests/repertoire.browser.test.cjs",
+    "test:schedule-media": "node --test tests/navigation.test.cjs tests/schedule-media.test.cjs",
+    "test:schedule-media:browser": "node --test tests/schedule-media.browser.test.cjs",
     "test:local-tools": "node --test tests/local-supabase.test.mjs tests/compose-transport.test.cjs",
     "local:prepare": "node scripts/supabase-local.mjs prepare",
     "local:start": "node scripts/supabase-local.mjs start",

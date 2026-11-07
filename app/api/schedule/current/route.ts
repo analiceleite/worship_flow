@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 
+export const dynamic = 'force-dynamic'
+
 interface QuarterRole {
   id: string
   name: string
@@ -46,7 +48,7 @@ export async function GET() {
 
   const { data: publishedQuarter, error: quarterError } = await adminSupabase
     .from('schedule_quarters')
-    .select('id, church_id, name, start_date, end_date, is_published, created_at')
+    .select('id, church_id, name, start_date, end_date, is_published, created_at, thursday_arrival_time, thursday_service_time, sunday_arrival_time, sunday_service_time')
     .eq('church_id', context.churchId)
     .eq('is_published', true)
     .order('start_date', { ascending: false })
