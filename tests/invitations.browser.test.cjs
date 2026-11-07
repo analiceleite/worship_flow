@@ -100,6 +100,11 @@ test('WF-04 browser: invite, create account, confirm, accept', {
     assert.ok(link, 'invitation link captured')
     const inviteUrl = link[0]
 
+    // 2b. The signed-in administrator is not the invitee: the page must block acceptance.
+    await adminPage.goto(inviteUrl)
+    await adminPage.getByText('como outra conta').waitFor()
+    assert.equal(await adminPage.getByRole('button', { name: 'Aceitar convite', exact: true }).count(), 0)
+
     // 3. The invitee opens the link anonymously, creates the account and gets a confirmation.
     const inviteePage = await openPage()
     await inviteePage.goto(inviteUrl)

@@ -25,7 +25,6 @@ export default function InvitePage() {
   const [inspection, setInspection] = useState<InvitationInspection | null>(null)
   const [loading, setLoading] = useState(true)
   const [unavailable, setUnavailable] = useState<string | null>(null)
-  const [hasSession, setHasSession] = useState(false)
   const [mode, setMode] = useState<Mode>('signup')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,8 +52,6 @@ export default function InvitePage() {
       const invitation = data.invitation as InvitationInspection
       setInspection(invitation)
       setSignupForm(current => ({ ...current, name: current.name || invitation.name }))
-      const { data: { user } } = await createClient().auth.getUser()
-      setHasSession(Boolean(user))
     } catch {
       setUnavailable('Não foi possível verificar este convite. Tente novamente.')
     } finally {
@@ -140,6 +137,19 @@ export default function InvitePage() {
 
   const state = inspection?.state
   const usable = state === 'pending'
+  const sessionState = inspection?.session_state ?? 'anonymous'
+  const hasSession = sessionState !== 'anonymous'
+
+  const leaveAccount = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await createClient().auth.signOut()
+      await inspect()
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -197,10 +207,22 @@ export default function InvitePage() {
               {notice && <Alert><AlertDescription>{notice}</AlertDescription></Alert>}
               {error && <Alert variant="destructive"><AlertDescription role="alert">{error}</AlertDescription></Alert>}
 
-              {hasSession ? (
+              {sessionState === 'mismatched' ? (
+                <div className="space-y-3">
+                  <Alert variant="destructive">
+                    <AlertDescription role="alert">
+                      Você está conectado como outra conta. Saia desta conta e entre com o e-mail que recebeu o convite ({inspection.email_hint}).
+                    </AlertDescription>
+                  </Alert>
+                  <Button className="w-full" onClick={() => void leaveAccount()} disabled={busy}>
+                    {busy && <Spinner className="mr-2" />}
+                    Sair desta conta
+                  </Button>
+                </div>
+              ) : sessionState === 'matching' ? (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Você já está conectado. Aceite para entrar em {inspection.church_name} com a conta atual.
+                    Você já está conectado com o e-mail do convite. Aceite para entrar em {inspection.church_name}.
                   </p>
                   <Button className="w-full" onClick={() => void handleAccept()} disabled={busy}>
                     {busy && <Spinner className="mr-2" />}

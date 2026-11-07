@@ -23,6 +23,8 @@ export type InvitationSummary = {
   } | null
 }
 
+export type InvitationSessionState = 'anonymous' | 'matching' | 'mismatched'
+
 export type InvitationInspection = {
   church_id: string
   church_name: string
@@ -32,6 +34,7 @@ export type InvitationInspection = {
   instrument: string
   state: InvitationState
   expires_at: string
+  session_state: InvitationSessionState
 }
 
 export type InvitationAcceptance = {

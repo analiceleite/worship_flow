@@ -296,6 +296,16 @@ Um banco de teste aplicou a 040 e falhou com `42P01: relation "public.schedule_n
 - Local: o checksum registrado de `040_multichurch_invitations.sql` foi atualizado para o arquivo corrigido. As mudanças são apenas guardas; o efeito já aplicado é o mesmo. Essa atualização foi manual e está registrada aqui.
 - Suíte `tests/invitations.local.test.cjs` continua passando (9/9).
 
+### Ajuste: sessão de outra conta na tela do convite
+
+Antes, a tela mostrava "Você já está conectado" para qualquer sessão, e o aceite falhava no servidor com `WF04_EMAIL_MISMATCH`. Agora `POST /api/invitations/inspect` compara a identidade verificada (`auth.getUser`) com o e-mail do convite, no servidor, e devolve apenas `session_state`: `anonymous`, `matching` ou `mismatched`. O e-mail completo nunca sai do servidor.
+
+- `mismatched`: a tela explica a situação e oferece "Sair desta conta"; o aceite fica oculto.
+- `matching`: aceite direto.
+- `anonymous`: criar conta ou entrar.
+
+Validação: teste unitário de `sessionStateFor` (11 testes no total no arquivo) e teste de navegador em que o admin logado abre o convite e não vê o botão de aceite. Ambos passam, junto com a suíte de navegador do onboarding (8/8) e a unitária (34/34).
+
 ### Validação desta rodada
 
 | Verificação | Resultado |

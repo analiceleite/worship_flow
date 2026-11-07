@@ -13,6 +13,7 @@ import {
   sendInvitationEmail,
 } from './email'
 import { InvitationError } from './errors'
+import { sessionStateFor } from './session'
 import type {
   InvitationAcceptance,
   InvitationDeliveryResult,
@@ -281,14 +282,24 @@ export async function revokeInvitation(input: {
   return data as { invitation_id: string; revoked_at: string }
 }
 
-export async function inspectInvitation(token: string): Promise<InvitationInspection> {
+export async function inspectInvitation(token: string, sessionEmail: string | null): Promise<InvitationInspection> {
   const tokenHash = hashInvitationToken(token)
   await enforceRateLimit('inspect', tokenHash, 30)
-  const { data, error } = await createAdminClient().rpc('wf04_inspect_invitation', {
+  const admin = createAdminClient()
+  const { data, error } = await admin.rpc('wf04_inspect_invitation', {
     p_token_hash: tokenHash,
   })
   if (error) throw error
-  return data as InvitationInspection
+  if (!sessionEmail) {
+    return { ...(data as Omit<InvitationInspection, 'session_state'>), session_state: 'anonymous' }
+  }
+  const { data: row, error: emailError } = await admin.from('wf04_invitations')
+    .select('email').eq('token_hash', tokenHash).maybeSingle()
+  if (emailError) throw emailError
+  return {
+    ...(data as Omit<InvitationInspection, 'session_state'>),
+    session_state: sessionStateFor(sessionEmail, row?.email ?? null),
+  }
 }
 
 export async function acceptInvitation(input: {

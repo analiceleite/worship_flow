@@ -21,6 +21,16 @@ process.env.INVITATION_TOKEN_SECRET = 'unit-test-secret-not-used-anywhere-else'
 const crypto = load('lib/invitations/crypto.ts')
 const email = load('lib/invitations/email.ts')
 const errors = load('lib/invitations/errors.ts')
+const session = load('lib/invitations/session.ts')
+
+test('session state compares the verified session e-mail with the invitation e-mail', () => {
+  assert.equal(session.sessionStateFor(null, 'ana@exemplo.com'), 'anonymous')
+  assert.equal(session.sessionStateFor(undefined, 'ana@exemplo.com'), 'anonymous')
+  assert.equal(session.sessionStateFor('ana@exemplo.com', 'ana@exemplo.com'), 'matching')
+  assert.equal(session.sessionStateFor('  Ana@Exemplo.com ', 'ana@exemplo.com'), 'matching')
+  assert.equal(session.sessionStateFor('admin@exemplo.com', 'ana@exemplo.com'), 'mismatched')
+  assert.equal(session.sessionStateFor('ana@exemplo.com', null), 'mismatched')
+})
 
 test('tokens are random, hashed deterministically and never equal the hash', () => {
   const a = crypto.createInvitationToken()
