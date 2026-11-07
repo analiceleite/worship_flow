@@ -34,7 +34,7 @@ test('WF-07 browser: pagination, global ordering, conflicts, WhatsApp and mobile
     const created = await admin.auth.admin.createUser({ id: actor, email, password, email_confirm: true })
     assert.equal(created.error, null)
     await query("INSERT INTO public.churches(id,name,slug,environment,email_mode) VALUES($1,'WF07 browser',$1::uuid::text,'test','disabled')", [church])
-    await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,is_active,email_reminders_enabled) VALUES($1,$2,$3,'Admin browser','admin','Voz',true,false)", [minister, actor, church])
+    await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,is_active,email_reminders_enabled,access_state) VALUES($1,$2,$3,'Admin browser','admin','Voz',true,false,'active')", [minister, actor, church])
     await query("INSERT INTO public.special_events(id,church_id,name,event_date,created_by) VALUES($1,$2,'Evento vazio browser',$3,$4)", [special, church, date, minister])
     let revision = '0'
     for (let i = 0; i < songs.length; i++) {
@@ -59,6 +59,7 @@ test('WF-07 browser: pagination, global ordering, conflicts, WhatsApp and mobile
     })
     const page = await context.newPage()
     page.setDefaultTimeout(20000)
+    page.setDefaultNavigationTimeout(90000) // Allow cold compilation in the local dev container.
     await page.goto('http://127.0.0.1:3001/auth/login')
     await page.getByLabel('Email', { exact: true }).fill(email)
     await page.getByLabel('Senha', { exact: true }).fill(password)
@@ -203,6 +204,7 @@ test('WF-07 browser: pagination, global ordering, conflicts, WhatsApp and mobile
     await query('BEGIN')
     try {
       await query("SELECT set_config('wf07.writing','on',true)")
+      await query("SELECT set_config('wf04.maintenance','on',true)")
       await query('DELETE FROM public.repertoire WHERE church_id=$1', [church])
       await query('DELETE FROM public.repertoire_sequences WHERE church_id=$1', [church])
       await query('DELETE FROM public.special_events WHERE church_id=$1', [church])

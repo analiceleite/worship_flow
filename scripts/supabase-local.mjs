@@ -102,15 +102,19 @@ async function seed() {
     if (!user) throw new Error('Local user creation did not return a user.')
     saveAccount({ email: definition.email, password, userId: user.id })
     const existing = await checked(client.from('ministers').select('id').eq('user_id', user.id).maybeSingle())
+    const globalProfile = await checked(client.from('user_profiles').select('name').eq('user_id', user.id).maybeSingle())
     const row = {
-      user_id: user.id, church_id: church.id, email: definition.email, name: definition.name,
-      role: definition.role, instrument: definition.role === 'midia' ? 'Sonoplasta' : 'Voz', is_active: true,
+      user_id: user.id, church_id: church.id, email: definition.email, name: globalProfile?.name ?? definition.name,
+      role: definition.role, instrument: definition.role === 'midia' ? 'Sonoplasta' : 'Voz', is_active: true, access_state: 'active',
       email_reminders_enabled: false,
     }
     const operation = existing
       ? client.from('ministers').update(row).eq('id', existing.id)
       : client.from('ministers').insert(row)
     const profile = await checked(operation.select('id').single())
+    await checked(client.from('user_profiles').upsert({
+      user_id: user.id, name: definition.name,
+    }, { onConflict: 'user_id', ignoreDuplicates: true }))
     const account = { email: definition.email, password, userId: user.id, ministerId: profile.id, churchId: church.id }
     accounts.push(account)
     saveAccount(account)
@@ -133,7 +137,7 @@ function dev() {
 }
 
 function testRecovery() {
-  const result = spawnSync(process.execPath, ['--test', 'tests/password-recovery.local.test.cjs', 'tests/repertoire.local.test.cjs', 'tests/schedule-media.local.test.cjs'], {
+  const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', 'tests/password-recovery.local.test.cjs', 'tests/repertoire.local.test.cjs', 'tests/schedule-media.local.test.cjs', 'tests/onboarding.local.test.cjs'], {
     cwd: root, env: localEnvironment(status(), process.env), stdio: 'inherit', timeout: 120000,
   })
   if (result.status !== 0) throw new Error('Local recovery integration tests failed.')

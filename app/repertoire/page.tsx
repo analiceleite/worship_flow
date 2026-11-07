@@ -1,5 +1,7 @@
 'use client'
 
+import { churchFetch, loadChurchContext, loadSelectedMinister } from '@/lib/auth/client-context'
+
 import { UserAvatar } from '@/components/user-avatar'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -279,6 +281,7 @@ export default function RepertorioPage() {
     const [editEventError, setEditEventError] = useState<string | null>(null)
     const [reorderEnabled, setReorderEnabled] = useState(false)
     const [reorderError, setReorderError] = useState<string | null>(null)
+    const [contextError, setContextError] = useState<string | null>(null)
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
@@ -310,18 +313,17 @@ export default function RepertorioPage() {
     // ── Auth ───────────────────────────────────────────────────────────────────
 
     const checkUserRole = async () => {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-            const { data: minister } = await supabase.from('ministers').select('*').eq('user_id', user.id).single()
-            if (minister) { setCurrentMinister(minister); setIsAdmin(minister.role === 'admin') }
-        }
-
-        const contextResponse = await fetch('/api/context')
-        if (contextResponse.ok) {
-            const result = await contextResponse.json()
-            setEffectiveChurchId(result.context?.churchId ?? null)
-            if (result.context?.isImpersonating) setIsAdmin(true)
+        setContextError(null)
+        setLoading(true)
+        try {
+            const { context } = await loadChurchContext()
+            const minister = await loadSelectedMinister(context)
+            setCurrentMinister(minister)
+            setIsAdmin(context.isAdmin)
+            setEffectiveChurchId(context.churchId)
+        } catch (error) {
+            setContextError(error instanceof Error ? error.message : 'Não foi possível identificar a igreja atual.')
+            setLoading(false)
         }
     }
 
@@ -369,7 +371,7 @@ export default function RepertorioPage() {
         setLoading(true)
         try {
             const params = new URLSearchParams({ date: toDateStr(selectedDay.date), eventName: selectedDay.eventName })
-            const response = await fetch(`/api/repertoire?${params}`, { cache: 'no-store' })
+            const response = await churchFetch(effectiveChurchId, `/api/repertoire?${params}`)
             const result = await response.json()
             if (!response.ok) throw new Error(result.error || 'Não foi possível carregar o repertório.')
             if (generation !== requestGeneration.current || key !== currentContext.current) return
@@ -409,7 +411,7 @@ export default function RepertorioPage() {
         let active = true
         setSongs([])
         setMinisters([])
-        void fetch('/api/repertoire/catalog', { cache: 'no-store' }).then(async response => {
+        void churchFetch(effectiveChurchId, '/api/repertoire/catalog').then(async response => {
             const result = await response.json()
             if (!response.ok) throw new Error(result.error)
             if (!active) return
@@ -422,14 +424,14 @@ export default function RepertorioPage() {
     }, [effectiveChurchId])
 
     const mutateRepertoire = async (command: RepertoireCommand, event = selectedDay, expectedRevision = revision) => {
-        if (!event || operationBusy.current || loading || snapshotContext !== currentContext.current) return false
+        if (!event || !effectiveChurchId || operationBusy.current || loading || snapshotContext !== currentContext.current) return false
         const key = currentContext.current
         operationBusy.current = true
         setSaving(true)
         setReorderError(null)
         requestGeneration.current++
         try {
-            const response = await fetch('/api/repertoire', {
+            const response = await churchFetch(effectiveChurchId, '/api/repertoire', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: toDateStr(event.date), eventName: event.eventName, expectedRevision, command }),
             })
@@ -462,7 +464,7 @@ export default function RepertorioPage() {
     const handleAddToRepertoire = async (e: React.FormEvent) => {
         e.preventDefault()
         setFormError(null)
-        if (!selectedDay) return
+        if (!selectedDay || !effectiveChurchId) return
         if (!canAddSongsToRepertoire) {
             setFormError('Apenas administradores e usuários com a função Voz podem adicionar músicas ao repertório.')
             return
@@ -543,11 +545,12 @@ export default function RepertorioPage() {
     }
 
     const handleOpenPlaylist = async () => {
-        if (!selectedDay) return
+        if (!selectedDay || !effectiveChurchId) return
 
         const params = new URLSearchParams({
             date: toDateStr(selectedDay.date),
             eventName: selectedDay.eventName,
+            churchId: effectiveChurchId,
         })
 
         router.push(`/repertoire/player?${params.toString()}`)
@@ -555,7 +558,7 @@ export default function RepertorioPage() {
 
     const exportBusy = useRef(false)
     const handleExportWhatsapp = async () => {
-        if (!selectedDay || exportBusy.current || saving || loading) return
+        if (!selectedDay || !effectiveChurchId || exportBusy.current || saving || loading) return
         const key = currentContext.current
         const event = selectedDay
         exportBusy.current = true
@@ -565,7 +568,7 @@ export default function RepertorioPage() {
         if (popup) popup.opener = null
         try {
             const params = new URLSearchParams({ date: toDateStr(event.date), eventName: event.eventName })
-            const response = await fetch(`/api/repertoire?${params}`, { cache: 'no-store' })
+            const response = await churchFetch(effectiveChurchId, `/api/repertoire?${params}`)
             const snapshot = await response.json()
             if (!response.ok) throw new Error(snapshot.error || 'Não foi possível exportar.')
             if (key !== currentContext.current) { popup?.close(); return }
@@ -580,10 +583,11 @@ export default function RepertorioPage() {
     }
 
     const openSongCifra = async (song: Song) => {
+        if (!effectiveChurchId) return
         if (openPdfCifraInSystemBrowserFromUserGesture(song)) return
         const key = currentContext.current
         try {
-            const response = await fetch(`/api/repertoire/cifra?songId=${encodeURIComponent(song.id)}`, { cache: 'no-store' })
+            const response = await churchFetch(effectiveChurchId, `/api/repertoire/cifra?songId=${encodeURIComponent(song.id)}`)
             const result = await response.json()
             if (!response.ok) throw new Error(result.error)
             if (key === currentContext.current) setSelectedCifraSong(result)
@@ -669,6 +673,10 @@ export default function RepertorioPage() {
         : undefined
 
     // ── Render ─────────────────────────────────────────────────────────────────
+
+    if (contextError) return (
+        <main className="p-6"><Alert variant="destructive"><AlertDescription role="alert">{contextError}</AlertDescription><Button variant="outline" onClick={() => void checkUserRole()}>Tentar novamente</Button></Alert></main>
+    )
 
     return (
         <div className="min-h-screen bg-background">

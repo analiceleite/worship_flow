@@ -1,5 +1,7 @@
 'use client'
 
+import { loadChurchContext, loadSelectedMinister } from '@/lib/auth/client-context'
+
 import { useEffect, useState, useCallback } from 'react'
 import { Song, Minister } from '@/lib/types'
 import { hasLeadVoiceRole } from '@/lib/permissions'
@@ -9,6 +11,7 @@ import { SongForm } from '@/components/song-form'
 import { DeleteDialog } from '@/components/delete-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Plus, Search, Music } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Badge } from '@/components/ui/badge'
@@ -60,6 +63,7 @@ export default function HomePage() {
     const [totalSongs, setTotalSongs] = useState(0)
     const [page, setPage] = useState(1)
     const [appliedSearch, setAppliedSearch] = useState('')
+    const [contextError, setContextError] = useState<string | null>(null)
 
     const isSinger = hasLeadVoiceRole(currentMinister?.instrument)
     const canManageSongs = isAdmin || isSinger
@@ -78,27 +82,17 @@ export default function HomePage() {
     }, [searchQuery])
 
     const checkUserRole = async () => {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
-        if (user) {
-            const { data: minister } = await supabase
-                .from('ministers')
-                .select('*')
-                .eq('user_id', user.id)
-                .single()
-
-            if (minister) {
-                setCurrentMinister(minister)
-                setIsAdmin(minister.role === 'admin')
-            }
-        }
-
-        const contextResponse = await fetch('/api/context')
-        if (contextResponse.ok) {
-            const result = await contextResponse.json()
-            setEffectiveChurchId(result.context?.churchId ?? null)
-            if (result.context?.isImpersonating) setIsAdmin(true)
+        setContextError(null)
+        setLoading(true)
+        try {
+            const { context } = await loadChurchContext()
+            const minister = await loadSelectedMinister(context)
+            setCurrentMinister(minister)
+            setIsAdmin(context.isAdmin)
+            setEffectiveChurchId(context.churchId)
+        } catch (error) {
+            setContextError(error instanceof Error ? error.message : 'Não foi possível identificar a igreja atual.')
+            setLoading(false)
         }
     }
 
@@ -255,6 +249,8 @@ export default function HomePage() {
                     <div className="flex items-center justify-center py-12">
                         <Spinner className="h-8 w-8" />
                     </div>
+                ) : contextError ? (
+                    <Alert variant="destructive"><AlertDescription role="alert">{contextError}</AlertDescription><Button variant="outline" onClick={() => void checkUserRole()}>Tentar novamente</Button></Alert>
                 ) : filteredSongs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                         <div className="mb-4 rounded-full bg-muted p-4">

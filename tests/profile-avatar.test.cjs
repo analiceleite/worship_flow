@@ -20,6 +20,7 @@ function loadTypeScript(relativePath, mocks = {}) {
 }
 
 const core = loadTypeScript('lib/profile-avatar.ts')
+const requestOrigin = loadTypeScript('lib/auth/request-origin.ts')
 class AuthContextError extends Error {
   constructor(message, status) { super(message); this.status = status }
 }
@@ -36,7 +37,7 @@ function setup(options = {}) {
   const admin = {
     storage: { from: name => { assert.equal(name, core.AVATAR_BUCKET); return bucket } },
     from: name => {
-      assert.equal(name, 'ministers')
+      assert.equal(name, 'user_profiles')
       let updating = false
       const chain = {
         select: () => chain,
@@ -50,14 +51,12 @@ function setup(options = {}) {
     },
   }
   const route = loadTypeScript('app/api/profile/avatar/route.ts', {
+    '@/lib/auth/request-origin': requestOrigin,
     '@/lib/profile-avatar': core,
     '@/lib/auth-context': {
-      AuthContextError,
-      getCurrentMinisterContext: async () => {
-        if (options.unauthenticated) throw new AuthContextError('Não autenticado', 401)
-        return { ...context, isImpersonating: Boolean(options.impersonating) }
-      },
+      getImpersonatedChurchId: async () => options.impersonating ? 'church-1' : null,
     },
+    '@/lib/auth/identity': { getAuthenticatedIdentity: async () => options.unauthenticated ? null : { id: context.userId } },
     '@/lib/supabase/admin': { createAdminClient: () => admin },
   })
   return { route, calls, publicBase }
@@ -68,7 +67,7 @@ function request(bytes = [255, 216, 255, 224], type = 'image/jpeg') {
   form.set('photo', new File([new Uint8Array(bytes)], 'photo.jpg', { type }))
   // Untrusted IDs must never control which profile is updated.
   form.set('ministerId', 'someone-else')
-  return new Request('http://localhost/api/profile/avatar', { method: 'POST', body: form })
+  return new Request('http://localhost/api/profile/avatar', { method: 'POST', headers: { Origin: 'http://localhost' }, body: form })
 }
 
 test('only supported types with matching signatures are accepted', () => {
@@ -97,7 +96,7 @@ test('invalid, empty, oversized and missing files are rejected without upload', 
     [request([1, 2, 3]), 400],
     [request([]), 400],
     [request(new Uint8Array(core.AVATAR_MAX_BYTES + 1)), 413],
-    [new Request('http://localhost/api/profile/avatar', { method: 'POST', body: new FormData() }), 400],
+    [new Request('http://localhost/api/profile/avatar', { method: 'POST', headers: { Origin: 'http://localhost' }, body: new FormData() }), 400],
   ]
   for (const [req, status] of cases) {
     const { route, calls } = setup()
@@ -107,17 +106,16 @@ test('invalid, empty, oversized and missing files are rejected without upload', 
   }
 })
 
-test('upload updates only the authenticated user in their church', async () => {
+test('upload updates only the authenticated global profile, independent of church', async () => {
   const { route, calls, publicBase } = setup()
   const response = await route.POST(request())
   assert.equal(response.status, 200)
   const body = await response.json()
-  assert.ok(body.avatar_url.startsWith(publicBase + 'church-1/user-1/'))
-  assert.match(calls.uploads[0][0], /^church-1\/user-1\/[a-f0-9-]+\.jpg$/)
-  assert.deepEqual(calls.updates, [{ avatar_url: body.avatar_url }])
-  for (const pair of [['id', 'minister-1'], ['church_id', 'church-1'], ['user_id', 'user-1']]) {
-    assert.equal(calls.filters.filter(value => value[0] === pair[0] && value[1] === pair[1]).length, 2)
-  }
+  assert.ok(body.avatar_url.startsWith(publicBase + 'user-1/'))
+  assert.match(calls.uploads[0][0], /^user-1\/[a-f0-9-]+\.jpg$/)
+  assert.equal(calls.updates[0].avatar_url, body.avatar_url)
+  assert.ok(calls.updates[0].updated_at)
+  assert.deepEqual(calls.filters, [['user_id', 'user-1'], ['user_id', 'user-1']])
 })
 
 test('failed database update cleans up only the new upload', async () => {
@@ -129,15 +127,27 @@ test('failed database update cleans up only the new upload', async () => {
 test('removal clears profile and deletes only an owned storage object', async () => {
   const base = 'https://storage.example.com/profile-avatars/'
   for (const [url, expected] of [
-    [base + 'church-1/user-1/abc-123.jpg', [['church-1/user-1/abc-123.jpg']]],
+    [base + 'user-1/abc-123.jpg', [['user-1/abc-123.jpg']]],
+    [base + 'church-1/user-1/abc-123.jpg', []],
     [base + 'church-1/other-user/abc-123.jpg', []],
     ['https://external.example.com/photo.jpg', []],
     [base + 'church-1/user-1/../other-user/abc-123.jpg', []],
   ]) {
     const { route, calls } = setup({ oldUrl: url })
-    assert.equal((await route.DELETE(new Request('http://localhost/api/profile/avatar', { method: 'DELETE' }))).status, 200)
-    assert.deepEqual(calls.updates, [{ avatar_url: null }])
+    assert.equal((await route.DELETE(new Request('http://localhost/api/profile/avatar', { method: 'DELETE', headers: { Origin: 'http://localhost' } }))).status, 200)
+    assert.equal(calls.updates[0].avatar_url, null)
     assert.deepEqual(calls.removals, expected)
+  }
+})
+
+test('cross-origin and originless uploads are rejected before storage access', async () => {
+  for (const origin of [null, 'https://untrusted.example']) {
+    const { route, calls } = setup()
+    const req = request()
+    if (origin) req.headers.set('Origin', origin)
+    else req.headers.delete('Origin')
+    assert.equal((await route.POST(req)).status, 403)
+    assert.equal(calls.uploads.length, 0)
   }
 })
 

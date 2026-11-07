@@ -6,6 +6,7 @@ import { format, getISOWeek, getISOWeekYear } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
+import { selectedChurchFetch } from '@/lib/auth/client-context'
 import { ROUTES } from '@/lib/routes'
 import { getMediaCommitments, getScheduleTimeLabels, type ScheduleTimes } from '@/lib/schedule/media'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -132,7 +133,7 @@ export default function EscalaPage() {
 		setRehearsalByDate({})
 		try {
 			setError(null)
-			const response = await fetch('/api/schedule/current', { cache: 'no-store', signal: controller.signal })
+			const response = await selectedChurchFetch('/api/schedule/current', { signal: controller.signal })
 			const body = (await response.json()) as CurrentScheduleApiResponse & { error?: string }
 			if (controller.signal.aborted) return
 
@@ -176,8 +177,7 @@ export default function EscalaPage() {
 			}
 
 			try {
-				const response = await fetch(`/api/schedule/rehearsal?quarter_id=${schedule.bimester.id}`, {
-					cache: 'no-store',
+				const response = await selectedChurchFetch(`/api/schedule/rehearsal?quarter_id=${schedule.bimester.id}`, {
 					signal: controller.signal,
 				})
 				const body = (await response.json()) as { rehearsals?: ScheduleRehearsal[]; error?: string }
@@ -328,7 +328,7 @@ export default function EscalaPage() {
 	}) => {
 		if (!schedule) return
 
-		const response = await fetch('/api/schedule/rehearsal', {
+		const response = await selectedChurchFetch('/api/schedule/rehearsal', {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({

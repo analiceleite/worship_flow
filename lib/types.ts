@@ -10,6 +10,16 @@ export interface Church {
   updated_at: string
 }
 
+export type MembershipState = 'pending' | 'active' | 'suspended'
+
+export interface UserProfile {
+  user_id: string
+  name: string
+  avatar_url: string | null
+  optional_notifications_paused: boolean
+  last_church_id: string | null
+}
+
 export interface Minister {
   id: string
   church_id: string
@@ -19,6 +29,10 @@ export interface Minister {
   role: 'admin' | 'minister' | 'midia'
   user_id: string | null
   is_active: boolean
+  access_state: MembershipState
+  email_reminders_enabled?: boolean
+  email_reminder_offsets_minutes?: number[] | null
+  calendar_alarm_offsets_minutes?: number[] | null
   avatar_url: string | null
   created_at: string
 }
@@ -70,6 +84,7 @@ export interface CurrentMinisterContext {
   role: Minister['role']
   isAdmin: boolean
   isImpersonating?: boolean
+  accessibleChurchCount?: number
   impersonatedChurchId?: string | null
 }
 

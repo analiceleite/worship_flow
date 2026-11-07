@@ -16,7 +16,8 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { createClient } from '@/lib/supabase/client'
 import { Spinner } from '@/components/ui/spinner'
-import { Copy } from 'lucide-react'
+import { MailCheck } from 'lucide-react'
+import { churchFetch } from '@/lib/auth/client-context'
 
 interface MinisterFormProps {
   open: boolean
@@ -37,7 +38,7 @@ export function MinisterForm({
 }: MinisterFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null)
+  const [invited, setInvited] = useState<{ email: string; sent: boolean } | null>(null)
   const parseInstruments = (value: string | null | undefined) =>
     (value ?? '')
       .split(',')
@@ -63,7 +64,7 @@ export function MinisterForm({
     if (!open) return
 
     setError(null)
-    setTemporaryPassword(null)
+    setInvited(null)
 
     if (minister) {
       const parsedInstruments = parseInstruments(minister.instrument)
@@ -110,8 +111,6 @@ export function MinisterForm({
         const { error } = await supabase
           .from('ministers')
           .update({
-            name: formData.name,
-            email: formData.email || null,
             role: formData.role,
             instrument: instrumentValue,
           })
@@ -120,8 +119,11 @@ export function MinisterForm({
 
         if (error) throw error
       } else {
-        // Create new minister via API route
-        const response = await fetch('/api/ministers/create', {
+        // Administrative onboarding creates an invitation, never an account or a
+        // temporary password. The person sets their own credential on accept.
+        const churchId = effectiveChurchId ?? currentMinister?.church_id
+        if (!churchId) throw new Error('Não foi possível identificar a igreja atual.')
+        const response = await churchFetch(churchId, '/api/invitations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -135,13 +137,10 @@ export function MinisterForm({
         const result = await response.json()
 
         if (!response.ok) {
-          throw new Error(result.error || 'Erro ao criar ministro')
+          throw new Error(result.error || 'Erro ao enviar o convite')
         }
 
-        // Show temporary password to admin
-        setTemporaryPassword(result.temporaryPassword)
-        
-        // Don't close dialog yet - show password first
+        setInvited({ email: formData.email, sent: result.delivery?.status === 'sent' })
         onSuccess()
         return
       }
@@ -149,7 +148,7 @@ export function MinisterForm({
       onSuccess()
       onOpenChange(false)
       setFormData({ name: '', email: '', instruments: ['Voz'], role: 'minister' })
-      setTemporaryPassword(null)
+      setInvited(null)
     } catch (error: any) {
       console.error('Erro ao salvar ministro:', error)
       setError(error.message || 'Erro ao salvar ministro')
@@ -161,14 +160,8 @@ export function MinisterForm({
   const handleClose = () => {
     onOpenChange(false)
     setFormData({ name: '', email: '', instruments: ['Voz'], role: 'minister' })
-    setTemporaryPassword(null)
+    setInvited(null)
     setError(null)
-  }
-
-  const copyPassword = () => {
-    if (temporaryPassword) {
-      navigator.clipboard.writeText(temporaryPassword)
-    }
   }
 
   return (
@@ -176,41 +169,31 @@ export function MinisterForm({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {temporaryPassword ? 'Ministro Criado!' : minister ? 'Editar Ministro' : 'Novo Ministro'}
+            {invited ? 'Convite enviado' : minister ? 'Editar Ministro' : 'Convidar Ministro'}
           </DialogTitle>
           <DialogDescription>
-            {temporaryPassword
-              ? 'Copie a senha temporária e envie ao ministro.'
+            {invited
+              ? 'A pessoa receberá um link para criar a própria conta e entrar nesta igreja.'
               : minister
               ? 'Atualize as informações do ministro.'
-              : 'Adicione um novo ministro ao time.'}
+              : 'Envie um convite para a pessoa entrar no time.'}
           </DialogDescription>
         </DialogHeader>
 
-        {temporaryPassword ? (
+        {invited ? (
           <div className="space-y-4">
             <Alert>
-              <AlertDescription>
-                <strong>Email:</strong> {formData.email}
-              </AlertDescription>
-            </Alert>
-            <Alert>
-              <AlertDescription className="flex items-center justify-between">
-                <div>
-                  <strong>Senha temporária:</strong> {temporaryPassword}
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={copyPassword}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
+              <AlertDescription className="flex items-center gap-2">
+                <MailCheck className="h-4 w-4" />
+                {invited.sent
+                  ? `Convite enviado para ${invited.email}.`
+                  : `Convite registrado para ${invited.email}.`}
               </AlertDescription>
             </Alert>
             <p className="text-sm text-muted-foreground">
-              Envie essas credenciais ao ministro. No primeiro acesso, ele deverá definir uma nova senha.
+              {invited.sent
+                ? 'A pessoa deve abrir o link recebido e criar a senha. O convite expira em alguns dias.'
+                : 'O envio do e-mail não foi confirmado. Use "Reenviar" na lista de convites para tentar novamente.'}
             </p>
             <DialogFooter>
               <Button onClick={handleClose}>Fechar</Button>
@@ -233,7 +216,9 @@ export function MinisterForm({
               }
               placeholder="Nome do ministro"
               required
+              disabled={!!minister}
             />
+            {minister && <p className="text-xs text-muted-foreground">O nome e a foto são globais e editados pela própria pessoa no perfil.</p>}
           </div>
 
           <div className="space-y-2">
@@ -306,7 +291,7 @@ export function MinisterForm({
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Spinner className="mr-2" />}
-                {minister ? 'Salvar' : 'Adicionar'}
+                {minister ? 'Salvar' : 'Enviar convite'}
               </Button>
             </DialogFooter>
           </form>

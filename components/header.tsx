@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Music, Users, ListMusic, Menu, LogOut, FileSpreadsheet, BarChart3, Settings, Sparkles, PanelLeftClose, PanelLeftOpen, CircleAlert } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { loadChurchContext } from '@/lib/auth/client-context'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/lib/routes'
 import { getActiveNavigationHref } from '@/lib/navigation'
@@ -81,18 +82,25 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
   const [userAvatar, setUserAvatar] = useState<string | null>(null)
   const [impersonatedChurch, setImpersonatedChurch] = useState<{ id: string; name: string; slug: string } | null>(null)
   const [activeChurch, setActiveChurch] = useState<{ id: string; name: string; slug: string; environment?: string } | null>(null)
+  const [accessibleChurchCount, setAccessibleChurchCount] = useState(0)
   const [unreadReleaseNotes, setUnreadReleaseNotes] = useState(0)
 
   useEffect(() => {
     const updateAvatar = (event: Event) => {
       setUserAvatar((event as CustomEvent<{ avatarUrl: string | null }>).detail.avatarUrl)
     }
+    const updateName = (event: Event) => {
+      setUserName((event as CustomEvent<{ name: string }>).detail.name)
+    }
     window.addEventListener('profile-avatar-updated', updateAvatar)
-    return () => window.removeEventListener('profile-avatar-updated', updateAvatar)
+    window.addEventListener('profile-name-updated', updateName)
+    return () => {
+      window.removeEventListener('profile-avatar-updated', updateAvatar)
+      window.removeEventListener('profile-name-updated', updateName)
+    }
   }, [])
 
   useEffect(() => {
-    loadUser()
     loadImpersonation()
     loadActiveChurch()
   }, [])
@@ -123,10 +131,21 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
 
   const loadActiveChurch = async () => {
     try {
-      const response = await fetch('/api/context')
-      if (!response.ok) return
-      const result = await response.json()
+      if (pathname === '/platform' || pathname.startsWith('/platform/')) {
+        const response = await fetch('/api/profile', { cache: 'no-store' })
+        if (response.ok) {
+          const result = await response.json()
+          setUserName(result.profile?.name ?? 'Minha conta')
+          setUserAvatar(result.profile?.avatar_url ?? null)
+        }
+        return
+      }
+      const result = await loadChurchContext()
       setActiveChurch(result.church ?? null)
+      setUserName(result.viewer?.name ?? 'Minha conta')
+      setUserAvatar(result.viewer?.avatar_url ?? null)
+      setUserRole(result.context.role)
+      setAccessibleChurchCount(result.context.accessibleChurchCount ?? 0)
     } catch {
       setActiveChurch(null)
     }
@@ -143,23 +162,9 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
     }
   }
 
-  const loadUser = async () => {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (user) {
-      const { data: minister } = await supabase
-        .from('ministers')
-        .select('name, role, avatar_url')
-        .eq('user_id', user.id)
-        .single()
-
-      if (minister) {
-        setUserName(minister.name)
-        setUserRole(minister.role)
-        setUserAvatar(minister.avatar_url)
-      }
-    }
+  const chooseChurch = () => {
+    if (!window.confirm('Trocar de igreja encerra esta tela e descarta alterações não salvas. Continuar?')) return
+    window.location.assign(ROUTES.AUTH_SELECT_CHURCH)
   }
 
   const handleLogout = async () => {
@@ -251,6 +256,7 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
                 <DropdownMenuLabel className="font-normal"><div className="flex flex-col space-y-1"><p className="text-sm font-medium">{userName}</p><p className="text-xs text-muted-foreground">{userRole === 'admin' ? 'Administrador' : userRole === 'midia' ? 'Mídia' : 'Ministro'}</p></div></DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild><Link href={ROUTES.PROFILE} className="cursor-pointer"><Settings className="mr-2 h-4 w-4" />Meu Perfil</Link></DropdownMenuItem>
+                {accessibleChurchCount > 1 && !impersonatedChurch ? <DropdownMenuItem onClick={chooseChurch}>Trocar igreja</DropdownMenuItem> : null}
                 <DropdownMenuItem onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>}
@@ -342,6 +348,7 @@ export function Header({ desktopMenuCollapsed, onDesktopMenuToggle }: {
                         Meu Perfil
                       </Button>
                     </Link>
+                    {accessibleChurchCount > 1 && !impersonatedChurch ? <Button variant="outline" className="w-full min-h-11 justify-start" onClick={chooseChurch}>Trocar igreja</Button> : null}
                     <Button
                       variant="outline"
                       className="w-full justify-start text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"

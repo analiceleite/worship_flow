@@ -40,7 +40,7 @@ test('WF-11 real RLS: published-only media reads, no writes, tenant and role reg
     for (const [index, role] of ['midia', 'minister', 'admin'].entries()) {
       const id = identities[index]
       await query('INSERT INTO auth.users(id,email) VALUES($1,$2)', [id, `${id}@wf11.local.test`])
-      await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,is_active) VALUES($1,$1,$2,'WF11 integrante',$3,'Sonoplasta',true)", [id, church, role])
+      await query("INSERT INTO public.ministers(id,user_id,church_id,name,role,instrument,is_active,access_state) VALUES($1,$1,$2,'WF11 integrante',$3,'Sonoplasta',true,'active')", [id, church, role])
     }
     const roleId = (await query("SELECT id FROM public.schedule_roles WHERE category='midia' LIMIT 1")).rows[0]?.id
     assert.ok(roleId, 'Local migrations must include Sonoplasta')

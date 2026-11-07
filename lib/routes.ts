@@ -12,6 +12,8 @@ export const ROUTES = {
   RELEASE_NOTES: '/release-notes',
   PLATFORM_CHURCHES: '/platform/churches',
   AUTH_LOGIN: '/auth/login',
+  AUTH_INVITE: '/auth/invite',
+  AUTH_SELECT_CHURCH: '/auth/select-church',
   AUTH_SET_PASSWORD: '/auth/set-password',
   AUTH_FORGOT_PASSWORD: '/auth/forgot-password',
   AUTH_RESET: '/auth/reset',
