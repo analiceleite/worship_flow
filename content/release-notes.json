@@ -1,5 +1,14 @@
 [
   {
+    "id": "wf-04-invitations-multichurch",
+    "version": "1.2.0",
+    "date": "2026-11-07",
+    "title": "Convites para entrar na igreja e acesso a mais de uma igreja",
+    "summary": "Administradores agora convidam integrantes por e-mail, sem criar senhas temporárias. A pessoa abre o link do convite, cria a própria conta, confirma o e-mail e entra na igreja. Quem já tem conta usa a mesma conta para participar de outra igreja. Administradores acompanham os convites pendentes na tela de Ministros e podem reenviar ou revogar um convite.",
+    "published": false,
+    "notify": false
+  },
+  {
     "id": "wf-31-password-reset-reliability",
     "version": "1.0.0",
     "date": "2026-11-05",
