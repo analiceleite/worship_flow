@@ -288,6 +288,14 @@ Contrato adotado: a conta nova nasce não confirmada; o aceite só ocorre com se
 
 Removido: `email_confirm: true` e o rollback por `deleteUser`, que podia falhar com `ON DELETE RESTRICT` em `user_profiles`.
 
+### Correção pós-revisão: bancos sem `schedule_notifications`
+
+Um banco de teste aplicou a 040 e falhou com `42P01: relation "public.schedule_notifications" does not exist`. Em alguns bancos, `schedule_notifications` e `schedule_rehearsals` são opcionais (scripts 021 e 030–032 tratam os dois com `to_regclass`). A 040 agora instala as políticas desses dois blocos apenas quando a tabela existe, e o laço WF-11 pula tabelas ausentes.
+
+- Prova: a 040 corrigida foi executada dentro de uma transação com `schedule_notifications` e `schedule_rehearsals` removidos, terminando em `ROLLBACK`. Resultado: sem erro SQL; as tabelas continuam existentes após o rollback.
+- Local: o checksum registrado de `040_multichurch_invitations.sql` foi atualizado para o arquivo corrigido. As mudanças são apenas guardas; o efeito já aplicado é o mesmo. Essa atualização foi manual e está registrada aqui.
+- Suíte `tests/invitations.local.test.cjs` continua passando (9/9).
+
 ### Validação desta rodada
 
 | Verificação | Resultado |

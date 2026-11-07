@@ -269,17 +269,26 @@ CREATE POLICY "Admins can manage own church schedule assignments" ON public.sche
   USING (public.wf04_is_active_church_admin(church_id))
   WITH CHECK (public.wf04_is_active_church_admin(church_id));
 
-DROP POLICY IF EXISTS "Authenticated users can view own church schedule rehearsals" ON public.schedule_rehearsals;
-DROP POLICY IF EXISTS "Admins or ministers can manage own church schedule rehearsals" ON public.schedule_rehearsals;
-CREATE POLICY "Authenticated users can view own church schedule rehearsals" ON public.schedule_rehearsals FOR SELECT TO authenticated
-  USING (public.wf04_has_active_membership(church_id));
-CREATE POLICY "Admins or ministers can manage own church schedule rehearsals" ON public.schedule_rehearsals FOR ALL TO authenticated
-  USING (public.wf04_has_active_membership(church_id) AND public.wf04_current_role(church_id) IN ('admin', 'minister'))
-  WITH CHECK (public.wf04_has_active_membership(church_id) AND public.wf04_current_role(church_id) IN ('admin', 'minister'));
+-- schedule_rehearsals (021) and schedule_notifications are optional in some
+-- databases: their policies are installed only when the table exists.
+DO $$
+BEGIN
+  IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
+    DROP POLICY IF EXISTS "Authenticated users can view own church schedule rehearsals" ON public.schedule_rehearsals;
+    DROP POLICY IF EXISTS "Admins or ministers can manage own church schedule rehearsals" ON public.schedule_rehearsals;
+    CREATE POLICY "Authenticated users can view own church schedule rehearsals" ON public.schedule_rehearsals FOR SELECT TO authenticated
+      USING (public.wf04_has_active_membership(church_id));
+    CREATE POLICY "Admins or ministers can manage own church schedule rehearsals" ON public.schedule_rehearsals FOR ALL TO authenticated
+      USING (public.wf04_has_active_membership(church_id) AND public.wf04_current_role(church_id) IN ('admin', 'minister'))
+      WITH CHECK (public.wf04_has_active_membership(church_id) AND public.wf04_current_role(church_id) IN ('admin', 'minister'));
+  END IF;
 
-DROP POLICY IF EXISTS "Authenticated users can view own church schedule notifications" ON public.schedule_notifications;
-CREATE POLICY "Authenticated users can view own church schedule notifications" ON public.schedule_notifications FOR SELECT TO authenticated
-  USING (public.wf04_has_active_membership(church_id));
+  IF to_regclass('public.schedule_notifications') IS NOT NULL THEN
+    DROP POLICY IF EXISTS "Authenticated users can view own church schedule notifications" ON public.schedule_notifications;
+    CREATE POLICY "Authenticated users can view own church schedule notifications" ON public.schedule_notifications FOR SELECT TO authenticated
+      USING (public.wf04_has_active_membership(church_id));
+  END IF;
+END $$;
 
 -- WF-11 restrictions must use the row's church, not an arbitrary membership.
 DROP POLICY IF EXISTS wf11_quarters_read ON public.schedule_quarters;
@@ -302,22 +311,28 @@ CREATE POLICY wf11_assignments_read ON public.schedule_assignments
     )
   );
 
-DROP POLICY IF EXISTS wf11_rehearsals_read ON public.schedule_rehearsals;
-CREATE POLICY wf11_rehearsals_read ON public.schedule_rehearsals
-  AS RESTRICTIVE FOR SELECT TO authenticated
-  USING (
-    public.wf04_has_active_membership(church_id)
-    AND (
-      coalesce(public.wf04_current_role(church_id), '') <> 'midia'
-      OR EXISTS (SELECT 1 FROM public.schedule_quarters q
-        WHERE q.id = schedule_rehearsals.quarter_id AND q.church_id = schedule_rehearsals.church_id AND q.is_published = true)
-    )
-  );
+DO $$
+BEGIN
+  IF to_regclass('public.schedule_rehearsals') IS NOT NULL THEN
+    DROP POLICY IF EXISTS wf11_rehearsals_read ON public.schedule_rehearsals;
+    CREATE POLICY wf11_rehearsals_read ON public.schedule_rehearsals
+      AS RESTRICTIVE FOR SELECT TO authenticated
+      USING (
+        public.wf04_has_active_membership(church_id)
+        AND (
+          coalesce(public.wf04_current_role(church_id), '') <> 'midia'
+          OR EXISTS (SELECT 1 FROM public.schedule_quarters q
+            WHERE q.id = schedule_rehearsals.quarter_id AND q.church_id = schedule_rehearsals.church_id AND q.is_published = true)
+        )
+      );
+  END IF;
+END $$;
 
 DO $$
 DECLARE table_name text;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY['schedule_quarters', 'schedule_assignments', 'schedule_rehearsals'] LOOP
+    IF to_regclass('public.' || table_name) IS NULL THEN CONTINUE; END IF;
     EXECUTE format('DROP POLICY IF EXISTS wf11_no_media_insert ON public.%I', table_name);
     EXECUTE format('CREATE POLICY wf11_no_media_insert ON public.%I AS RESTRICTIVE FOR INSERT TO authenticated
       WITH CHECK (coalesce(public.wf04_current_role(church_id), '''') <> ''midia'')', table_name);
