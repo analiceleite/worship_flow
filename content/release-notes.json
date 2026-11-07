@@ -45,5 +45,15 @@
     "href": "/repertoire",
     "published": true,
     "notify": true
+  },
+  {
+    "id": "wf-11-media-schedule-access",
+    "version": "1.1.2",
+    "date": "2026-11-07",
+    "title": "Mídia agora pode consultar a escala",
+    "summary": "Integrantes de mídia agora podem consultar seus próximos compromissos, horários e informações de ensaio, além de visualizar a escala publicada da igreja, sem permissões de edição. Acesse Escala no menu para ver seus compromissos ou consultar a equipe na Escala Geral.",
+    "href": "/schedule",
+    "published": true,
+    "notify": true
   }
 ]

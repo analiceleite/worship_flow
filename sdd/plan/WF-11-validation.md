@@ -15,7 +15,7 @@
 - Consultas de ensaios, lista de períodos e atribuições por período impedem leitura de rascunhos por mídia. As rotas permanecem dinâmicas e autenticadas.
 - Migração `scripts/037_schedule_media_read_access.sql`: políticas **restritivas** sobre períodos, atribuições e ensaios, limitando leitura por mídia a publicações da própria igreja e negando escrita, mesmo com políticas permissivas anteriores.
 - `ScheduleGrid` distingue erro/carregamento de ensaio não cadastrado; demais consumidores preservam o comportamento padrão.
-- Testes integrados aos executores locais CLI/Compose; versão e catálogo de novidades não alterados.
+- Testes integrados aos executores locais CLI/Compose. Após autorização adicional do usuário, versão atualizada para `1.1.2` e novidade WF-11 publicada no catálogo com indicador de não lida e link para `/schedule`.
 
 ## 2. Ambiente e segurança dos testes
 
@@ -38,6 +38,7 @@
 | `pnpm exec tsc --noEmit --incremental false` | Aprovado no host, independentemente do build, cuja configuração atual ignora erros de TypeScript. |
 | `docker compose -p worship-flow-wf07-test run --rm --no-deps -e NODE_ENV=production test pnpm build` | Build de produção aprovado no container, usando somente configuração local. |
 | `pnpm lint` | Bloqueado: executável ESLint não instalado no projeto. Nenhuma dependência foi adicionada apenas para ocultar esse bloqueio. |
+| `node --test tests/release-notes.test.cjs tests/navigation.test.cjs tests/schedule-media.test.cjs` após preparar a release `1.1.2` | 23 testes aprovados, incluindo publicação/data da novidade, ordenação de versões, indicador independente e alinhamento da versão dos metadados. TypeScript sem emissão/incremental também aprovado novamente. |
 
 O primeiro build no serviço de testes, que define `NODE_ENV=development`, falhou no prerender de autenticação. A execução com `NODE_ENV=production` passou. Persistem avisos de migração futura de `middleware` para `proxy` e do build de PDF no Node; não foram tratados neste card.
 
@@ -80,7 +81,7 @@ Antes de uma implantação autorizada:
 - Revisão humana e verificação manual de acessibilidade pendentes.
 - Lint bloqueado por dependência preexistente ausente.
 - Checksum local de 036 pendente de investigação operacional; nenhuma mudança nele faz parte do WF-11.
-- Commit, push e abertura de PR autorizados pelo usuário em 2026-11-07; sem alteração de versão ou deploy. O histórico Git e a PR registram a publicação da branch para revisão.
+- Commit, push e abertura de PR autorizados pelo usuário em 2026-11-07. Posteriormente, o usuário confirmou que estava tudo OK e autorizou versão `1.1.2` e publicação da novidade na mesma PR. Nenhum deploy ou SQL remoto foi executado pelo agente. O histórico Git e a PR registram a publicação da branch para revisão.
 - A alteração preexistente de `next-env.d.ts` foi preservada.
 
 ### Retomada após reinício — 2026-11-07
