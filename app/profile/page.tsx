@@ -322,13 +322,13 @@ export default function ProfilePage() {
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
                   {ALARM_OPTIONS.map(option => (
-                    <div key={option.value} className="flex items-center gap-2">
+                    <div key={option.value} className="flex min-h-11 items-center gap-3">
                       <Checkbox
                         id={`alarm-${option.value}`}
                         checked={selectedAlarms.includes(option.value)}
                         onCheckedChange={() => handleAlarmToggle(option.value)}
                       />
-                      <Label htmlFor={`alarm-${option.value}`} className="cursor-pointer text-sm">
+                      <Label htmlFor={`alarm-${option.value}`} className="flex min-h-11 flex-1 cursor-pointer items-center text-sm">
                         {option.label}
                       </Label>
                     </div>
@@ -352,14 +352,16 @@ export default function ProfilePage() {
             <CardContent className="space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <Label className="text-sm font-medium block mb-1">Receber lembretes de escala</Label>
-                  <p className="text-xs text-muted-foreground">
+                  <Label htmlFor="email-reminders-enabled" className="text-sm font-medium block mb-1">Receber lembretes de escala</Label>
+                  <p id="email-reminders-description" className="text-xs text-muted-foreground">
                     {emailRemindersEnabled
                       ? 'Você receberá emails nas antecedências escolhidas abaixo. Funciona em qualquer app, independente do Google Calendar.'
                       : 'Você não receberá lembretes por email'}
                   </p>
                 </div>
                 <Switch
+                  id="email-reminders-enabled"
+                  aria-describedby="email-reminders-description"
                   checked={emailRemindersEnabled}
                   onCheckedChange={setEmailRemindersEnabled}
                 />
@@ -370,13 +372,13 @@ export default function ProfilePage() {
                   <Label className="text-sm font-medium mb-3 block">Quando enviar os lembretes por email</Label>
                   <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
                     {EMAIL_REMINDER_OPTIONS.map(option => (
-                      <div key={option.value} className="flex items-center gap-2">
+                      <div key={option.value} className="flex min-h-11 items-center gap-3">
                         <Checkbox
                           id={`email-reminder-${option.value}`}
                           checked={selectedEmailReminders.includes(option.value)}
                           onCheckedChange={() => handleEmailReminderToggle(option.value)}
                         />
-                        <Label htmlFor={`email-reminder-${option.value}`} className="cursor-pointer text-sm">
+                        <Label htmlFor={`email-reminder-${option.value}`} className="flex min-h-11 flex-1 cursor-pointer items-center text-sm">
                           {option.label}
                         </Label>
                       </div>
@@ -387,12 +389,14 @@ export default function ProfilePage() {
 
               <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
                 <div className="flex-1">
-                  <Label className="text-sm font-medium block mb-1">Pausar comunicações opcionais</Label>
-                  <p className="text-xs text-muted-foreground">
+                  <Label htmlFor="optional-communications-paused" className="text-sm font-medium block mb-1">Pausar comunicações opcionais</Label>
+                  <p id="optional-communications-description" className="text-xs text-muted-foreground">
                     Vale para todas as igrejas. Convites, recuperação de conta e avisos essenciais de segurança continuam sendo enviados.
                   </p>
                 </div>
                 <Switch
+                  id="optional-communications-paused"
+                  aria-describedby="optional-communications-description"
                   checked={optionalPaused}
                   onCheckedChange={setOptionalPaused}
                 />

@@ -195,6 +195,8 @@ function WeekDayCell({
             type="button"
             onClick={handleClick}
             disabled={!isClickable}
+            aria-pressed={isSelected}
+            aria-label={`${format(date, 'EEEE, d MMMM yyyy', { locale: ptBR })}${isSelected ? ', selecionado' : ''}`}
             className={[
                 'relative flex flex-1 flex-col items-center gap-1 rounded-xl px-0.5 py-2 transition-all select-none sm:px-1 sm:py-2.5',
                 isClickable ? 'cursor-pointer' : 'cursor-default',
@@ -706,7 +708,7 @@ export default function RepertorioPage() {
 
                     {/* Navigation header */}
                     <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-2 sm:px-3">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Semana anterior" onClick={() => handleWeekChange('prev')}>
+                        <Button variant="ghost" size="icon" aria-label="Semana anterior" onClick={() => handleWeekChange('prev')}>
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
                         <div className="min-w-0 flex-1 px-1 text-center">
@@ -715,7 +717,7 @@ export default function RepertorioPage() {
                                 {format(weekDays[0], 'd MMM', { locale: ptBR })} – {format(weekDays[6], "d MMM yyyy", { locale: ptBR })}
                             </p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Próxima semana" onClick={() => handleWeekChange('next')}>
+                        <Button variant="ghost" size="icon" aria-label="Próxima semana" onClick={() => handleWeekChange('next')}>
                             <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
@@ -780,7 +782,8 @@ export default function RepertorioPage() {
                                                 : isActive ? 'bg-violet-600 text-white border-violet-600' : 'border-violet-200 text-violet-700 hover:bg-violet-50 dark:border-violet-800 dark:text-violet-400 dark:hover:bg-violet-950/30'
                                     return (
                                         <button key={opt.value.eventName} type="button" onClick={() => setSelectedDay(opt.value)}
-                                            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-all ${pillCls}`}>
+                                            aria-pressed={isActive}
+                                            className={`flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${pillCls}`}>
                                             {opt.type === 'special' && <Sparkles className="h-3 w-3" />}
                                             {opt.label}
                                         </button>
@@ -822,12 +825,14 @@ export default function RepertorioPage() {
                                         (isAdmin || currentMinister?.id === activeSpecialEvent?.created_by)
                                     return canManage ? (
                                         <div className="flex shrink-0 items-center gap-1">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-muted"
+                                            <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-muted"
+                                                aria-label={`Renomear evento ${activeSpecialEvent.name}`}
                                                 title="Renomear evento especial"
                                                 onClick={() => { setEditingEvent(activeSpecialEvent!); setEditEventName(activeSpecialEvent!.name); setEditEventError(null) }}>
                                                 <Pencil className="h-4 w-4" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                            <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                aria-label={`Excluir evento ${activeSpecialEvent.name}`}
                                                 title="Excluir evento especial" onClick={() => setDeletingEvent(activeSpecialEvent!)}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
@@ -1010,12 +1015,12 @@ export default function RepertorioPage() {
                                         >
                                             {reorderEnabled && (
                                                 <div className="flex flex-col items-center mr-2 space-y-0.5 sm:space-y-1">
-                                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
+                                                    <Button type="button" variant="ghost" size="icon"
                                                         aria-label={`Mover ${item.song?.title ?? 'música'} para cima`}
                                                         onClick={() => void moveRepertoireItem(index, index - 1)} disabled={saving || index === 0}>
                                                         <ArrowUp className="h-3.5 w-3.5" />
                                                     </Button>
-                                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 p-1"
+                                                    <Button type="button" variant="ghost" size="icon"
                                                         aria-label={`Mover ${item.song?.title ?? 'música'} para baixo`}
                                                         onClick={() => void moveRepertoireItem(index, index + 1)} disabled={saving || index === repertoire.length - 1}>
                                                         <ArrowDown className="h-3.5 w-3.5" />
@@ -1044,28 +1049,27 @@ export default function RepertorioPage() {
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-7 w-7"
                                                         onClick={() => {
                                                             const s = item.song
                                                             if (s) void openSongCifra(s)
                                                         }}
                                                         title="Ver cifra no app"
-                                                        aria-label="Ver cifra no app"
+                                                        aria-label={`Ver cifra de ${item.song.title} no app`}
                                                     >
                                                         <FileText className="h-3.5 w-3.5" />
                                                     </Button>
                                                 ) : item.song?.cipher_url ? (
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                                                        <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer" title="Abrir cifra"><FileText className="h-3.5 w-3.5" /></a>
+                                                    <Button variant="ghost" size="icon" asChild>
+                                                        <a href={item.song.cipher_url} target="_blank" rel="noopener noreferrer" title="Abrir cifra" aria-label={`Abrir cifra de ${item.song.title} em nova aba`}><FileText className="h-3.5 w-3.5" /></a>
                                                     </Button>
                                                 ) : null}
                                                 {item.song?.youtube_url && (
-                                                    <Button variant="ghost" size="icon" className="h-9 w-9 touch-manipulation sm:h-7 sm:w-7" asChild>
+                                                    <Button variant="ghost" size="icon" className="touch-manipulation" asChild>
                                                         <a href={item.song.youtube_url} target="_blank" rel="noopener noreferrer" title="Abrir no YouTube" aria-label="Abrir no YouTube"><Youtube className="h-3.5 w-3.5" /></a>
                                                     </Button>
                                                 )}
                                                 {(isAdmin || isSinger) && (
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                                         aria-label={`Remover ${item.song?.title ?? 'música'}`} disabled={saving}
                                                         onClick={() => setDeletingItem(item)}>
                                                         <Trash2 className="h-3.5 w-3.5" />
