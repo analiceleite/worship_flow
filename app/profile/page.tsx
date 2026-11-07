@@ -33,6 +33,14 @@ const EMAIL_REMINDER_OPTIONS = [
   { value: 30, label: '30 minutos antes' },
 ]
 
+type GoogleCalendarStatus = {
+  connected: boolean
+  connectedAt: string | null
+  syncEnabled: boolean
+  syncedEventCount: number
+  connectedChurchCount: number
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const [supabase] = useState(() => createClient())
@@ -41,10 +49,11 @@ export default function ProfilePage() {
   const [minister, setMinister] = useState<any>(null)
   const [contextError, setContextError] = useState<string | null>(null)
   const [emailRemindersEnabled, setEmailRemindersEnabled] = useState(true)
+  const [optionalPaused, setOptionalPaused] = useState(false)
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([720, 60])
   const [selectedEmailReminders, setSelectedEmailReminders] = useState<number[]>([10080, 1440])
   const [saving, setSaving] = useState(false)
-  const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; connectedAt: string | null; syncedEventCount: number } | null>(null)
+  const [googleStatus, setGoogleStatus] = useState<GoogleCalendarStatus | null>(null)
   const [googleActionLoading, setGoogleActionLoading] = useState(false)
 
   useEffect(() => {
@@ -57,6 +66,16 @@ export default function ProfilePage() {
         setEmailRemindersEnabled(data.email_reminders_enabled ?? true)
         setSelectedAlarms(data.calendar_alarm_offsets_minutes || [720, 60])
         setSelectedEmailReminders(data.email_reminder_offsets_minutes || [10080, 1440])
+
+        try {
+          const profileResponse = await churchFetch(data.church_id, '/api/profile')
+          if (profileResponse.ok) {
+            const { profile } = await profileResponse.json()
+            setOptionalPaused(profile?.optional_notifications_paused ?? false)
+          }
+        } catch {
+          // The local preferences remain usable if the global projection is unavailable.
+        }
       } catch (error) {
         setContextError(error instanceof Error ? error.message : 'Não foi possível consultar seu perfil.')
       } finally {
@@ -68,11 +87,17 @@ export default function ProfilePage() {
   }, [supabase, router])
 
   useEffect(() => {
-    fetch('/api/google-calendar/status')
+    const churchId = minister?.church_id
+    if (!churchId) return
+    let active = true
+    churchFetch(churchId, '/api/google-calendar/status')
       .then((r) => r.json())
-      .then(setGoogleStatus)
+      .then((status) => { if (active) setGoogleStatus(status) })
       .catch(() => {})
+    return () => { active = false }
+  }, [minister?.church_id])
 
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const gcal = params.get('google_calendar')
     if (gcal) {
@@ -95,15 +120,45 @@ export default function ProfilePage() {
     }
   }, [router])
 
+  const refreshGoogleStatus = async (churchId: string) => {
+    const response = await churchFetch(churchId, '/api/google-calendar/status')
+    if (!response.ok) throw new Error('Falha ao consultar o Google Calendar.')
+    setGoogleStatus(await response.json())
+  }
+
   const handleDisconnectGoogle = async () => {
     setGoogleActionLoading(true)
     try {
-      const res = await fetch('/api/google-calendar/disconnect', { method: 'POST' })
+      if (!minister) throw new Error('Não foi possível identificar a igreja atual.')
+      const res = await churchFetch(minister.church_id, '/api/google-calendar/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'account' }),
+      })
       if (!res.ok) throw new Error('Failed to disconnect')
-      toast.success('Google Calendar desconectado.')
-      setGoogleStatus({ connected: false, connectedAt: null, syncedEventCount: 0 })
+      toast.success('Conta Google desconectada.')
+      await refreshGoogleStatus(minister.church_id)
     } catch (error) {
       toast.error('Erro ao desconectar.')
+    } finally {
+      setGoogleActionLoading(false)
+    }
+  }
+
+  const handleChurchSyncToggle = async (enabled: boolean) => {
+    setGoogleActionLoading(true)
+    try {
+      if (!minister) throw new Error('Não foi possível identificar a igreja atual.')
+      const res = await churchFetch(minister.church_id, '/api/google-calendar/sync-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+      if (!res.ok) throw new Error('Failed to update sync selection')
+      toast.success(enabled ? 'Sincronização desta igreja ativada.' : 'Sincronização desta igreja parada.')
+      await refreshGoogleStatus(minister.church_id)
+    } catch (error) {
+      toast.error('Erro ao atualizar a sincronização.')
     } finally {
       setGoogleActionLoading(false)
     }
@@ -136,6 +191,7 @@ export default function ProfilePage() {
           calendar_alarm_offsets_minutes: selectedAlarms,
           email_reminders_enabled: emailRemindersEnabled,
           email_reminder_offsets_minutes: selectedEmailReminders,
+          optional_notifications_paused: optionalPaused,
         }),
       })
 
@@ -230,23 +286,32 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {googleStatus?.connected ? (
-                <>
-                  <div className="flex items-center justify-between rounded-lg border border-border bg-muted/50 p-4">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Conectado</p>
-                      <p className="text-xs text-muted-foreground">
-                        {googleStatus.syncedEventCount} evento(s) sincronizado(s)
-                        {googleStatus.connectedAt ? ` · desde ${new Date(googleStatus.connectedAt).toLocaleDateString('pt-BR')}` : ''}
-                      </p>
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-border bg-muted/50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {googleStatus.syncEnabled ? 'Sincronizado nesta igreja' : 'Conta Google conectada'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {googleStatus.syncEnabled
+                            ? `${googleStatus.syncedEventCount} evento(s) sincronizado(s) nesta igreja`
+                            : 'Esta igreja ainda não envia eventos para a sua agenda.'}
+                          {googleStatus.connectedAt ? ` · desde ${new Date(googleStatus.connectedAt).toLocaleDateString('pt-BR')}` : ''}
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => handleChurchSyncToggle(!googleStatus.syncEnabled)} disabled={googleActionLoading}>
+                        {googleStatus.syncEnabled ? 'Parar sincronização desta igreja' : 'Sincronizar esta igreja'}
+                      </Button>
                     </div>
-                    <Button variant="outline" size="sm" onClick={handleDisconnectGoogle} disabled={googleActionLoading}>
-                      Desconectar
-                    </Button>
                   </div>
-                </>
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleDisconnectGoogle} disabled={googleActionLoading}>
+                    Desconectar conta Google
+                  </Button>
+                </div>
               ) : (
                 <Button asChild className="w-full" size="lg">
-                  <a href="/api/google-calendar/connect">Conectar com Google</a>
+                  <a href={`/api/google-calendar/connect?churchId=${encodeURIComponent(minister.church_id)}`}>Conectar com Google</a>
                 </Button>
               )}
 
@@ -319,6 +384,19 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
+
+              <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
+                <div className="flex-1">
+                  <Label className="text-sm font-medium block mb-1">Pausar comunicações opcionais</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Vale para todas as igrejas. Convites, recuperação de conta e avisos essenciais de segurança continuam sendo enviados.
+                  </p>
+                </div>
+                <Switch
+                  checked={optionalPaused}
+                  onCheckedChange={setOptionalPaused}
+                />
+              </div>
             </CardContent>
           </Card>
 

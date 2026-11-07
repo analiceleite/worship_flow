@@ -54,6 +54,9 @@ test('WF-11 browser: media navigation, published schedule, preparation, errors a
 
     browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true })
     context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+    // Keep dev-server HMR compilation from forcing full reloads during a login
+    // assertion. The test still exercises real app HTTP and local services.
+    await context.routeWebSocket('**/_next/webpack-hmr*', socket => socket.close())
     await context.route('**/*', route => {
       const url = new URL(route.request().url())
       return ['127.0.0.1', 'localhost'].includes(url.hostname) ? route.continue() : route.abort()
@@ -72,8 +75,10 @@ test('WF-11 browser: media navigation, published schedule, preparation, errors a
     await page.goto(`${base}/auth/login`)
     await page.getByLabel('Email', { exact: true }).fill(email)
     await page.getByLabel('Senha', { exact: true }).fill(password)
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click()
-    await page.waitForURL('**/repertoire')
+    await Promise.all([
+      page.waitForURL('**/repertoire', { waitUntil: 'domcontentloaded' }),
+      page.getByRole('button', { name: 'Entrar', exact: true }).click(),
+    ])
 
     async function openSchedule() {
       await page.goto(`${base}/schedule`)

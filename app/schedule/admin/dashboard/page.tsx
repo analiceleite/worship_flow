@@ -25,6 +25,7 @@ import {
     Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { selectedChurchFetch } from '@/lib/auth/client-context'
 
 interface BimesterSummary {
     id: string
@@ -311,7 +312,7 @@ export default function ScheduleAdminDashboardPage() {
 
     const loadBimesters = useCallback(async () => {
         try {
-            const response = await fetch('/api/schedule/quarters', { cache: 'no-store' })
+            const response = await selectedChurchFetch('/api/schedule/quarters')
             const body = await response.json()
             if (!response.ok) throw new Error(body.error || 'Não foi possível carregar os bimestres')
             const loaded = (body.quarters ?? []) as BimesterSummary[]
@@ -330,7 +331,7 @@ export default function ScheduleAdminDashboardPage() {
         try {
             setError(null)
             const suffix = bimesterId ? `?quarter_id=${bimesterId}` : ''
-            const response = await fetch(`/api/schedule/admin/analytics${suffix}`, { cache: 'no-store' })
+            const response = await selectedChurchFetch(`/api/schedule/admin/analytics${suffix}`)
             const body = (await response.json()) as AnalyticsResponse & { error?: string }
             if (!response.ok) throw new Error(body.error || 'Não foi possível carregar os indicadores')
             setAnalytics(body)

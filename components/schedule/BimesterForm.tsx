@@ -12,6 +12,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog'
+import { selectedChurchFetch } from '@/lib/auth/client-context'
 
 export interface BimesterSummary {
     id: string
@@ -112,7 +113,7 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
             setSaving(true)
             setError(null)
 
-            const response = await fetch('/api/schedule/quarters', {
+            const response = await selectedChurchFetch('/api/schedule/quarters', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

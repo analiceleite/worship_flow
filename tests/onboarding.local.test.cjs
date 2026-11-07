@@ -40,6 +40,9 @@ test('WF-04 real state guards, RLS, profile projection and migration replay', as
   try {
     const ready = await query("SELECT to_regclass('public.wf04_legacy_cutover') AS ready")
     assert.ok(ready.rows[0].ready, 'Apply migration 038 only to the isolated local database before this test')
+    const expansion = await query("SELECT to_regclass('public.google_calendar_credentials') AS credentials, to_regclass('public.google_calendar_church_sync') AS sync")
+    assert.ok(expansion.rows[0].credentials, 'Apply migration 039 only to the isolated local database before this test')
+    assert.ok(expansion.rows[0].sync, 'Apply migration 039 only to the isolated local database before this test')
     await query("INSERT INTO public.churches(id,name,slug,environment,email_mode) VALUES ($1::uuid,'WF04 local',$1::uuid::text,'test','disabled'),($2::uuid,'WF04 other',$2::uuid::text,'test','disabled')", [church, other])
     for (const [id, tenant, role, state] of [
       [actor, church, 'admin', 'active'], [peer, church, 'minister', 'active'],
@@ -89,6 +92,26 @@ test('WF-04 real state guards, RLS, profile projection and migration replay', as
       const row = (await query('SELECT access_state,is_active FROM public.ministers WHERE id=$1', [peer])).rows[0]
       assert.deepEqual(row, { access_state: 'suspended', is_active: false })
       assert.equal((await query('SELECT count(*)::int AS count FROM public.wf04_legacy_memberships WHERE minister_id=ANY($1::uuid[])', [[actor, peer, pending, foreign]])).rows[0].count, 0)
+    })
+    await t.test('Google credential backfill keeps one personal row and the original church selection', async () => {
+      await query("INSERT INTO public.google_calendar_tokens(minister_id,church_id,access_token,refresh_token,expiry_date,scope,connected_at,updated_at) VALUES($1,$2,'legacy-access','legacy-refresh',1,'calendar.events',now()-interval '1 day',now())", [actor, church])
+      const sql = fs.readFileSync(path.resolve(__dirname, '../scripts/039_google_calendar_identity.sql'), 'utf8')
+        .replace(/^BEGIN;\s*$/m, '').replace(/^COMMIT;\s*$/m, '')
+      await query(sql)
+
+      const credential = (await query('SELECT refresh_token FROM public.google_calendar_credentials WHERE user_id=$1', [actor])).rows
+      assert.deepEqual(credential, [{ refresh_token: 'legacy-refresh' }])
+      const selection = (await query('SELECT church_id::text AS church_id, minister_id::text AS minister_id FROM public.google_calendar_church_sync WHERE user_id=$1', [actor])).rows
+      assert.deepEqual(selection, [{ church_id: church, minister_id: actor }])
+
+      await query("INSERT INTO public.google_calendar_event_map(minister_id,church_id,event_key,google_event_id,content_hash) VALUES($1,$2,'2026-01-01_sunday','google-event','hash')", [actor, church])
+      await query(sql)
+      assert.equal((await query('SELECT user_id FROM public.google_calendar_event_map WHERE google_event_id=$1', ['google-event'])).rows[0].user_id, actor)
+
+      await asUser(actor, async () => {
+        await rejects('SELECT * FROM public.google_calendar_credentials', [], /permission denied/)
+        await rejects('SELECT * FROM public.google_calendar_church_sync', [], /permission denied/)
+      })
     })
   } finally {
     await query('ROLLBACK')

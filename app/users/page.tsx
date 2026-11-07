@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
-import { loadChurchContext } from '@/lib/auth/client-context'
+import { churchFetch, loadChurchContext } from '@/lib/auth/client-context'
 
 export default function MinistrosPage() {
     const [ministers, setMinisters] = useState<Minister[]>([])
@@ -67,9 +67,9 @@ export default function MinistrosPage() {
         setAccessSaving(true)
         setAccessError(null)
         try {
-            const response = await fetch(`/api/ministers/${accessMinister.id}/access`, {
+            const response = await churchFetch(effectiveChurchId ?? accessMinister.church_id, `/api/ministers/${accessMinister.id}/access`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'x-wf-church-id': effectiveChurchId ?? accessMinister.church_id },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ state: accessMinister.access_state === 'suspended' ? 'active' : 'suspended' }),
             })
             const result = await response.json()

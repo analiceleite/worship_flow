@@ -3,8 +3,11 @@ import { google, calendar_v3 } from 'googleapis'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   getAuthorizedClientForMinister,
+  getAuthorizedClientForUser,
   markConnectionBroken,
-  deleteTokensAndMappings,
+  deleteEventMappingsForMinister,
+  deleteCredentialsForUser,
+  disableChurchSync,
 } from '@/lib/google-calendar/client'
 import {
   buildMinisterCalendarEvents,
@@ -155,6 +158,7 @@ async function deleteGoogleEvent(calendar: calendar_v3.Calendar, eventId: string
 
 export type ReconcileResult =
   | { skipped: 'not_connected' }
+  | { skipped: 'not_enabled' }
   | { inserted: number; updated: number; deleted: number }
 
 type EventMapRow = { event_key: string; google_event_id: string; content_hash: string }
@@ -163,15 +167,25 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
   const admin = createAdminClient()
   const { data: minister } = await admin
     .from('ministers')
-    .select('church_id')
+    .select('church_id, user_id')
     .eq('id', ministerId)
     .maybeSingle()
 
-  if (!minister?.church_id) return { skipped: 'not_connected' }
+  if (!minister?.church_id || !minister.user_id) return { skipped: 'not_connected' }
+
+  const { data: selection } = await admin
+    .from('google_calendar_church_sync')
+    .select('church_id')
+    .eq('user_id', minister.user_id)
+    .eq('church_id', minister.church_id)
+    .maybeSingle()
+
+  if (!selection) return { skipped: 'not_enabled' }
 
   const oauthClient = await getAuthorizedClientForMinister(ministerId)
   if (!oauthClient) return { skipped: 'not_connected' }
   const churchId = minister.church_id
+  const userId = minister.user_id
 
   const calendar = google.calendar({ version: 'v3', auth: oauthClient })
 
@@ -248,6 +262,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
           {
             church_id: churchId,
             minister_id: ministerId,
+            user_id: userId,
             event_key: item.eventKey,
             google_event_id: res.data.id!,
             content_hash: hash,
@@ -359,7 +374,7 @@ export async function reconcileMinistersForQuarter(quarterId: string) {
   if (ministerIds.length === 0) return { ministers: 0, errors: [] as Array<{ ministerId: string; error: string }> }
 
   const { data: connected } = await admin
-    .from('google_calendar_tokens')
+    .from('google_calendar_church_sync')
     .select('minister_id')
     .eq('church_id', quarter.church_id)
     .in('minister_id', ministerIds)
@@ -375,10 +390,10 @@ export async function reconcileMinistersForQuarter(quarterId: string) {
   return { ministers: (connected ?? []).length, errors }
 }
 
-/** Full safety-net sync for the periodic cron — every connected minister, regardless of quarter. */
+/** Full safety-net sync for the periodic cron — every church explicitly opted in. */
 export async function reconcileAllConnectedMinisters() {
   const admin = createAdminClient()
-  const { data: rows } = await admin.from('google_calendar_tokens').select('minister_id')
+  const { data: rows } = await admin.from('google_calendar_church_sync').select('minister_id')
   const errors: Array<{ ministerId: string; error: string }> = []
   for (const row of (rows ?? []) as Array<{ minister_id: string }>) {
     try {
@@ -390,26 +405,25 @@ export async function reconcileAllConnectedMinisters() {
   return { ministers: (rows ?? []).length, errors }
 }
 
-export async function disconnectMinister(ministerId: string) {
-  const oauthClient = await getAuthorizedClientForMinister(ministerId)
+type AuthorizedClient = Awaited<ReturnType<typeof getAuthorizedClientForUser>>
+
+/**
+ * Deletes only the events marked with this membership's ID. Another church the same
+ * person syncs keeps its events untouched.
+ */
+async function removeMinisterGoogleEvents(
+  oauthClient: AuthorizedClient,
+  ministerId: string,
+  churchId: string
+) {
   if (oauthClient) {
     const admin = createAdminClient()
-    const { data: minister } = await admin
-      .from('ministers')
-      .select('church_id')
-      .eq('id', ministerId)
-      .maybeSingle()
-
-    let mappingsQuery = admin
+    const { data: mappings } = await admin
       .from('google_calendar_event_map')
       .select('google_event_id')
+      .eq('church_id', churchId)
       .eq('minister_id', ministerId)
 
-    if (minister?.church_id) {
-      mappingsQuery = mappingsQuery.eq('church_id', minister.church_id)
-    }
-
-    const { data: mappings } = await mappingsQuery
     const calendar = google.calendar({ version: 'v3', auth: oauthClient })
     const eventIds = new Set<string>(
       (mappings ?? []).map((m: { google_event_id: string }) => m.google_event_id)
@@ -439,11 +453,52 @@ export async function disconnectMinister(ministerId: string) {
         console.error('Failed to delete event on disconnect:', err)
       }
     }
+  }
+
+  await deleteEventMappingsForMinister(ministerId)
+}
+
+/** Stops syncing one church. The personal Google connection and the other churches
+ *  remain connected. */
+export async function disconnectChurchSync(ministerId: string) {
+  const admin = createAdminClient()
+  const { data: minister } = await admin
+    .from('ministers')
+    .select('church_id, user_id')
+    .eq('id', ministerId)
+    .maybeSingle()
+
+  if (!minister?.church_id) return
+
+  const oauthClient = await getAuthorizedClientForMinister(ministerId)
+  await removeMinisterGoogleEvents(oauthClient, ministerId, minister.church_id)
+
+  if (minister.user_id) {
+    await disableChurchSync(minister.user_id, minister.church_id)
+  }
+}
+
+/** Disconnects the personal Google account from every church. Used only when the person
+ *  explicitly chooses to revoke the connection, not when leaving one church. */
+export async function disconnectUserAccount(userId: string) {
+  const admin = createAdminClient()
+  const { data: memberships } = await admin
+    .from('ministers')
+    .select('id, church_id')
+    .eq('user_id', userId)
+
+  const oauthClient = await getAuthorizedClientForUser(userId)
+  for (const membership of memberships ?? []) {
+    await removeMinisterGoogleEvents(oauthClient, membership.id, membership.church_id)
+  }
+
+  if (oauthClient) {
     try {
       await oauthClient.revokeCredentials()
     } catch (err) {
       console.error('Failed to revoke Google token:', err)
     }
   }
-  await deleteTokensAndMappings(ministerId)
+
+  await deleteCredentialsForUser(userId)
 }

@@ -713,13 +713,50 @@ export async function processScheduleEmailQueue(batchSize = 50) {
 
   const { data: rows, error } = await admin
     .from('schedule_email_notifications')
-    .select('id, church_id, notification_type, attempts, payload_json, status, church:churches(environment, email_mode)')
+    .select('id, church_id, minister_id, notification_type, attempts, payload_json, status, church:churches(status, environment, email_mode)')
     .in('status', ['pending', 'failed'])
     .lt('attempts', 3)
     .order('created_at', { ascending: true })
     .limit(batchSize)
 
   if (error) throw new Error(error.message)
+
+  // Revalidate the current state at send time. Enqueued payloads are a snapshot and
+  // must never override a later suspension, church closure or personal pause.
+  const ministerIds = [...new Set((rows ?? [])
+    .map((row: { minister_id?: string | null }) => row.minister_id)
+    .filter((id: string | null | undefined): id is string => Boolean(id)))]
+  const { data: ministersRaw, error: ministersError } = await admin
+    .from('ministers')
+    .select('id, church_id, user_id, name, email, is_active, access_state, email_reminders_enabled')
+    .in('id', ministerIds)
+
+  if (ministersError) throw new Error(ministersError.message)
+
+  const ministers = (ministersRaw ?? []) as Array<{
+    id: string
+    church_id: string
+    user_id: string | null
+    name: string
+    email: string | null
+    is_active: boolean
+    access_state: string
+    email_reminders_enabled: boolean
+  }>
+  const ministerById = new Map(ministers.map((minister) => [minister.id, minister]))
+  const userIds = [...new Set(ministers.map((minister) => minister.user_id).filter((id): id is string => Boolean(id)))]
+
+  const { data: profilesRaw, error: profilesError } = await admin
+    .from('user_profiles')
+    .select('user_id, optional_notifications_paused')
+    .in('user_id', userIds)
+
+  if (profilesError) throw new Error(profilesError.message)
+
+  const profileByUser = new Map(
+    ((profilesRaw ?? []) as Array<{ user_id: string; optional_notifications_paused: boolean }>)
+      .map((profile) => [profile.user_id, profile])
+  )
 
   let sent = 0
   let failed = 0
@@ -728,11 +765,14 @@ export async function processScheduleEmailQueue(batchSize = 50) {
 
   for (const row of rows ?? []) {
     const payload = (row.payload_json ?? {}) as Record<string, unknown>
-    const email = String(payload.minister_email ?? '').trim()
     const attempts = Number(row.attempts ?? 0) + 1
     const church = Array.isArray(row.church) ? row.church[0] : row.church
     const emailMode = church?.email_mode as string | null | undefined
     const environment = church?.environment as string | null | undefined
+    const churchStatus = church?.status as string | null | undefined
+    const minister = ministerById.get(row.minister_id)
+    const ministerProfile = minister?.user_id ? profileByUser.get(minister.user_id) : undefined
+    const email = String(minister?.email ?? payload.minister_email ?? '').trim()
 
     if (emailMode === 'disabled' || ((environment === 'demo' || environment === 'test') && emailMode !== 'test_recipient')) {
       await markQueueStatus({
@@ -740,6 +780,61 @@ export async function processScheduleEmailQueue(batchSize = 50) {
         status: 'skipped',
         attempts,
         lastError: 'Envio real desabilitado para esta igreja.',
+      })
+      skipped += 1
+      continue
+    }
+
+    if (churchStatus !== 'active') {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Igreja indisponível para envio.',
+      })
+      skipped += 1
+      continue
+    }
+
+    if (!minister || minister.church_id !== row.church_id) {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Vínculo da escala não encontrado.',
+      })
+      skipped += 1
+      continue
+    }
+
+    if (!minister.is_active || minister.access_state !== 'active') {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Vínculo da escala está inativo.',
+      })
+      skipped += 1
+      continue
+    }
+
+    if (ministerProfile?.optional_notifications_paused) {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Comunicações opcionais pausadas pela pessoa.',
+      })
+      skipped += 1
+      continue
+    }
+
+    if (minister.email_reminders_enabled === false) {
+      await markQueueStatus({
+        id: row.id,
+        status: 'skipped',
+        attempts,
+        lastError: 'Preferência de notificações desta igreja desativada.',
       })
       skipped += 1
       continue
@@ -772,7 +867,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
     try {
       const template = buildEmailTemplate({
         notificationType: row.notification_type as NotificationType,
-        payload,
+        payload: { ...payload, minister_name: minister.name, minister_email: email },
       })
 
       const elapsedMs = Date.now() - lastSendAt

@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
+import { selectedChurchFetch } from '@/lib/auth/client-context'
 import {
 	AlertCircle,
 	ArrowLeft,
@@ -147,7 +148,7 @@ function EscalaBuilderContent() {
 	const loadQuarters = useCallback(async () => {
 		try {
 			setError(null)
-			const response = await fetch('/api/schedule/quarters', { cache: 'no-store' })
+			const response = await selectedChurchFetch('/api/schedule/quarters')
 			const body = await response.json()
 			if (!response.ok) {
 				throw new Error(body.error || 'Erro ao carregar bimestres')
@@ -185,9 +186,7 @@ function EscalaBuilderContent() {
 			setLoadingData(true)
 			setError(null)
 
-			const response = await fetch(`/api/schedule/quarters/${quarterId}/assignments`, {
-				cache: 'no-store',
-			})
+			const response = await selectedChurchFetch(`/api/schedule/quarters/${quarterId}/assignments`)
 			const body = await response.json()
 
 			if (!response.ok) {
@@ -270,7 +269,7 @@ function EscalaBuilderContent() {
 		})
 
 		try {
-			const response = await fetch('/api/schedule/assignment', {
+			const response = await selectedChurchFetch('/api/schedule/assignment', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -320,7 +319,7 @@ function EscalaBuilderContent() {
 		try {
 			setPublishing(true)
 
-			const response = await fetch(`/api/schedule/quarters/${selectedBimester.id}/publish`, {
+			const response = await selectedChurchFetch(`/api/schedule/quarters/${selectedBimester.id}/publish`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ is_published: !selectedBimester.is_published }),
@@ -366,7 +365,7 @@ function EscalaBuilderContent() {
 		try {
 			setDeleting(true)
 
-			const response = await fetch(`/api/schedule/quarters/${selectedBimester.id}`, {
+			const response = await selectedChurchFetch(`/api/schedule/quarters/${selectedBimester.id}`, {
 				method: 'DELETE',
 			})
 			const body = await response.json()
@@ -443,7 +442,7 @@ function EscalaBuilderContent() {
 			setPreviewLoading(true)
 			const workbookBase64 = await readFileAsBase64(importFile)
 
-			const response = await fetch(`/api/schedule/quarters/${selectedBimesterId}/import/preview`, {
+			const response = await selectedChurchFetch(`/api/schedule/quarters/${selectedBimesterId}/import/preview`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ workbook_base64: workbookBase64 }),
@@ -509,7 +508,7 @@ function EscalaBuilderContent() {
 		try {
 			setApplyingImport(true)
 
-			const response = await fetch(`/api/schedule/quarters/${selectedBimesterId}/import/apply`, {
+			const response = await selectedChurchFetch(`/api/schedule/quarters/${selectedBimesterId}/import/apply`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ items: itemsToApply }),

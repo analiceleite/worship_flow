@@ -11,6 +11,7 @@ export { CHURCH_CONTEXT_HEADER } from '@/lib/auth/context-selection'
 
 type AuthContextOptions = {
   requireAdmin?: boolean
+  churchId?: string | null
 }
 
 export class AuthContextError extends Error {
@@ -43,7 +44,7 @@ export async function getCurrentMinisterContext(
 
   const isImpersonating = Boolean(platformAdmin && impersonatedChurchId)
   const requestHeaders = await headers()
-  const requestedChurchId = requestHeaders.get(CHURCH_CONTEXT_HEADER)
+  const requestedChurchId = options.churchId ?? requestHeaders.get(CHURCH_CONTEXT_HEADER)
   if (requestedChurchId !== null && !isChurchId(requestedChurchId)) {
     throw new AuthContextError('Identificador da igreja inválido.', 400)
   }

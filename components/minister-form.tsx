@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { createClient } from '@/lib/supabase/client'
 import { Spinner } from '@/components/ui/spinner'
 import { Copy } from 'lucide-react'
+import { churchFetch } from '@/lib/auth/client-context'
 
 interface MinisterFormProps {
   open: boolean
@@ -119,7 +120,9 @@ export function MinisterForm({
         if (error) throw error
       } else {
         // Create new minister via API route
-        const response = await fetch('/api/ministers/create', {
+        const churchId = effectiveChurchId ?? currentMinister?.church_id
+        if (!churchId) throw new Error('Não foi possível identificar a igreja atual.')
+        const response = await churchFetch(churchId, '/api/ministers/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

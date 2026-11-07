@@ -22,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '../ui/sheet'
+import { selectedChurchFetch } from '@/lib/auth/client-context'
 
 export interface ScheduleRole {
     id: string
@@ -340,7 +341,7 @@ function CellEditor({
             try {
                 setLoading(true)
                 const roleParam = ministerRoleFilter ? `&role=${ministerRoleFilter}` : ''
-                const response = await fetch(
+                const response = await selectedChurchFetch(
                     `/api/ministers/search?query=${encodeURIComponent(query)}&limit=25${roleParam}`,
                     { signal: controller.signal }
                 )

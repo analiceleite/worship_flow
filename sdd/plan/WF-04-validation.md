@@ -6,7 +6,7 @@
 
 **PLAN:** [PLAN-WF-04-implementation.md](PLAN-WF-04-implementation.md)
 
-**Resultado:** primeiro incremento validado e commitado em `2df13aa`; segundo incremento descrito na seção 7. A WF-04 completa **não está concluída nem aprovada para implantação**: convites e integração multigreja ainda estão pendentes.
+**Resultado:** primeiro e segundo incrementos commitados em `2df13aa` e `73efc17`; incrementos seguintes descritos nas seções 8–10. A WF-04 completa **não está concluída nem aprovada para implantação**: convites, políticas multigreja e demais consumidores ainda estão pendentes.
 
 ## 1. Escopo implementado e validado
 
@@ -163,3 +163,100 @@ Não se usou apenas aumento de timeout para aprovar o resultado: navegações ag
 - Convites e aceite permanecem pendentes. A criação antiga não está declarada migrada.
 - O histórico divergente da 036 e a indisponibilidade do ESLint continuam pendências; não houve reset, reescrita de histórico ou instalação de dependências para contorná-los.
 - Este segundo incremento não foi incluído no commit anterior, nem enviado ao remoto.
+
+## 8. Terceiro incremento — contexto explícito na escala
+
+### Implementado
+
+- Criado `selectedChurchFetch` em `lib/auth/client-context.ts`: resolve o contexto atual pela API autenticada e fixa o `churchId` validado no header `x-wf-church-id` da chamada operacional. Preserva `AbortSignal` e demais opções; `churchFetch` continua sendo a opção preferida quando a tela já capturou o identificador para uma operação.
+- Migradas todas as chamadas de rede operacionais destas telas para o wrapper: `/schedule`, builder, dashboard e administração de bimestres. A busca não encontra mais `fetch(...)` direto nas páginas de `app/schedule`.
+- Incluídos também componentes reutilizados fora dessas páginas: criação de bimestre e busca de ministro no seletor de atribuição. A busca não encontra `fetch(...)` direto em `components/schedule`.
+- Mutação de acesso de integrante e criação legada agora enviam a igreja capturada pela tela por `churchFetch`; a API continua derivando papel/ator do contexto autenticado e valida igreja/vínculo. O fluxo de criação ainda usa a senha temporária antiga e segue marcado para substituição por convites — esta mudança só fixa o alvo, não declara o onboarding concluído.
+- Os endpoints da escala já derivam autorização do `getCurrentMinisterContext`, que valida o header explícito contra o vínculo e estado locais; os filtros por `church_id` existentes seguem aplicados. Não houve alteração de schema, grants ou policies.
+- Acrescentado teste unitário que comprova a resolução autenticada seguida de envio do identificador validado na chamada operacional.
+
+### Validação
+
+| Verificação | Resultado |
+|---|---|
+| `pnpm test:onboarding` | **30 passaram**, incluindo o novo teste do wrapper. |
+| `pnpm exec tsc --noEmit --incremental false` | Passou. |
+| `pnpm build` | Passou; permanece o aviso já conhecido de convenção middleware deprecated. |
+| `git diff --check` | Passou; somente avisos locais de conversão LF/CRLF. |
+| Busca de `fetch(` em `app/schedule/**/*.tsx` | Nenhuma chamada direta restante. |
+| Browser WF-11 | A primeira execução falhou no setup do login por iniciar a espera de URL após o clique. O teste foi corrigido para aguardar navegação e clique em paralelo e bloquear somente HMR; repetição final: **10 passaram** (9 cenários + pai). |
+
+O ajuste de teste sincroniza a espera, em vez de elevar timeout. O resultado browser é válido para o stack local atual, não prova operação em produção nem identidade compartilhada em múltiplas igrejas.
+
+### Limites
+
+- O wrapper resolve a igreja selecionada imediatamente antes da operação. Páginas que possuem contexto capturado devem preferir `churchFetch(churchId, ...)`, particularmente para operações longas/mutações. Antes de habilitar simultaneidade multigreja real, o identificador precisa ser capturado no estado da tela e mantido durante toda a operação, evitando depender de preferência mutável entre abas.
+- Gestão de equipe, repertório, Google Calendar, notificações, RLS/helpers SQL e criação legada de integrantes ainda precisam de auditoria/migração. As restrições únicas permanecem intencionalmente intactas.
+- A criação antiga de integrante não foi desativada nem convertida: isso depende de um fluxo de convites funcional e de transição sem excluir Auth global existente.
+- Alterações do terceiro incremento permanecem locais, sem commit, push, migração remota ou deploy.
+
+## 9. Continuação — integração de equipe e início do OAuth do Google
+
+### Implementado
+
+- `PATCH /api/ministers/:id/access` e criação legada de integrante recebem o `churchId` capturado pela tela via `churchFetch`; a API valida o alvo no contexto autenticado. A senha temporária permanece apenas por compatibilidade até haver convites completos.
+- Busca de integrante no grid da escala e criação de bimestre usam o wrapper contextual, cobrindo chamadas de rede que vivem em `components/schedule` e não nas próprias páginas.
+- `GET /api/google-calendar/connect` exige `churchId` válido e resolve o vínculo ativo autorizado antes de iniciar OAuth. A autorização de suporte é recusada.
+- Cookie de estado OAuth agora guarda nonce, identidade Auth, ID do vínculo e igreja que iniciaram a conexão; callback exige correspondência da prova OAuth e do contexto atual antes de trocar/gravar tokens. O retorno preserva `churchId` para a tela de perfil.
+- Status e desconexão do Calendar recebem igreja explícita; perfil chama ambos com o vínculo capturado, e o link de conexão envia o ID. A leitura de status aguarda o carregamento do vínculo, sem perder a requisição na montagem inicial.
+- Tokens e eventos continuam armazenados por vínculo/ministro e igreja. **A migração da credencial para pessoa, seleção de igrejas sincronizadas, workers e reconciliação não foi feita**; não habilitar segundo vínculo com base nesta etapa.
+- Corrigido o setup do teste WF-11: espera de navegação sincronizada com clique e HMR isolado no contexto browser, sem relaxar o timeout. Repetição local passou em 10 testes.
+
+### Validação adicional
+
+- `pnpm test:onboarding`: **31 passaram**, incluindo teste de que o callback preserva igreja/vínculo e recusa outra identidade antes de trocar tokens.
+- `pnpm exec tsc --noEmit --incremental false` e `pnpm build`: passaram.
+- WF-11 browser local: **10 passaram** após o ajuste de sincronização do setup.
+- Sem OAuth real, envio de e-mail, migração de banco, deploy ou alteração remota.
+
+### Próxima fronteira
+
+Antes de adaptar a persistência Google para usuário global, levantar o schema real/constraints e mapear reconciliador, tokens por vínculo, maps de eventos, `disconnectMinister`, jobs e chamadas de preferências. Fazer isso como expansão compatível com backfill/dedupe e teste contra duplicidades; não substituir chaves nem remover vínculos nesta rodada.
+
+## 10. Continuação — credencial Google por pessoa e pausa global de notificações
+
+### Implementado
+
+- Migração `scripts/039_google_calendar_identity.sql`, aplicada somente no stack local:
+  - `google_calendar_credentials` guarda uma credencial OAuth por identidade (`user_id`), com RLS e acesso apenas por service role.
+  - `google_calendar_church_sync` registra opt-in explícito por igreja. Parar uma igreja remove apenas essa seleção; desconectar a conta revoga a credencial pessoal.
+  - Backfill único a partir de `google_calendar_tokens`/`ministers.user_id`, preservando a igreja original e escolhendo a credencial mais recente em caso de duplicidade. Nenhum token legado foi apagado ou reescrito durante o backfill.
+  - `google_calendar_event_map` ganhou `user_id` derivado do vínculo para limpeza segura por identidade; os mapas continuam por vínculo/igreja/evento.
+- `lib/google-calendar/client.ts`: leitura, gravação e renovação de tokens passam a usar `user_id`; o caminho antigo é promovido para a credencial pessoal como fallback de transição, sem revogar conexões existentes.
+- `lib/google-calendar/reconcile.ts`: reconciliação por vínculo só ocorre quando a igreja está selecionada; o marcador privado por ministro impede apagar eventos de outra igreja. Cron e publicação de bimestre percorrem as seleções de igreja, não mais a tabela legada de tokens.
+- `GET /api/google-calendar/connect`: exige igreja/vínculo válidos e inicia OAuth com estado ligado à identidade. O callback grava a credencial por pessoa, habilita a igreja iniciadora e reconcilia apenas esse vínculo.
+- `POST /api/google-calendar/sync-selection`: ativa/parar a sincronização de uma igreja; exige credencial pessoal para ativar e recusa contexto de suporte.
+- `POST /api/google-calendar/disconnect`: diferencia `scope: "church"` (parar uma igreja) de `scope: "account"` (revogar a conta Google). Suporte não altera conexões pessoais.
+- `GET /api/google-calendar/status` passa a informar credencial pessoal, seleção da igreja atual, eventos sincronizados e quantidade de igrejas conectadas, sem cache.
+- Perfil permite conectar, parar a sincronização da igreja, reconectar outra igreja e desconectar a conta, com feedback separado.
+- Notificações: o worker revalida no envio o vínculo atual, estado da igreja, preferência local e pausa global; usa o nome/e-mail atuais, não o snapshot da fila. Uma linha só é enviada se todos os estados permitirem.
+- `PATCH /api/preferences` separa a pausa global (`user_profiles.optional_notifications_paused`) das preferências locais (`ministers.*`), valida tipos e recusa escrita em contexto de suporte. O perfil carrega e salva a pausa global.
+
+### Validação desta rodada
+
+| Verificação | Resultado |
+|---|---|
+| Migração 039 no banco local | Aplicada com sucesso; tabelas, índices e backfill criados. |
+| `node --test tests/onboarding.local.test.cjs` | **7 passaram** (2 testes-pai + 5 subtestes), incluindo backfill de credencial/seleção, `user_id` do mapa, replay idempotente e negação de leitura por `authenticated`. |
+| `pnpm test:onboarding` | **34 passaram**, incluindo callback por identidade, seleção de igreja, desconexão separada e pausa global. |
+| `pnpm test:notifications` | **2 passaram**: pulo por pausa global/preferência local/vínculo suspenso/igreja fechada e envio apenas no estado válido. |
+| `pnpm test:schedule-media` | **14 passaram**. |
+| `pnpm exec tsc --noEmit --incremental false` | Passou. |
+| `pnpm build` | Passou; rota `/api/google-calendar/sync-selection` incluída. |
+| Browser WF-04 | **8 passaram** (7 cenários + pai), incluindo perfil em 360px. |
+| `git diff --check` | Passou; somente avisos locais LF/CRLF. |
+
+### Limites mantidos
+
+- Não houve OAuth real, chamada ao Google, envio de e-mail real, migração remota, deploy, push ou PR.
+- A credencial pessoal foi implementada, mas a trava de múltiplos vínculos por identidade continua ativa; o fluxo multigreja real só deve ser habilitado depois de migrar convites, policies/helpers SQL e os consumidores restantes.
+- Durante uma janela de implantação mista, uma versão antiga ainda pode renovar a tabela legada de tokens enquanto a nova lê a credencial pessoal. O fallback promove a linha legada, mas a transição exige aplicação da migração antes do release e reconciliação de versões.
+- `google_calendar_tokens` foi preservada intencionalmente; não foi removida nem teve dados apagados. A limpeza definitiva depende de comprovar que nenhum consumidor antigo permanece.
+- A pausa global suprime notificações opcionais da fila; mensagens essenciais de acesso/segurança não passam por essa fila e continuam fora do escopo.
+- ESLint continua indisponível; a auditoria de acessibilidade e a revisão de Storage permanecem pendentes.
+- Nenhuma alteração desta seção foi commitada.

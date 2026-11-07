@@ -13,7 +13,7 @@ export async function GET() {
   const user = await getAuthenticatedIdentity()
   if (!user) return NextResponse.json({ error: 'Usuário não autenticado.' }, { status: 401 })
   const { data, error } = await createAdminClient().from('user_profiles')
-    .select('user_id, name, avatar_url').eq('user_id', user.id).maybeSingle()
+    .select('user_id, name, avatar_url, optional_notifications_paused').eq('user_id', user.id).maybeSingle()
   if (error) return NextResponse.json({ error: 'Não foi possível consultar seu perfil.' }, { status: 503 })
   return NextResponse.json({ profile: data }, { headers: { 'Cache-Control': 'no-store' } })
 }

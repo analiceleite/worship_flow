@@ -49,3 +49,11 @@ export function churchFetch(churchId: string, path: string, init: RequestInit = 
   headers.set(CHURCH_CONTEXT_HEADER, churchId)
   return fetch(path, { ...init, cache: 'no-store', headers })
 }
+
+/** Resolve the server-validated selection immediately before an operation and
+ * pin it on that request. Use churchFetch directly when a screen captured its
+ * church ID, especially for writes. */
+export async function selectedChurchFetch(path: string, init: RequestInit = {}) {
+  const { context } = await loadChurchContext()
+  return churchFetch(context.churchId, path, init)
+}

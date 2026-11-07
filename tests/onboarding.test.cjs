@@ -303,6 +303,26 @@ test('churchFetch captures its explicit church, preserves headers and rejects ex
   assert.equal(calls.length, 1)
 })
 
+test('selectedChurchFetch resolves validated context and pins it on the operational request', async () => {
+  const calls = []
+  const client = load('lib/auth/client-context.ts', {
+    '@/lib/supabase/client': { createClient: () => assert.fail('Not used') },
+    '@/lib/routes': { ROUTES }, '@/lib/auth/context-selection': contextSelection,
+    window: { location: { pathname: '/schedule', search: '' } },
+    fetch: async (url, init) => {
+      calls.push([url, init])
+      return url === '/api/context'
+        ? new Response(JSON.stringify({ context: { churchId: church } }), { status: 200 })
+        : new Response('{}', { status: 200 })
+    },
+  })
+  await client.selectedChurchFetch('/api/schedule/current', { method: 'GET' })
+  assert.equal(calls[0][0], '/api/context')
+  assert.equal(calls[1][0], '/api/schedule/current')
+  assert.equal(calls[1][1].headers.get('x-wf-church-id'), church)
+  assert.equal(calls[1][1].cache, 'no-store')
+})
+
 test('late context errors cannot redirect an abandoned page after church selection', async () => {
   const redirects = []
   const location = { pathname: '/songs', search: '', replace: destination => redirects.push(destination) }
@@ -318,4 +338,196 @@ test('late context errors cannot redirect an abandoned page after church selecti
   finish(new Response('{}', { status: 403 }))
   await assert.rejects(request)
   assert.deepEqual(redirects, [])
+})
+
+test('Google Calendar OAuth callback is bound to the initiating identity, membership and church', async () => {
+  const state = { nonce: 'one-time-state', userId: 'actor', ministerId: 'membership', churchId: church }
+  const calls = { context: [], exchanged: 0, saved: [], synced: [] }
+  const callback = load('app/api/google-calendar/callback/route.ts', {
+    'next/headers': { cookies: async () => ({ get: () => ({ value: JSON.stringify(state) }) }) },
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async options => {
+        calls.context.push(options)
+        return { userId: 'actor', ministerId: 'membership', churchId: church, isImpersonating: false }
+      },
+    },
+    '@/lib/google-calendar/client': {
+      exchangeCodeForTokens: async () => { calls.exchanged++; return { access_token: 'local-test-only', refresh_token: 'local-test-only' } },
+      saveTokensForUser: async (...args) => calls.saved.push(args),
+      enableChurchSync: async (...args) => calls.synced.push(args),
+    },
+    '@/lib/google-calendar/reconcile': { reconcileMinisterCalendar: async () => ({ skipped: 'not_connected' }) },
+  })
+  const response = await callback.GET(new Request(`http://localhost/api/google-calendar/callback?code=opaque&state=${state.nonce}`))
+  assert.equal(response.status, 307)
+  const destination = new URL(response.headers.get('location'))
+  assert.equal(destination.pathname, '/profile')
+  assert.equal(destination.searchParams.get('churchId'), church)
+  assert.equal(destination.searchParams.get('google_calendar'), 'connected')
+  assert.deepEqual(calls.context, [{ churchId: church }])
+  assert.equal(calls.exchanged, 1)
+  assert.equal(calls.saved[0][0], 'actor')
+  assert.deepEqual(calls.synced, [['actor', church, 'membership']])
+
+  const mismatch = load('app/api/google-calendar/callback/route.ts', {
+    'next/headers': { cookies: async () => ({ get: () => ({ value: JSON.stringify(state) }) }) },
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async () => ({ userId: 'different-identity', ministerId: 'membership', churchId: church, isImpersonating: false }),
+    },
+    '@/lib/google-calendar/client': {
+      exchangeCodeForTokens: async () => assert.fail('Must reject the identity mismatch before exchanging tokens'),
+      saveTokensForUser: async () => assert.fail('Must not save tokens for a different identity'),
+      enableChurchSync: async () => assert.fail('Must not enable sync for a different identity'),
+    },
+    '@/lib/google-calendar/reconcile': { reconcileMinisterCalendar: async () => assert.fail('Must not reconcile') },
+  })
+  const rejected = await mismatch.GET(new Request(`http://localhost/api/google-calendar/callback?code=opaque&state=${state.nonce}`))
+  assert.equal(new URL(rejected.headers.get('location')).searchParams.get('google_calendar'), 'error')
+})
+
+test('Google Calendar church sync requires a personal credential and never trusts a body church', async () => {
+  const context = { userId: 'actor', ministerId: 'membership', churchId: church, isImpersonating: false }
+  const calls = { context: [], credential: [], enabled: [], disabled: [], reconciled: [] }
+  const api = load('app/api/google-calendar/sync-selection/route.ts', {
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async options => { calls.context.push(options); return context },
+    },
+    '@/lib/google-calendar/client': {
+      hasCredentialForUser: async userId => { calls.credential.push(userId); return true },
+      enableChurchSync: async (...args) => calls.enabled.push(args),
+    },
+    '@/lib/google-calendar/reconcile': {
+      disconnectChurchSync: async (...args) => calls.disabled.push(args),
+      reconcileMinisterCalendar: async (...args) => calls.reconciled.push(args),
+    },
+  })
+  const request = body => new Request('http://localhost/api/google-calendar/sync-selection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-wf-church-id': church },
+    body: JSON.stringify(body),
+  })
+
+  const enabled = await api.POST(request({ enabled: true, churchId: other }))
+  assert.equal(enabled.status, 200)
+  assert.deepEqual(calls.context, [{ churchId: church }])
+  assert.deepEqual(calls.credential, ['actor'])
+  assert.deepEqual(calls.enabled, [['actor', church, 'membership']])
+  assert.deepEqual(calls.reconciled, [['membership']])
+
+  const disabled = await api.POST(request({ enabled: false }))
+  assert.equal(disabled.status, 200)
+  assert.deepEqual(calls.disabled, [['membership']])
+
+  const missingCredential = load('app/api/google-calendar/sync-selection/route.ts', {
+    '@/lib/auth-context': { AuthContextError, getCurrentMinisterContext: async () => context },
+    '@/lib/google-calendar/client': {
+      hasCredentialForUser: async () => false,
+      enableChurchSync: async () => assert.fail('Must not enable without a credential'),
+    },
+    '@/lib/google-calendar/reconcile': {
+      disconnectChurchSync: async () => assert.fail('Must not disable'),
+      reconcileMinisterCalendar: async () => assert.fail('Must not reconcile'),
+    },
+  })
+  assert.equal((await missingCredential.POST(request({ enabled: true }))).status, 409)
+})
+
+test('Google Calendar disconnect separates account revocation from one church', async () => {
+  const calls = { church: [], account: [], context: [] }
+  const api = load('app/api/google-calendar/disconnect/route.ts', {
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async options => {
+        calls.context.push(options)
+        return { userId: 'actor', ministerId: 'membership', churchId: church, isImpersonating: false }
+      },
+    },
+    '@/lib/google-calendar/reconcile': {
+      disconnectChurchSync: async (...args) => calls.church.push(args),
+      disconnectUserAccount: async (...args) => calls.account.push(args),
+    },
+  })
+  const request = body => new Request('http://localhost/api/google-calendar/disconnect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-wf-church-id': church },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+
+  assert.equal((await api.POST(request({ scope: 'church' }))).status, 200)
+  assert.deepEqual(calls.church, [['membership']])
+  assert.deepEqual(calls.account, [])
+
+  assert.equal((await api.POST(request())).status, 200)
+  assert.deepEqual(calls.account, [['actor']])
+  assert.deepEqual(calls.context, [{ churchId: church }, { churchId: church }])
+
+  const support = load('app/api/google-calendar/disconnect/route.ts', {
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async () => ({ userId: 'actor', ministerId: 'membership', churchId: church, isImpersonating: true }),
+    },
+    '@/lib/google-calendar/reconcile': {
+      disconnectChurchSync: async () => assert.fail('Support must not stop sync'),
+      disconnectUserAccount: async () => assert.fail('Support must not revoke the account'),
+    },
+  })
+  assert.equal((await support.POST(request({ scope: 'account' }))).status, 403)
+})
+
+test('preferences separate the personal global pause from local church settings', async () => {
+  const calls = []
+  const admin = {
+    from(table) {
+      const builder = {
+        update(values) { calls.push({ table, values }); return builder },
+        eq() { return builder },
+        then(resolve) { return Promise.resolve({ error: null }).then(resolve) },
+      }
+      return builder
+    },
+  }
+  const api = load('app/api/preferences/route.ts', {
+    '@/lib/supabase/admin': { createAdminClient: () => admin },
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async options => {
+        assert.deepEqual(options, { churchId: church })
+        return { userId: 'actor', ministerId: 'membership', churchId: church, isImpersonating: false }
+      },
+    },
+    '@/lib/google-calendar/reconcile': { reconcileMinisterCalendar: async () => {} },
+  })
+  const request = body => new Request('http://localhost/api/preferences', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'x-wf-church-id': church },
+    body: JSON.stringify(body),
+  })
+
+  assert.equal((await api.PATCH(request({
+    email_reminders_enabled: false,
+    optional_notifications_paused: true,
+  }))).status, 200)
+  assert.deepEqual(calls.map(call => call.table), ['ministers', 'user_profiles'])
+  assert.deepEqual(calls[0].values, { email_reminders_enabled: false })
+  assert.equal(calls[1].values.optional_notifications_paused, true)
+  assert.equal(typeof calls[1].values.updated_at, 'string')
+
+  calls.length = 0
+  assert.equal((await api.PATCH(request({ optional_notifications_paused: false }))).status, 200)
+  assert.deepEqual(calls.map(call => call.table), ['user_profiles'])
+
+  assert.equal((await api.PATCH(request({ optional_notifications_paused: 'yes' }))).status, 400)
+
+  const support = load('app/api/preferences/route.ts', {
+    '@/lib/supabase/admin': { createAdminClient: () => assert.fail('Support must not write preferences') },
+    '@/lib/auth-context': {
+      AuthContextError,
+      getCurrentMinisterContext: async () => ({ userId: 'actor', ministerId: 'membership', churchId: church, isImpersonating: true }),
+    },
+    '@/lib/google-calendar/reconcile': { reconcileMinisterCalendar: async () => assert.fail('Support must not reconcile') },
+  })
+  assert.equal((await support.PATCH(request({ optional_notifications_paused: true }))).status, 403)
 })

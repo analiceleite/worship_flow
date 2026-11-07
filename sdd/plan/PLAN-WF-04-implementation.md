@@ -4,7 +4,7 @@
 
 **PBI:** [WF-04](https://github.com/analiceleite/worship_flow/issues/1) · **Relacionado:** [WF-26](https://github.com/analiceleite/worship_flow/issues/22)
 
-**Estado:** Primeiro incremento commitado em `2df13aa`. Segundo incremento implementa entrada/seleção de igreja, preferência validada e início da migração dos consumidores para contexto explícito, com validação local. WF-04 completa ainda pendente (convites, políticas multigreja e demais consumidores); não pronto para implantação.
+**Estado:** Incrementos anteriores commitados em `2df13aa` e `73efc17`. Incrementos locais seguintes fixam contexto em escala/equipe, migram a credencial Google para a pessoa, mantêm seleção explícita de igrejas e revalidam notificações no envio. WF-04 completa ainda pendente (convites, políticas multigreja e demais consumidores); não pronto para implantação.
 
 **Data:** 2026-11-07
 
@@ -17,6 +17,12 @@ Este documento não autoriza migração remota, envio real de e-mails, deploy, c
 **Atualização de execução:** após a criação deste plano, o usuário autorizou criar branch e iniciar implementação, deixando os testes para o final. A autorização cobre trabalho local; não inclui operações remotas. Progresso e limites em [WF-04-validation.md](WF-04-validation.md).
 
 **Atualização de continuidade:** o usuário autorizou o commit do incremento validado, registrado em `2df13aa`, e pediu continuidade. Alterações do segundo incremento permanecem separadas desse commit. Nenhum push foi autorizado ou executado.
+
+**Atualização de continuidade 2:** o segundo incremento foi commitado em `73efc17`. A pedido do usuário, a execução local prosseguiu para os consumidores de escala; o terceiro incremento não foi commitado nem enviado.
+
+**Atualização de continuidade 3:** o usuário pediu para prosseguir. A migração da escala foi ampliada aos componentes e operações de equipe; o início/callback OAuth agora usa alvo e estado vinculados à pessoa e ao vínculo. As alterações permanecem locais, sem commit/push.
+
+**Atualização de continuidade 4:** o usuário pediu para implementar o próximo passo. A migração 039 foi aplicada somente no banco local, movendo a credencial Google para `user_id` e preservando tokens/mapas legados por backfill. Reconciliação, cron, publicação, status e desconexão agora distinguem conta pessoal de igreja sincronizada. O worker de e-mail revalida estado/preferências no envio e a pausa global é editável separadamente das preferências locais. Múltiplos vínculos por identidade continuam bloqueados intencionalmente.
 
 Decisões de produto consolidadas:
 

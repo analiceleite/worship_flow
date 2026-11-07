@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { BimesterForm, type BimesterSummary } from '@/components/schedule/BimesterForm'
 import { Plus, AlertCircle, ExternalLink, ArrowLeft, BarChart3 } from 'lucide-react'
+import { selectedChurchFetch } from '@/lib/auth/client-context'
 
 function formatRange(startDate: string, endDate: string) {
 	const start = new Date(`${startDate}T12:00:00`)
@@ -30,7 +31,7 @@ export default function EscalaQuartersPage() {
 	const loadQuarters = useCallback(async () => {
 		try {
 			setError(null)
-			const response = await fetch('/api/schedule/quarters', { cache: 'no-store' })
+			const response = await selectedChurchFetch('/api/schedule/quarters')
 			const body = await response.json()
 
 			if (!response.ok) {
