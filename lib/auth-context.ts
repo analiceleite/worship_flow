@@ -4,9 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import type { Church, CurrentMinisterContext, Minister, PlatformAdminContext } from '@/lib/types'
 import { getAuthenticatedIdentity } from '@/lib/auth/identity'
 import { resolveMembership, type MembershipCandidate } from '@/lib/auth/membership'
+import { CHURCH_CONTEXT_COOKIE, CHURCH_CONTEXT_HEADER, isChurchId, readChurchPreference } from '@/lib/auth/context-selection'
 
 export const IMPERSONATED_CHURCH_COOKIE = 'wf_impersonated_church_id'
-export const CHURCH_CONTEXT_HEADER = 'x-wf-church-id'
+export { CHURCH_CONTEXT_HEADER } from '@/lib/auth/context-selection'
 
 type AuthContextOptions = {
   requireAdmin?: boolean
@@ -43,11 +44,12 @@ export async function getCurrentMinisterContext(
   const isImpersonating = Boolean(platformAdmin && impersonatedChurchId)
   const requestHeaders = await headers()
   const requestedChurchId = requestHeaders.get(CHURCH_CONTEXT_HEADER)
-  if (requestedChurchId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedChurchId)) {
+  if (requestedChurchId !== null && !isChurchId(requestedChurchId)) {
     throw new AuthContextError('Identificador da igreja inválido.', 400)
   }
 
   let membership: MembershipCandidate | undefined
+  let accessibleChurchCount = 0
   if (isImpersonating) {
     if (requestedChurchId && requestedChurchId !== impersonatedChurchId) {
       throw new AuthContextError('A igreja solicitada difere do contexto de suporte.', 409)
@@ -57,7 +59,19 @@ export async function getCurrentMinisterContext(
     if (error) throw new AuthContextError('Não foi possível verificar a igreja.', 503)
     if (church?.status !== 'active') throw new AuthContextError('Igreja indisponível.', 403)
   } else {
-    const resolution = resolveMembership(await getOwnMemberships(user.id), requestedChurchId)
+    const cookieStore = await cookies()
+    const preference = readChurchPreference(cookieStore.get(CHURCH_CONTEXT_COOKIE)?.value, user.id)
+    const [memberships, preferenceResult] = await Promise.all([
+      getOwnMemberships(user.id),
+      !preference && !requestedChurchId
+        ? admin.from('user_profiles').select('last_church_id').eq('user_id', user.id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+    if (preferenceResult.error) throw new AuthContextError('Não foi possível consultar sua preferência de igreja.', 503)
+    const preferredChurchId = preference ?? preferenceResult.data?.last_church_id ?? null
+    const ownMemberships = memberships as Awaited<ReturnType<typeof getOwnMemberships>>
+    const resolution = resolveMembership(ownMemberships, requestedChurchId, preferredChurchId)
+    accessibleChurchCount = ownMemberships.filter(item => item.access_state === 'active' && item.church_status === 'active').length
     if (resolution.kind === 'selection_required') {
       throw new AuthContextError('Selecione uma igreja para continuar.', 409)
     }
@@ -74,6 +88,7 @@ export async function getCurrentMinisterContext(
     role,
     isAdmin: role === 'admin',
     isImpersonating,
+    accessibleChurchCount,
     impersonatedChurchId: isImpersonating ? impersonatedChurchId : null,
   }
 

@@ -30,6 +30,9 @@ export interface Minister {
   user_id: string | null
   is_active: boolean
   access_state: MembershipState
+  email_reminders_enabled?: boolean
+  email_reminder_offsets_minutes?: number[] | null
+  calendar_alarm_offsets_minutes?: number[] | null
   avatar_url: string | null
   created_at: string
 }
@@ -81,6 +84,7 @@ export interface CurrentMinisterContext {
   role: Minister['role']
   isAdmin: boolean
   isImpersonating?: boolean
+  accessibleChurchCount?: number
   impersonatedChurchId?: string | null
 }
 

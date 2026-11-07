@@ -1,6 +1,6 @@
 # SPEC — WF-04: Onboarding e identidade multigreja no SaaS
 
-**Status:** Visão de produto alinhada com o usuário; fundação inicial validada automaticamente em SQL/RLS e browser locais. Fluxo de convites, integração multigreja completa e validação humana pendentes. Não pronto para implantação.
+**Status:** Fundação inicial validada e commitada; entrada/seleção de igreja e consumidores iniciais de contexto explícito implementados em segundo incremento. Fluxo de convites, integração multigreja completa e validação humana pendentes. Não pronto para implantação.
 
 **PBI principal:** [WF-04 — Concluir onboarding e definir estados de acesso do integrante](https://github.com/analiceleite/worship_flow/issues/1)
 

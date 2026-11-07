@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -15,6 +16,7 @@ import { UserAvatar } from '@/components/user-avatar'
 import { toast } from 'sonner'
 import { Bell, CalendarCheck } from 'lucide-react'
 import { getAppVersion } from '@/lib/release-notes'
+import { churchFetch, loadChurchContext, loadSelectedMinister } from '@/lib/auth/client-context'
 
 const ALARM_OPTIONS = [
   { value: 1440, label: '1 dia antes' },
@@ -36,8 +38,8 @@ export default function ProfilePage() {
   const [supabase] = useState(() => createClient())
 
   const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
   const [minister, setMinister] = useState<any>(null)
+  const [contextError, setContextError] = useState<string | null>(null)
   const [emailRemindersEnabled, setEmailRemindersEnabled] = useState(true)
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([720, 60])
   const [selectedEmailReminders, setSelectedEmailReminders] = useState<number[]>([10080, 1440])
@@ -47,26 +49,19 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/auth/login')
-        return
-      }
-      setUser(user)
-
-      const { data } = await supabase
-        .from('ministers')
-        .select('*')
-        .eq('user_id', user.id)
-        .single()
-
-      if (data) {
+      try {
+        const { context } = await loadChurchContext()
+        const data = await loadSelectedMinister(context)
+        if (!data) throw new Error('Perfil local indisponível neste contexto de suporte.')
         setMinister(data)
         setEmailRemindersEnabled(data.email_reminders_enabled ?? true)
         setSelectedAlarms(data.calendar_alarm_offsets_minutes || [720, 60])
         setSelectedEmailReminders(data.email_reminder_offsets_minutes || [10080, 1440])
+      } catch (error) {
+        setContextError(error instanceof Error ? error.message : 'Não foi possível consultar seu perfil.')
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
 
     checkAuth()
@@ -94,7 +89,9 @@ export default function ProfilePage() {
           toast.error(messages[gcal])
         }
       }
-      router.replace('/profile')
+      params.delete('google_calendar')
+      const remaining = params.toString()
+      router.replace(remaining ? `/profile?${remaining}` : '/profile')
     }
   }, [router])
 
@@ -131,7 +128,8 @@ export default function ProfilePage() {
   const handleSavePreferences = async () => {
     setSaving(true)
     try {
-      const response = await fetch('/api/preferences', {
+      if (!minister) return
+      const response = await churchFetch(minister.church_id, '/api/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -149,7 +147,8 @@ export default function ProfilePage() {
       const { data } = await supabase
         .from('ministers')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('id', minister.id)
+        .eq('church_id', minister.church_id)
         .single()
 
       if (data) {
@@ -167,7 +166,7 @@ export default function ProfilePage() {
   }
 
   if (!minister) {
-    return <div className="p-4">Ministro não encontrado</div>
+    return <main className="p-4"><Alert variant="destructive"><AlertDescription role="alert">{contextError ?? 'Sua participação nesta igreja está indisponível.'}</AlertDescription><Button variant="outline" onClick={() => window.location.reload()}>Tentar novamente</Button></Alert></main>
   }
 
   return (

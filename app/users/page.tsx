@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Minister } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { MinisterForm } from '@/components/minister-form'
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
+import { loadChurchContext } from '@/lib/auth/client-context'
 
 export default function MinistrosPage() {
     const [ministers, setMinisters] = useState<Minister[]>([])
@@ -32,49 +33,29 @@ export default function MinistrosPage() {
     const [accessError, setAccessError] = useState<string | null>(null)
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
     const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [viewerIsAdmin, setViewerIsAdmin] = useState(false)
+    const loadedChurchId = useRef<string | null>(null)
 
     const fetchMinisters = useCallback(async () => {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
+        setLoading(true)
+        setLoadError(null)
+        try {
+            const { context } = await loadChurchContext(loadedChurchId.current ?? undefined)
+            const { data, error } = await createClient().from('ministers').select('*')
+                .eq('church_id', context.churchId).order('name', { ascending: true })
+            if (error) throw new Error('Não foi possível carregar a equipe.')
+            const rows = (data ?? []) as Minister[]
+            setCurrentMinister(rows.find(row => row.id === context.ministerId) ?? null)
+            setViewerIsAdmin(context.isAdmin)
+            setEffectiveChurchId(context.churchId)
+            loadedChurchId.current = context.churchId
+            setMinisters(rows)
+        } catch (error) {
+            setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar a equipe.')
+        } finally {
             setLoading(false)
-            return
         }
-
-        const { data: viewer, error: viewerError } = await supabase
-            .from('ministers')
-            .select('*')
-            .eq('user_id', user.id)
-            .single()
-
-        if (viewerError || !viewer) {
-            console.error('Erro ao identificar ministro atual:', viewerError)
-            setLoading(false)
-            return
-        }
-
-        setCurrentMinister(viewer)
-
-        let churchId = viewer.church_id
-        const contextResponse = await fetch('/api/context')
-        if (contextResponse.ok) {
-            const result = await contextResponse.json()
-            churchId = result.context?.churchId ?? churchId
-            setEffectiveChurchId(churchId)
-        }
-
-        const { data, error } = await supabase
-            .from('ministers')
-            .select('*')
-            .eq('church_id', churchId)
-            .order('name', { ascending: true })
-
-        if (error) {
-            console.error('Erro ao buscar ministros:', error)
-        } else {
-            setMinisters(data || [])
-        }
-        setLoading(false)
     }, [])
 
     useEffect(() => {
@@ -158,6 +139,8 @@ export default function MinistrosPage() {
                         <Spinner className="h-8 w-8" />
                     </div>
 
+                ) : loadError ? (
+                    <Alert variant="destructive"><AlertDescription role="alert">{loadError}</AlertDescription><Button variant="outline" onClick={() => void fetchMinisters()}>Tentar novamente</Button></Alert>
                 ) : filteredMinisters.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                         <div className="mb-4 rounded-2xl bg-muted p-5">
@@ -197,7 +180,7 @@ export default function MinistrosPage() {
                                             className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 transition-shadow hover:shadow-sm"
                                         >
                                             <Avatar className="h-9 w-9 shrink-0 rounded-lg">
-                                                {currentMinister?.role === 'admin' && minister.avatar_url && (
+                                                {viewerIsAdmin && minister.avatar_url && (
                                                     <AvatarImage
                                                         src={minister.avatar_url}
                                                         alt={`Foto de ${minister.name}`}

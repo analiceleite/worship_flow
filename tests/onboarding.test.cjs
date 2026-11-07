@@ -13,14 +13,17 @@ function load(relative, mocks = {}) {
   })
   const localRequire = createRequire(filename)
   const module = { exports: {} }
-  new Function('require', 'module', 'exports', outputText)(
+  new Function('require', 'module', 'exports', 'fetch', 'window', outputText)(
     id => Object.hasOwn(mocks, id) ? mocks[id] : localRequire(id), module, module.exports,
+    mocks.fetch ?? (() => assert.fail('Unexpected network request in a unit test')), mocks.window,
   )
   return module.exports
 }
 
 const { resolveMembership } = load('lib/auth/membership.ts')
 const requestOrigin = load('lib/auth/request-origin.ts')
+const contextSelection = load('lib/auth/context-selection.ts')
+const { ROUTES } = load('lib/routes.ts')
 const church = '00000000-0000-4000-8000-000000000001'
 const other = '00000000-0000-4000-8000-000000000002'
 const member = { id: 'member', church_id: church, role: 'minister', access_state: 'active', church_status: 'active' }
@@ -128,15 +131,18 @@ function contextModule(options = {}) {
     return chain
   } }
   const from = admin.from
-  admin.from = table => table === 'churches' ? {
+  admin.from = table => table === 'user_profiles' ? {
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { last_church_id: options.lastChurch ?? null }, error: null }) }) }),
+  } : table === 'churches' ? {
     select: () => ({ in: async () => ({ data: options.churches ?? [{ id: church, name: 'Igreja A', status: 'active' }], error: null }) }),
   } : from(table)
   return load('lib/auth-context.ts', {
-    'next/headers': { headers: async () => new Headers(options.headers ?? {}), cookies: async () => ({ get: () => undefined }) },
+    'next/headers': { headers: async () => new Headers(options.headers ?? {}), cookies: async () => ({ get: name => name === contextSelection.CHURCH_CONTEXT_COOKIE && options.cookie ? { value: options.cookie } : undefined }) },
     '@/lib/supabase/admin': { createAdminClient: () => admin },
     '@/lib/supabase/server': { createClient: () => assert.fail('Identity-only resolver must be used') },
     '@/lib/auth/identity': { getAuthenticatedIdentity: async () => options.anonymous ? null : { id: 'actor' } },
     '@/lib/auth/membership': { resolveMembership },
+    '@/lib/auth/context-selection': contextSelection,
   })
 }
 
@@ -202,4 +208,114 @@ test('mutation origin uses public configuration behind proxies without trusting 
   }
   req.headers.delete('origin')
   assert.equal(isTrustedMutationOrigin(req, 'http://127.0.0.1:3001'), false)
+})
+
+test('church preference is identity-bound, bounded and never an authorization grant', () => {
+  const { readChurchPreference, churchPreferenceValue } = contextSelection
+  assert.equal(readChurchPreference(churchPreferenceValue('actor', church), 'actor'), church)
+  assert.equal(readChurchPreference(churchPreferenceValue('other-actor', church), 'actor'), null)
+  for (const value of ['invalid', 'null', '{}', 'x'.repeat(501), JSON.stringify({ userId: 'actor', churchId: 'not-a-uuid' })]) {
+    assert.equal(readChurchPreference(value, 'actor'), null)
+  }
+  const second = { ...member, id: 'second', church_id: other, role: 'admin' }
+  assert.equal(resolveMembership([member, second], null, other).membership.role, 'admin')
+  assert.deepEqual(resolveMembership([member], null, other), { kind: 'selected', membership: member })
+  assert.deepEqual(resolveMembership([member], other, church), { kind: 'unavailable' })
+})
+
+test('server resumes only a still-accessible preference, and explicit destination takes precedence', async () => {
+  const second = { ...member, id: 'second', church_id: other, role: 'admin' }
+  const options = { memberships: [member, second], churches: [
+    { id: church, name: 'A', status: 'active' }, { id: other, name: 'B', status: 'active' },
+  ], lastChurch: other }
+  const chosen = await contextModule(options).getCurrentMinisterContext()
+  assert.equal(chosen.churchId, other)
+  assert.equal(chosen.accessibleChurchCount, 2)
+  assert.equal((await contextModule({ ...options, headers: { 'x-wf-church-id': church } }).getCurrentMinisterContext()).churchId, church)
+  assert.equal((await contextModule({ ...options, cookie: contextSelection.churchPreferenceValue('actor', church) }).getCurrentMinisterContext()).churchId, church)
+})
+
+function selectionRoute(options = {}) {
+  const writes = [], savedCookies = []
+  const chain = {
+    update: data => { writes.push(data); return chain },
+    eq: (column, value) => { assert.equal(column, 'user_id'); assert.equal(value, 'actor'); return chain },
+    select: () => chain,
+    maybeSingle: async () => ({ data: options.missingProfile ? null : { user_id: 'actor' }, error: options.writeError ?? null }),
+  }
+  const api = load('app/api/context/route.ts', {
+    'next/headers': { cookies: async () => ({ set: (...args) => savedCookies.push(args) }) },
+    '@/lib/auth-context': { AuthContextError, getOwnMemberships: async () => options.memberships ?? [member], getImpersonatedChurchId: async () => options.support ? church : null },
+    '@/lib/auth/identity': { getAuthenticatedIdentity: async () => options.anonymous ? null : { id: 'actor' } },
+    '@/lib/auth/membership': { resolveMembership },
+    '@/lib/auth/context-selection': contextSelection,
+    '@/lib/auth/request-origin': requestOrigin,
+    '@/lib/routes': { ROUTES },
+    '@/lib/supabase/admin': { createAdminClient: () => ({ from: table => { assert.equal(table, 'user_profiles'); return chain } }) },
+  })
+  return { api, writes, savedCookies }
+}
+
+test('selection persists only the authenticated person\'s preference and sets an HttpOnly cookie', async () => {
+  const { api, writes, savedCookies } = selectionRoute()
+  const response = await api.POST(changeRequest({ churchId: church }))
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).redirectTo, ROUTES.SONGS)
+  assert.equal(writes[0].last_church_id, church)
+  assert.equal(savedCookies[0][0], contextSelection.CHURCH_CONTEXT_COOKIE)
+  assert.equal(contextSelection.readChurchPreference(savedCookies[0][1], 'actor'), church)
+  assert.equal(savedCookies[0][2].httpOnly, true)
+  assert.equal(savedCookies[0][2].sameSite, 'lax')
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+})
+
+test('selection rejects inaccessible, suspended, forged and support requests without cookie changes', async () => {
+  for (const [body, options, expected] of [
+    [{ churchId: other }, {}, 403],
+    [{ churchId: church }, { memberships: [{ ...member, access_state: 'suspended' }] }, 403],
+    [{ churchId: church, userId: 'other-person' }, {}, 400],
+    [{ churchId: church }, { support: true }, 409],
+    [{ churchId: church }, { anonymous: true }, 401],
+  ]) {
+    const { api, writes, savedCookies } = selectionRoute(options)
+    assert.equal((await api.POST(changeRequest(body))).status, expected)
+    assert.equal(writes.length, 0)
+    assert.equal(savedCookies.length, 0)
+  }
+  const { api, savedCookies } = selectionRoute({ writeError: { message: 'private' } })
+  assert.equal((await api.POST(changeRequest({ churchId: church }))).status, 503)
+  assert.equal(savedCookies.length, 0)
+})
+
+test('churchFetch captures its explicit church, preserves headers and rejects external destinations', async () => {
+  const calls = []
+  const client = load('lib/auth/client-context.ts', {
+    '@/lib/supabase/client': { createClient: () => assert.fail('Not used in this test') },
+    '@/lib/routes': { ROUTES }, '@/lib/auth/context-selection': contextSelection,
+    fetch: async (...args) => { calls.push(args); return new Response('{}') },
+  })
+  await client.churchFetch(church, '/api/repertoire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  assert.equal(calls[0][1].headers.get('x-wf-church-id'), church)
+  assert.equal(calls[0][1].headers.get('Content-Type'), 'application/json')
+  assert.equal(calls[0][1].cache, 'no-store')
+  assert.throws(() => client.churchFetch(other, 'https://untrusted.example/api/repertoire'))
+  assert.throws(() => client.churchFetch('invalid', '/api/repertoire'))
+  assert.equal(calls.length, 1)
+})
+
+test('late context errors cannot redirect an abandoned page after church selection', async () => {
+  const redirects = []
+  const location = { pathname: '/songs', search: '', replace: destination => redirects.push(destination) }
+  let finish
+  const pending = new Promise(resolve => { finish = resolve })
+  const client = load('lib/auth/client-context.ts', {
+    '@/lib/supabase/client': { createClient: () => assert.fail('Not used') },
+    '@/lib/routes': { ROUTES }, '@/lib/auth/context-selection': contextSelection,
+    window: { location }, fetch: () => pending,
+  })
+  const request = client.loadChurchContext()
+  location.pathname = '/auth/select-church'
+  finish(new Response('{}', { status: 403 }))
+  await assert.rejects(request)
+  assert.deepEqual(redirects, [])
 })

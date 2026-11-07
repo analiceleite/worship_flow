@@ -4,7 +4,7 @@
 
 **PBI:** [WF-04](https://github.com/analiceleite/worship_flow/issues/1) · **Relacionado:** [WF-26](https://github.com/analiceleite/worship_flow/issues/22)
 
-**Estado:** Implementação iniciada na branch `feature/wf-04-onboarding-multichurch`; primeiro incremento validado em testes unitários, SQL/RLS local, concorrência, browser, TypeScript e build. WF-04 completa ainda pendente (convites e integração multigreja); não pronto para implantação.
+**Estado:** Primeiro incremento commitado em `2df13aa`. Segundo incremento implementa entrada/seleção de igreja, preferência validada e início da migração dos consumidores para contexto explícito, com validação local. WF-04 completa ainda pendente (convites, políticas multigreja e demais consumidores); não pronto para implantação.
 
 **Data:** 2026-11-07
 
@@ -15,6 +15,8 @@ Implementar primeiro a fundação segura de identidade global e vínculos por ig
 Este documento não autoriza migração remota, envio real de e-mails, deploy, commit, PR ou alteração de usuários de produção. A execução local depende da autorização explícita registrada abaixo.
 
 **Atualização de execução:** após a criação deste plano, o usuário autorizou criar branch e iniciar implementação, deixando os testes para o final. A autorização cobre trabalho local; não inclui operações remotas. Progresso e limites em [WF-04-validation.md](WF-04-validation.md).
+
+**Atualização de continuidade:** o usuário autorizou o commit do incremento validado, registrado em `2df13aa`, e pediu continuidade. Alterações do segundo incremento permanecem separadas desse commit. Nenhum push foi autorizado ou executado.
 
 Decisões de produto consolidadas:
 

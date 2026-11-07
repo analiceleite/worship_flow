@@ -1,5 +1,7 @@
 'use client'
 
+import { churchFetch, loadChurchContext, loadSelectedMinister } from '@/lib/auth/client-context'
+
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
@@ -12,7 +14,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
-import { createClient } from '@/lib/supabase/client'
 import { Minister, RepertoireItem } from '@/lib/types'
 import { songHasCifra } from '@/lib/cifra-storage'
 import { openPdfCifraInSystemBrowserFromUserGesture } from '@/lib/open-cifra-pdf-browser'
@@ -296,22 +297,14 @@ function RepertoirePlayerContent() {
 
     useEffect(() => {
         const fetchCurrentMinister = async () => {
-            const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-
-            const { data: minister } = await supabase
-                .from('ministers')
-                .select('*')
-                .eq('user_id', user.id)
-                .single()
-
-            setCurrentMinister((minister ?? null) as Minister | null)
-
-            const contextResponse = await fetch('/api/context')
-            if (contextResponse.ok) {
-                const result = await contextResponse.json()
-                setEffectiveChurchId(result.context?.churchId ?? null)
+            try {
+                const { context } = await loadChurchContext()
+                const minister = await loadSelectedMinister(context)
+                setCurrentMinister(minister)
+                setEffectiveChurchId(context.churchId)
+            } catch (error) {
+                setError(error instanceof Error ? error.message : 'Não foi possível identificar a igreja atual.')
+                setLoading(false)
             }
         }
 
@@ -334,7 +327,7 @@ function RepertoirePlayerContent() {
 
             try {
                 const params = new URLSearchParams({ date, eventName })
-                const response = await fetch(`/api/repertoire?${params}`, { cache: 'no-store' })
+                const response = await churchFetch(effectiveChurchId, `/api/repertoire?${params}`)
                 const result = await response.json()
                 if (!response.ok) throw new Error(result.error || 'Não foi possível carregar a playlist.')
                 if (!active) return
@@ -361,10 +354,10 @@ function RepertoirePlayerContent() {
     const needsCifraContent = Boolean(currentItem?.song?.cifra_available && !currentItem.song.cifra_content)
     const [cifraLoading, setCifraLoading] = useState(false)
     useEffect(() => {
-        if (!currentSongId || !needsCifraContent) return
+        if (!currentSongId || !needsCifraContent || !effectiveChurchId) return
         let active = true
         setCifraLoading(true)
-        void fetch(`/api/repertoire/cifra?songId=${encodeURIComponent(currentSongId)}`, { cache: 'no-store' })
+        void churchFetch(effectiveChurchId, `/api/repertoire/cifra?songId=${encodeURIComponent(currentSongId)}`)
             .then(async response => {
                 const song = await response.json()
                 if (!response.ok) throw new Error(song.error)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ROUTES } from '@/lib/routes'
@@ -12,8 +12,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 export default function LoginPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({ email: '', password: '' })
+
+  useEffect(() => { setReady(true) }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,22 +33,16 @@ export default function LoginPage() {
 
       if (signInError) throw signInError
 
-      const { data: minister, error: ministerError } = await supabase
-        .from('ministers')
-        .select('role, is_active')
-        .eq('user_id', data.user.id)
-        .single()
-
-      if (ministerError) {
-        throw new Error('Usuário não está cadastrado como ministro')
-      }
-
-      if (!minister.is_active) {
-        router.push(ROUTES.AUTH_SET_PASSWORD)
+      if (!data.user) throw new Error('Não foi possível identificar sua conta.')
+      const response = await fetch('/api/context', { cache: 'no-store' })
+      if (response.status === 403 || response.status === 409) {
+        router.push(ROUTES.AUTH_SELECT_CHURCH)
+        router.refresh()
         return
       }
-
-      router.push(minister.role === 'admin' ? ROUTES.USERS : ROUTES.HOME)
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Não foi possível consultar seu acesso. Tente novamente.')
+      router.push(result.context.role === 'admin' ? ROUTES.USERS : ROUTES.HOME)
       router.refresh()
     } catch (err: any) {
       console.error('Login error:', err)
@@ -105,7 +102,7 @@ export default function LoginPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || !ready}>
               {loading && (
                 <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
               )}

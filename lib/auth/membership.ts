@@ -18,14 +18,20 @@ export type MembershipResolution =
 export function resolveMembership(
   memberships: readonly MembershipCandidate[],
   requestedChurchId?: string | null,
+  preferredChurchId?: string | null,
 ): MembershipResolution {
   const accessible = memberships.filter(
     membership => membership.access_state === 'active' && membership.church_status === 'active',
   )
 
   if (requestedChurchId) {
-    const membership = accessible.find(item => item.church_id === requestedChurchId)
+    const membership = accessible.find(item => item.church_id === requestedChurchId.toLowerCase())
     return membership ? { kind: 'selected', membership } : { kind: 'unavailable' }
+  }
+
+  if (preferredChurchId) {
+    const membership = accessible.find(item => item.church_id === preferredChurchId.toLowerCase())
+    if (membership) return { kind: 'selected', membership }
   }
 
   if (accessible.length === 1) return { kind: 'selected', membership: accessible[0] }

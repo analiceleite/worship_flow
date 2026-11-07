@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:recovery": "node --test tests/password-recovery.test.cjs",
-    "test:onboarding": "node --test tests/onboarding.test.cjs tests/profile-avatar.test.cjs",
+    "test:onboarding": "node --test tests/onboarding.test.cjs tests/profile-avatar.test.cjs tests/church-navigation.test.cjs",
     "test:onboarding:browser": "node --test tests/onboarding.browser.test.cjs",
     "test:repertoire": "node --test tests/repertoire.test.cjs",
     "test:repertoire:browser": "node --test tests/repertoire.browser.test.cjs",
