@@ -1,173 +1,44 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
+import { processScheduleEmailQueue } from '@/lib/notifications/schedule-email'
+import { scheduleMutationError } from '@/lib/schedule/mutation-result'
 
-interface ApplyItem {
-    assignment_id: string
-    minister_id: string | null
-    is_trainee?: boolean
-}
+const bodySchema = z.object({
+  items: z.array(z.object({
+    assignment_id: z.string().uuid(), minister_id: z.string().uuid().nullable(), is_trainee: z.boolean().optional(),
+  }).strict()).min(1).max(1000),
+  conflict_override_reason: z.string().trim().min(1).max(500).optional(),
+}).strict().refine(body => new Set(body.items.map(item => item.assignment_id)).size === body.items.length)
 
-interface ApplyPayload {
-    items?: ApplyItem[]
-}
-
-interface AssignmentApplyRow {
-    id: string
-    quarter_id: string
-    minister_id: string | null
-    is_trainee: boolean
-    church_id: string
-    role: { category: string } | null
-}
-
-export async function POST(
-    request: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const { id } = await params
-
-    let context
-    try {
-        context = await getCurrentMinisterContext({ requireAdmin: true })
-    } catch (error) {
-        if (error instanceof AuthContextError) {
-            return NextResponse.json({ error: error.message }, { status: error.status })
-        }
-        throw error
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  let context
+  try { context = await getCurrentMinisterContext({ requireAdmin: true }) } catch (error) {
+    if (error instanceof AuthContextError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
+  const { id } = await params
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null))
+  if (!z.string().uuid().safeParse(id).success || !parsed.success) {
+    return NextResponse.json({ error: 'Informe um período e células válidos, sem duplicatas.' }, { status: 400 })
+  }
+  const admin = createAdminClient()
+  // One transaction for the entire import: no partially applied batch on error.
+  const { data, error } = await admin.rpc('wf32_mutate_schedule', {
+    p_church: context.churchId, p_actor: context.ministerId, p_operation: 'import',
+    p_payload: { quarter_id: id, items: parsed.data.items }, p_reason: parsed.data.conflict_override_reason ?? null,
+  })
+  if (error) return scheduleMutationError(error, true)
+  const errors: Array<{ ministerId: string; error: string }> = []
+  for (const ministerId of new Set<string>((data.affected_minister_ids ?? []).filter(Boolean))) {
+    try { await reconcileMinisterCalendar(ministerId) } catch (syncError) {
+      errors.push({ ministerId, error: syncError instanceof Error ? syncError.message : 'Falha ao sincronizar calendário.' })
     }
-
-    const payload = (await request.json().catch(() => ({}))) as ApplyPayload
-    const items = payload.items ?? []
-
-    if (!items.length) {
-        return NextResponse.json({ error: 'Nenhuma alteração informada para aplicar' }, { status: 400 })
-    }
-
-    const assignmentIds = Array.from(new Set(items.map((item) => item.assignment_id).filter(Boolean)))
-    if (!assignmentIds.length) {
-        return NextResponse.json({ error: 'Nenhuma célula válida para aplicar' }, { status: 400 })
-    }
-
-    const adminSupabase = createAdminClient()
-
-    const { data: quarter, error: quarterError } = await adminSupabase
-        .from('schedule_quarters')
-        .select('id')
-        .eq('id', id)
-        .eq('church_id', context.churchId)
-        .maybeSingle()
-
-    if (quarterError) {
-        return NextResponse.json({ error: quarterError.message }, { status: 500 })
-    }
-
-    if (!quarter) {
-        return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
-    }
-
-    const { data: assignments, error: assignmentsError } = await adminSupabase
-        .from('schedule_assignments')
-        .select('id, church_id, quarter_id, minister_id, is_trainee, role:schedule_roles(category)')
-        .in('id', assignmentIds)
-        .eq('church_id', context.churchId)
-        .eq('quarter_id', id)
-
-    if (assignmentsError) {
-        return NextResponse.json({ error: assignmentsError.message }, { status: 500 })
-    }
-
-    const assignmentMap = new Map(
-        ((assignments ?? []) as AssignmentApplyRow[]).map((row) => [row.id, row])
-    )
-
-    const selectedMinisterIds = Array.from(
-        new Set(items.map((item) => item.minister_id).filter((value): value is string => Boolean(value)))
-    )
-    const selectedMinisterRoleMap = new Map<string, string>()
-
-    if (selectedMinisterIds.length) {
-        const { data: selectedMinisters, error: selectedMinistersError } = await adminSupabase
-            .from('ministers')
-            .select('id, role')
-            .eq('church_id', context.churchId)
-            .in('id', selectedMinisterIds)
-
-        if (selectedMinistersError) {
-            return NextResponse.json({ error: selectedMinistersError.message }, { status: 500 })
-        }
-
-        for (const minister of selectedMinisters ?? []) {
-            selectedMinisterRoleMap.set(minister.id, minister.role)
-        }
-    }
-
-    let updatedCount = 0
-    let skippedCount = 0
-    const affectedMinisterIds = new Set<string>()
-
-    for (const item of items) {
-        const assignment = assignmentMap.get(item.assignment_id)
-        if (!assignment) {
-            skippedCount += 1
-            continue
-        }
-
-        const nextMinisterId = item.minister_id ?? null
-        const nextIsTrainee = nextMinisterId ? Boolean(item.is_trainee) : false
-
-        const invalidMediaAssignment =
-            assignment.role?.category === 'midia' &&
-            nextMinisterId &&
-            selectedMinisterRoleMap.get(nextMinisterId) !== 'midia'
-
-        if (invalidMediaAssignment) {
-            return NextResponse.json(
-                { error: 'A função Sonoplasta aceita apenas usuários do grupo Mídia' },
-                { status: 400 }
-            )
-        }
-
-        const noChanges =
-            assignment.minister_id === nextMinisterId &&
-            Boolean(assignment.is_trainee) === nextIsTrainee
-
-        if (noChanges) {
-            skippedCount += 1
-            continue
-        }
-
-        const { error: updateError } = await adminSupabase
-            .from('schedule_assignments')
-            .update({
-                minister_id: nextMinisterId,
-                is_trainee: nextIsTrainee,
-            })
-            .eq('id', assignment.id)
-            .eq('church_id', context.churchId)
-
-        if (updateError) {
-            return NextResponse.json({ error: updateError.message }, { status: 500 })
-        }
-
-        if (assignment.minister_id) affectedMinisterIds.add(assignment.minister_id)
-        if (nextMinisterId) affectedMinisterIds.add(nextMinisterId)
-
-        updatedCount += 1
-    }
-
-    for (const ministerId of affectedMinisterIds) {
-        try {
-            await reconcileMinisterCalendar(ministerId)
-        } catch (syncError) {
-            console.error('Erro ao sincronizar Google Calendar após aplicação em lote:', syncError)
-        }
-    }
-
-    return NextResponse.json({
-        ok: true,
-        updated_count: updatedCount,
-        skipped_count: skippedCount,
-    })
+  }
+  let notificationError: string | null = null
+  try { await processScheduleEmailQueue(200) } catch { notificationError = 'Avisos salvos na fila; haverá nova tentativa automática.' }
+  return NextResponse.json({ ok: true, updated_count: data.updated_count, skipped_count: data.skipped_count,
+    notification_error: notificationError, calendar_sync: { errors } })
 }

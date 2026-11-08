@@ -1,6 +1,6 @@
 # SPEC — WF-32: Regras de publicação, responsabilidades e ciclo de eventos
 
-**Status:** Decisões aprovadas; implementação local parcial; revisão conjunta de cenários pendente  
+**Status:** Implementação corrigida e validada localmente; revisão conjunta de cenários pendente
 **PBI:** [WF-32 — Definir regras de publicação, responsabilidades e ciclo de eventos](https://github.com/analiceleite/worship_flow/issues/28)  
 **Prioridade:** P1 — Alta  
 **Área:** Produto e pesquisa  
@@ -99,7 +99,7 @@ Não presumir que liderança musical, administração do sistema e responsabilid
 | Eventos fora de período | Não permitir; criar primeiro um período. | Novo período começa privado e segue publicação explícita. |
 | Fuso horário | Usar fuso configurado para a igreja; padrão inicial `America/Sao_Paulo`. | Datas e horários não devem depender do fuso do dispositivo do usuário. |
 
-**Aprovadas pela pessoa solicitante em 2026-11-07**, incluindo as recomendações complementares de e-mail, conflitos, representação de liderança/aprendiz, transferência do acervo, eventos fora de período, fuso e falhas de integração. A implementação local foi posteriormente autorizada; a migração não foi aplicada e ainda falta revisão conjunta dos cenários.
+**Aprovadas pela pessoa solicitante em 2026-11-07**, incluindo as recomendações complementares de e-mail, conflitos, representação de liderança/aprendiz, transferência do acervo, eventos fora de período, fuso e falhas de integração. A implementação local foi posteriormente autorizada; migrações e testes ficam limitados ao banco local e ainda falta revisão conjunta dos cenários.
 
 ### 5.5 Detalhes ainda a validar
 
@@ -144,3 +144,4 @@ Como não há usuários reais disponíveis, validar as regras por revisão conju
 - **2026-11-07 — Recomendações complementares aprovadas:** notificar publicação inicial e mudanças de data/horário/escala/ensaio às pessoas escaladas e ao líder; não notificar mudanças cosméticas; na falha de e-mail/calendário, preservar a publicação, informar admins e permitir retries sem duplicação; conflito usa intervalo de chegada/ensaio até término previsto e exceção admin justificada; líder é designado por evento entre integrantes ativos; aprendiz é condição da participação por evento; transferência de acervo deve ser explícita, sem exclusão/transferência automática; eventos fora de período não são permitidos; fuso por igreja com padrão `America/Sao_Paulo`. Revisão conjunta sem usuários reais ainda pendente; nenhuma implementação foi iniciada.
 - **2026-11-07 — Fechamento das regras de cancelamento e saída:** somente admin cancela/reativa evento individual; cancelamento preserva histórico, remove do calendário e avisa escalados; reativação restaura calendário e notifica novamente. Somente admin transfere acervo, explicitamente e para integrante ativo, com registro. Admin marca a condição de aprendiz por atribuição/evento, sem alterar permissões. Revisão conjunta de cenários ainda pendente.
 - **2026-11-07 — Implementação local iniciada:** adicionados migration 042, validações server-side e UI de líder/cancelamento, integração de notificações/calendário, configuração de fuso e transferência explícita de músicas. Typecheck e testes focados passaram; lint indisponível por falta do executável ESLint. Migração ainda não aplicada em banco.
+- **2026-11-08 — Correções da revisão:** adicionada migração incremental 043 com RPC transacional, validação de importação/conflitos/liderança, bloqueio RLS de escrita direta de ensaio e fila de e-mails atômica. Corrigidas deduplicação por revisão, claims concorrentes e idempotência de entrega. Testes reais no Postgres local e testes simulados de falhas de envio; build e typecheck aprovados. Não foram enviados e-mails reais nem alterados calendários externos. Conferência manual é exigida quando a entrega permanece incerta além da janela segura de idempotência do provedor.

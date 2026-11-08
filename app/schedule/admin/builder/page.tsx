@@ -54,6 +54,7 @@ import {
 } from 'lucide-react'
 import { BimesterForm, type BimesterSummary } from '@/components/schedule/BimesterForm'
 import { ScheduleGrid, type ScheduleAssignment, type ScheduleEventControl, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
+import { scheduleMutationFetch } from '@/lib/schedule/client-mutation'
 
 interface BimesterAssignmentsResponse {
 	bimester: BimesterSummary
@@ -317,20 +318,10 @@ function EscalaBuilderContent() {
 					minister_id: payload.minister_id,
 					is_trainee: payload.is_trainee,
 				}
-			let response = await selectedChurchFetch('/api/schedule/assignment', {
+			const response = await scheduleMutationFetch('/api/schedule/assignment', {
 				method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody),
 			})
-			let body = await response.json()
-			if (response.status === 409 && body.override_allowed) {
-				const date = body.conflict?.event_date ?? 'outro evento'
-				const reason = window.prompt(`${body.error}\nConflito em ${date}. Para prosseguir como admin, informe a justificativa:`)?.trim()
-				if (!reason) throw new Error(body.error)
-				response = await selectedChurchFetch('/api/schedule/assignment', {
-					method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ ...requestBody, conflict_override_reason: reason }),
-				})
-				body = await response.json()
-			}
+			const body = await response.json()
 			if (!response.ok) {
 				throw new Error(body.error || 'Falha ao salvar a célula')
 			}
@@ -344,6 +335,8 @@ function EscalaBuilderContent() {
 					),
 				}
 			})
+			// Removing the last assignment can clear leadership in the same transaction.
+			await loadQuarterData(payload.quarter_id)
 			const warnings = [
 				body.notification_error,
 				body.notification?.failed ? `${body.notification.failed} e-mail(s) aguardam nova tentativa.` : null,
@@ -376,7 +369,7 @@ function EscalaBuilderContent() {
 		const key = `${payload.eventDate}_${payload.eventType}`
 		setSavingEventKeys(current => ({ ...current, [key]: true }))
 		try {
-			const response = await selectedChurchFetch('/api/schedule/event-control', {
+			const response = await scheduleMutationFetch('/api/schedule/event-control', {
 				method: 'PATCH', headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					quarter_id: selectedBimester.id, event_date: payload.eventDate, event_type: payload.eventType,
@@ -614,7 +607,7 @@ function EscalaBuilderContent() {
 		try {
 			setApplyingImport(true)
 
-			const response = await selectedChurchFetch(`/api/schedule/quarters/${selectedBimesterId}/import/apply`, {
+			const response = await scheduleMutationFetch(`/api/schedule/quarters/${selectedBimesterId}/import/apply`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ items: itemsToApply }),

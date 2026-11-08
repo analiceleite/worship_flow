@@ -7,6 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
 import { selectedChurchFetch } from '@/lib/auth/client-context'
+import { scheduleMutationFetch } from '@/lib/schedule/client-mutation'
 import { ROUTES } from '@/lib/routes'
 import { getMediaCommitments, getScheduleTimeLabels, type ScheduleTimes } from '@/lib/schedule/media'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -336,7 +337,7 @@ export default function EscalaPage() {
 	}) => {
 		if (!schedule) return
 
-		const response = await selectedChurchFetch('/api/schedule/rehearsal', {
+		const response = await scheduleMutationFetch('/api/schedule/rehearsal', {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -347,9 +348,12 @@ export default function EscalaPage() {
 				rehearsal_time: payload.rehearsalTime,
 				rehearsal_place: payload.rehearsalPlace,
 			}),
-		})
+		}, viewer?.role === 'admin')
 
-		const body = (await response.json()) as { rehearsal?: ScheduleRehearsal; error?: string }
+		const body = (await response.json()) as {
+			rehearsal?: ScheduleRehearsal; error?: string; notification_error?: string
+			notification?: { failed: number }; calendar_sync?: { errors: unknown[] }
+		}
 		if (!response.ok || !body.rehearsal) {
 			const message = body.error || 'Não foi possível salvar o ensaio'
 			toast({
@@ -365,11 +369,14 @@ export default function EscalaPage() {
 			[`${body.rehearsal!.event_date}_${body.rehearsal!.event_type}`]: body.rehearsal!,
 		}))
 
+		const warnings = [body.notification_error,
+			body.notification?.failed ? 'Um ou mais avisos requerem nova tentativa ou conferência administrativa.' : null,
+			body.calendar_sync?.errors?.length ? 'Houve falha ao sincronizar o calendário.' : null].filter(Boolean)
 		toast({
-			title: 'Ensaio atualizado',
-			description: 'As informações já estão visíveis para toda a equipe.',
+			variant: warnings.length ? 'destructive' : 'default', title: 'Ensaio atualizado',
+			description: warnings.join(' ') || 'As informações já estão visíveis para toda a equipe.',
 		})
-	}, [schedule, toast])
+	}, [schedule, toast, viewer?.role])
 
 	return (
 		<div className="min-h-screen bg-background">

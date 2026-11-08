@@ -53,7 +53,9 @@ test('arrival and service come from the selected period/type, never rehearsal ov
 class AuthContextError extends Error { constructor(message, status) { super(message); this.status = status } }
 function route(relativePath, { role = 'midia', tables = {}, authError = null } = {}) {
   const queries = []
-  const client = { from(table) {
+  const client = {
+    async rpc() { return { data: null, error: { message: 'WF32_FORBIDDEN' } } },
+    from(table) {
     const query = { table, filters: [], columns: null }
     queries.push(query)
     const builder = {
@@ -75,6 +77,7 @@ function route(relativePath, { role = 'midia', tables = {}, authError = null } =
     '@/lib/notifications/schedule-email': { enqueueBimesterPublishedNotifications: async () => {}, processScheduleEmailQueue: async () => {} },
     '@/lib/schedule/wf32-rules': { quarterRangesOverlap: (a, b) => a.start_date <= b.end_date && a.end_date >= b.start_date, intervalsOverlap: () => false },
     '@/lib/schedule/event-conflicts': { getScheduleEventInterval: () => ({ start: new Date(0), end: new Date(1) }) },
+    '@/lib/schedule/mutation-result': load('lib/schedule/mutation-result.ts'),
     '@/lib/supabase/admin': { createAdminClient: () => client },
     '@/lib/auth-context': { AuthContextError, getCurrentMinisterContext: async (options = {}) => {
       if (authError) throw authError
@@ -129,7 +132,7 @@ test('media auxiliary and alternative reads reject drafts, foreign and nonexiste
 })
 
 test('media writes are refused by APIs even when called directly', async () => {
-  const jsonRequest = () => new Request('http://localhost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quarter_id: 'published', event_date: '2026-11-08', event_type: 'sunday' }) })
+  const jsonRequest = () => new Request('http://localhost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quarter_id: '00000000-0000-4000-8000-000000000001', event_date: '2026-11-08', event_type: 'sunday' }) })
   for (const [file, method, params] of [
     ['app/api/schedule/assignment/route.ts', 'PATCH'],
     ['app/api/schedule/quarters/route.ts', 'POST'],

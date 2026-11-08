@@ -229,7 +229,7 @@ export async function enqueueBimesterPublishedNotifications(input: {
 
   const { error: insertError } = await admin
     .from('schedule_email_notifications')
-    .upsert(rowsToUpsert, { onConflict: 'dedupe_key' })
+    .upsert(rowsToUpsert, { onConflict: 'dedupe_key', ignoreDuplicates: true })
 
   if (insertError) throw new Error(insertError.message)
   return { queued: rowsToUpsert.length }
@@ -805,7 +805,9 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   }
 }
 
-async function sendEmail(params: { to: string; subject: string; text: string; html: string }) {
+type Delivery = { to: string; subject: string; text: string; html: string }
+
+async function sendEmail(params: Delivery, idempotencyKey: string) {
   const apiKey = process.env.RESEND_API_KEY
   const from = process.env.RESEND_FROM_EMAIL
 
@@ -818,6 +820,7 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({
       from,
@@ -826,6 +829,7 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
       html: params.html,
       text: params.text,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!response.ok) {
@@ -846,12 +850,12 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function sendEmailWithRetry(params: { to: string; subject: string; text: string; html: string }) {
+async function sendEmailWithRetry(params: Delivery, idempotencyKey: string) {
   const maxAttempts = 3
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      await sendEmail(params)
+      await sendEmail(params, idempotencyKey)
       return
     } catch (err) {
       const error = err as Error & { status?: number; retryAfterMs?: number | null }
@@ -911,8 +915,8 @@ export async function processScheduleEmailQueue(batchSize = 50) {
 
   const { data: rows, error } = await admin
     .from('schedule_email_notifications')
-    .select('id, church_id, minister_id, notification_type, attempts, payload_json, status, church:churches(status, environment, email_mode)')
-    .in('status', ['pending', 'failed'])
+    .select('id, church_id, minister_id, notification_type, attempts, payload_json, status, delivery_json, delivery_started_at, church:churches(status, environment, email_mode)')
+    .or(`status.in.(pending,failed),and(status.eq.processing,claimed_at.lt.${new Date(Date.now() - 10 * 60_000).toISOString()})`)
     .lt('attempts', 3)
     .order('created_at', { ascending: true })
     .limit(batchSize)
@@ -960,10 +964,15 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   let failed = 0
   let skipped = 0
   let lastSendAt = 0
+  let processedCount = 0
 
   for (const row of rows ?? []) {
+    const claim = await admin.rpc('wf32_claim_email', { p_id: row.id })
+    if (claim.error) throw new Error(claim.error.message)
+    if (!claim.data) continue // Another worker owns this row.
+    processedCount += 1
     const payload = (row.payload_json ?? {}) as Record<string, unknown>
-    const attempts = Number(row.attempts ?? 0) + 1
+    const attempts = Number(claim.data)
     const church = Array.isArray(row.church) ? row.church[0] : row.church
     const emailMode = church?.email_mode as string | null | undefined
     const environment = church?.environment as string | null | undefined
@@ -1078,12 +1087,30 @@ export async function processScheduleEmailQueue(batchSize = 50) {
         await sleep(minIntervalMs - elapsedMs)
       }
 
-      await sendEmailWithRetry({
-        to: recipient,
-        subject: template.subject,
-        text: template.text,
-        html: template.html,
-      })
+      // Persist the exact provider request before sending: retries must use the
+      // same key AND body even if a name, address or template changes afterwards.
+      let delivery = row.delivery_json as Delivery | null
+      if (row.delivery_started_at && Date.now() - new Date(row.delivery_started_at).getTime() >= 23 * 60 * 60_000) {
+        // Resend retains idempotency for 24h. Never blindly resend an uncertain
+        // delivery outside that window; leave a visible failure for manual review.
+        await markQueueStatus({ id: row.id, status: 'failed', attempts: 3,
+          lastError: 'Entrega incerta fora da janela de idempotência; requer conferência manual.' })
+        failed += 1
+        continue
+      }
+      if (!delivery) {
+        delivery = { to: recipient, subject: template.subject, text: template.text, html: template.html }
+        const { error: snapshotError } = await admin.from('schedule_email_notifications')
+          .update({ delivery_json: delivery, delivery_started_at: new Date().toISOString() }).eq('id', row.id)
+        if (snapshotError) throw new Error(snapshotError.message)
+      }
+      if (delivery.to !== recipient) {
+        await markQueueStatus({ id: row.id, status: 'failed', attempts: 3,
+          lastError: 'Destinatário mudou após tentativa de envio; requer conferência manual.' })
+        failed += 1
+        continue
+      }
+      await sendEmailWithRetry(delivery, `wf-schedule-${row.id}`)
       lastSendAt = Date.now()
 
       await markQueueStatus({
@@ -1107,7 +1134,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   }
 
   return {
-    processed: (rows ?? []).length,
+    processed: processedCount,
     sent,
     failed,
     skipped,

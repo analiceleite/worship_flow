@@ -2,7 +2,7 @@
 
 **SPEC:** [SPEC-WF-32-regras-publicacao-responsabilidades.md](../spec/SPEC-WF-32-regras-publicacao-responsabilidades.md)  
 **PBI:** [WF-32 — Definir regras de publicação, responsabilidades e ciclo de eventos](https://github.com/analiceleite/worship_flow/issues/28)  
-**Estado:** Decisões aprovadas; implementação local em andamento; revisão conjunta de cenários pendente  
+**Estado:** Implementação e correções validadas localmente; revisão conjunta de cenários pendente
 **Data:** 2026-11-07
 
 ## 1. Objetivo e limite
@@ -100,11 +100,24 @@ Antes de encerrar, conferir também rotas de criação/edição de períodos, at
 - [x] Implementadas notificações de publicação/alteração/despublicação/cancelamento e reconciliação de calendário sem desfazer a operação principal.
 - [x] Implementados cancelamento/reativação de evento, fuso configurável e transferência explícita de músicas via admin.
 - [x] Testes focados de regras e de acesso à escala; typecheck aprovado.
-- [ ] Rever idempotência ponta a ponta de outbox/notificações e testar migração num Supabase local.
+- [x] Rever idempotência de outbox/notificações e testar correções no Postgres local (043, fila transacional, claim exclusivo, snapshot e chave de idempotência no provedor).
 - [ ] Revisar conjuntamente cenários com a solicitante; não houve pesquisa com usuários reais.
-- [ ] Migração 042 ainda não aplicada; nenhum deploy/publicação/commit/push executado.
+- [x] Migração 042 aplicada somente ao banco local; implementação inicial registrada em `242a01f`. Correções 043 locais sem commit/push/deploy.
 
 **Validação executada:** `pnpm exec tsc --noEmit --incremental false`, `pnpm test:schedule-media`, `pnpm test:notifications`, `pnpm test:repertoire` e `node --test tests/wf32.test.cjs` passaram. `pnpm lint` não executou porque o binário `eslint` não está instalado/disponível no ambiente.
+
+### Correções após revisão (2026-11-08)
+
+- Migração incremental `043_wf32_atomic_rules_and_notifications.sql`, preservando 042.
+- Mutações de atribuição, importação, ensaio, controles e publicação via RPC server-only; identidade da célula é derivada do ID e divergências do payload são rejeitadas.
+- Importação é atômica e valida igreja, atividade, função e conflitos; auditoria de exceção participa da mesma transação.
+- Escrita direta de ensaio bloqueada por RLS restritiva; líder precisa estar ativo e escalado, inclusive quando tem perfil mídia. Remoção da última atribuição e suspensão revogam liderança no banco.
+- Janela de conflito inclui ensaio candidato; edição de horário e reativação revalidam escalados. Lock transacional antes de leituras/escritas impede corridas entre mutações.
+- Fila de e-mail gravada na mesma transação da mudança, inclusive despublicações; tentativas sem alteração voltam a processar pendências. Cron usa a revisão correta e nunca reinicia tentativas já gravadas.
+- Claim exclusivo de e-mail, snapshot de entrega persistido e `Idempotency-Key` estável no provedor. Após 23h de entrega incerta ou mudança de destinatário após tentativa, bloquear reenvio automático e exigir conferência administrativa (limite do provedor: 24h).
+- Exceção com justificativa disponível também para importação, ensaio e reativação na UI administrativa.
+- `pnpm test:wf32:local`: regressões SQL com rollback e teste real com conexões concorrentes, mais claim único. Fixtures concorrentes removidas por UUID, sem reset ou alteração de dados preexistentes.
+- Build de produção e typecheck separados aprovados. Entrega real por Resend/Google e navegação em browser não foram exercitadas nesta etapa; não há credenciais de integrações no ambiente de testes.
 
 **Saída:** descoberta pronta para encerramento, ou lista explícita de pendências com responsáveis e próximo passo.
 
