@@ -130,7 +130,7 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
 
             const body = await response.json()
             if (!response.ok) {
-                throw new Error(body.error || 'Não foi possível criar o bimestre')
+                throw new Error(body.error || 'Não foi possível criar o período')
             }
 
             onCreated(body.quarter)
@@ -139,7 +139,7 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
             setEndDate('')
             onOpenChange(false)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Erro ao criar bimestre')
+            setError(err instanceof Error ? err.message : 'Erro ao criar período')
         } finally {
             setSaving(false)
         }
@@ -147,9 +147,9 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent>
+            <DialogContent className="max-h-[90dvh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Novo Bimestre</DialogTitle>
+                    <DialogTitle>Novo período</DialogTitle>
                     <DialogDescription>
                         O novo período começa no mês seguinte ao anterior e cobre três meses, sem sobreposição.
                     </DialogDescription>
@@ -245,7 +245,7 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
 
                     {hasPreviousPeriod && (
                         <p className="text-xs text-muted-foreground">
-                            Período calculado automaticamente a partir do último mês da escala anterior.
+                            Período calculado a partir do mês seguinte ao fim da escala anterior.
                         </p>
                     )}
 
@@ -256,11 +256,11 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
                     )}
 
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={saving}>
+                        <Button type="button" variant="outline" className="min-h-11" onClick={() => handleClose(false)} disabled={saving}>
                             Cancelar
                         </Button>
-                        <Button type="submit" disabled={saving}>
-                            {saving ? 'Criando...' : 'Criar bimestre'}
+                        <Button type="submit" className="min-h-11" disabled={saving}>
+                            {saving ? 'Criando...' : 'Criar período'}
                         </Button>
                     </DialogFooter>
                 </form>

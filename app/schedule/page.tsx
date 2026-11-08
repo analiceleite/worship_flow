@@ -7,7 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
 import { selectedChurchFetch } from '@/lib/auth/client-context'
-import { scheduleMutationFetch } from '@/lib/schedule/client-mutation'
+import { useScheduleMutation } from '@/components/schedule/builder/use-schedule-mutation'
 import { ROUTES } from '@/lib/routes'
 import { getMediaCommitments, getScheduleTimeLabels, type ScheduleTimes } from '@/lib/schedule/media'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -115,6 +115,7 @@ function formatRehearsalSummary(rehearsal?: ScheduleRehearsal) {
 
 export default function EscalaPage() {
 	const { toast } = useToast()
+	const { request: scheduleMutationFetch, conflictDialog } = useScheduleMutation()
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [schedule, setSchedule] = useState<CurrentSchedule | null>(null)
@@ -376,10 +377,11 @@ export default function EscalaPage() {
 			variant: warnings.length ? 'destructive' : 'default', title: 'Ensaio atualizado',
 			description: warnings.join(' ') || 'As informações já estão visíveis para toda a equipe.',
 		})
-	}, [schedule, toast, viewer?.role])
+	}, [schedule, toast, viewer?.role, scheduleMutationFetch])
 
 	return (
 		<div className="min-h-screen bg-background">
+			{conflictDialog}
 
 			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 				<div className="mb-6">

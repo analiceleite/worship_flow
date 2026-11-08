@@ -47,7 +47,7 @@ export async function GET(
 
   let quarterQuery = adminSupabase
       .from('schedule_quarters')
-      .select('id, church_id, name, start_date, end_date, is_published, created_at')
+      .select('id, church_id, name, start_date, end_date, is_published, created_at, thursday_arrival_time, thursday_service_time, sunday_arrival_time, sunday_service_time')
       .eq('id', id)
       .eq('church_id', context.churchId)
   if (context.role !== 'admin') quarterQuery = quarterQuery.eq('is_published', true)

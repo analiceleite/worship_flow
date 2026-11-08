@@ -144,4 +144,16 @@ Antes de encerrar, conferir também rotas de criação/edição de períodos, at
 
 ## 7. Conclusão
 
+### Evolução mobile-first do builder (2026-11-08)
+
+- Agenda cronológica compacta com filtros de pendências, tipo e cancelamento; contagens consideram as células existentes e excluem cancelados do resumo ativo.
+- Editor de um culto por vez no celular, com equipe, responsável e ensaio; agenda e editor lado a lado no desktop, preservando a visualização de grade.
+- Contexto de período/evento/filtros na URL, usando histórico nativo integrado ao Next para evitar navegações de servidor a cada seleção. Voltar/recarregar preservam contexto.
+- Seleção em painel amplo no celular, busca com debounce/cancelamento, estados de erro/vazio separados e tentativa de salvamento preservada. Não há indicação inventada de disponibilidade.
+- Revisão explícita dos efeitos antes de publicar/despublicar; cancelamento confirmado no menu do culto. Funções vazias e ausência de líder continuam sendo avisos, não novas regras de bloqueio.
+- Falhas e salvamentos pendentes impedem a revisão de publicação até resolução; opção de tentar novamente ou carregar os dados confirmados no servidor.
+- Configurações de fuso e exclusão fora do fluxo principal; importação preservada com prévia; diálogo acessível substitui `window.prompt` nas exceções administrativas.
+- Validação: testes de modelo/fluxo de conflito, typecheck e build; browser real a 360/390/430 px e desktop, com dados sintéticos e sem entrega externa. Cobertura de busca com erro/vazio, salvamento com retry, liderança, ensaio, conflito com justificativa, publicação, cancelamento, navegação por histórico e grade.
+- Sem novas migrações ou mudanças nas permissões/regras WF-32. Alterações locais sem commit/push/deploy.
+
 Concluir a WF-32 como descoberta quando a matriz de estados e transições, a matriz de responsabilidades e os efeitos de publicação/alteração estiverem aprovados, as regras de datas/conflitos/aprendiz/ensaio/saída estiverem explícitas, e evidências e dependências do backlog estiverem registradas. Questões sem consenso podem permanecer abertas apenas com responsável e próximo passo. Implementação, release e deploy são trabalhos separados e exigem autorização própria.

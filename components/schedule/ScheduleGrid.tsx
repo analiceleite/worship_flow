@@ -193,7 +193,7 @@ function EventControlEditor({
                 <Button
                     type="button" size="sm" variant={cancelled ? 'outline' : 'destructive'}
                     className="h-7 px-2 text-[10px]" disabled={saving}
-                    onClick={() => void onSave({ eventDate, eventType, action: cancelled ? 'reactivate' : 'cancel' })}
+                    onClick={() => void onSave({ eventDate, eventType, action: cancelled ? 'reactivate' : 'cancel' }).catch(() => {})}
                 >
                     {saving ? 'Salvando…' : cancelled ? 'Reativar' : 'Cancelar evento'}
                 </Button>
@@ -263,6 +263,8 @@ function RehearsalEditor({
                 rehearsalPlace: rehearsalPlace.trim() || null,
             })
             setOpen(false)
+        } catch {
+            // The parent exposes a persistent error and retry without closing the editor.
         } finally {
             setSaving(false)
         }
@@ -444,7 +446,7 @@ function CellEditor({
     }, [ministerRoleFilter, open, query])
 
     const handlePick = async (minister: MinisterOption | null) => {
-        await onSave({
+        try { await onSave({
             id: assignment.id,
             quarter_id: assignment.quarter_id,
             role_id: assignment.role_id,
@@ -456,12 +458,13 @@ function CellEditor({
             is_trainee: minister ? assignment.is_trainee : false,
         })
         setOpen(false)
+        } catch { /* Parent retains the failed attempt and displays its error. */ }
     }
 
     const handleTraineeChange = async (checked: boolean) => {
         if (!assignment.minister_id) return
 
-        await onSave({
+        try { await onSave({
             id: assignment.id,
             quarter_id: assignment.quarter_id,
             role_id: assignment.role_id,
@@ -471,7 +474,7 @@ function CellEditor({
             minister_name: assignment.minister?.name ?? null,
             minister_avatar_url: assignment.minister?.avatar_url ?? null,
             is_trainee: checked,
-        })
+        }) } catch { /* Parent displays a persistent error and retry. */ }
     }
 
     return (
