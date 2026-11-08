@@ -57,6 +57,14 @@ export interface ScheduleRehearsal {
     rehearsal_place: string | null
 }
 
+export interface ScheduleEventControl {
+    event_date: string
+    event_type: 'thursday' | 'sunday'
+    leader_minister_id: string | null
+    status: 'scheduled' | 'cancelled'
+    leader?: { id: string; name: string } | null
+}
+
 interface MinisterOption {
     id: string
     name: string
@@ -87,13 +95,23 @@ interface ScheduleGridProps {
     highlightedMinisterId?: string | null
     rehearsalByDate?: Record<string, ScheduleRehearsal>
     rehearsalStatus?: 'ready' | 'loading' | 'error'
-    canEditRehearsal?: boolean
+    canEditRehearsal?: boolean | ((eventDate: string, eventType: 'thursday' | 'sunday') => boolean)
     onSaveRehearsal?: (payload: {
         eventDate: string
         eventType: 'thursday' | 'sunday'
         rehearsalDate: string | null
         rehearsalTime: string | null
         rehearsalPlace: string | null
+    }) => Promise<void>
+    eventControls?: ScheduleEventControl[]
+    activeMinisters?: AssignmentMinister[]
+    isPublished?: boolean
+    savingEventKeys?: Record<string, boolean>
+    onSaveEventControl?: (payload: {
+        eventDate: string
+        eventType: 'thursday' | 'sunday'
+        leaderMinisterId?: string | null
+        action?: 'cancel' | 'reactivate'
     }) => Promise<void>
 }
 
@@ -126,6 +144,65 @@ function rehearsalSummary(rehearsal: ScheduleRehearsal | undefined) {
     return parts.length ? parts.join(' • ') : 'Ensaio não informado'
 }
 
+function EventControlEditor({
+    eventDate, eventType, assignments, controls, ministers, isPublished, saving, onSave,
+}: {
+    eventDate: string
+    eventType: 'thursday' | 'sunday'
+    assignments: ScheduleAssignment[]
+    controls: ScheduleEventControl[]
+    ministers: AssignmentMinister[]
+    isPublished: boolean
+    saving: boolean
+    onSave?: ScheduleGridProps['onSaveEventControl']
+}) {
+    const control = controls.find(item => item.event_date === eventDate && item.event_type === eventType)
+    const [leaderId, setLeaderId] = useState(control?.leader_minister_id ?? '')
+    useEffect(() => setLeaderId(control?.leader_minister_id ?? ''), [control?.leader_minister_id])
+    const eventAssignments = assignments.filter(item => item.event_date === eventDate && item.event_type === eventType)
+    const assignedIds = new Set(eventAssignments.map(item => item.minister_id).filter((id): id is string => Boolean(id)))
+    const leaders = ministers.filter(minister => assignedIds.has(minister.id))
+    const cancelled = control?.status === 'cancelled'
+
+    if (!onSave) {
+        return control?.leader?.name ? <p className="mt-1 text-[11px] text-muted-foreground">Responsável: {control.leader.name}</p> : null
+    }
+    return (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5" onClick={event => event.stopPropagation()}>
+            <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className="sr-only">Líder do evento de {formatDate(eventDate)}</span>
+                <select
+                    value={leaderId}
+                    disabled={saving || cancelled}
+                    onChange={async event => {
+                        const nextId = event.target.value
+                        setLeaderId(nextId)
+                        try {
+                            await onSave({ eventDate, eventType, leaderMinisterId: nextId || null })
+                        } catch {
+                            setLeaderId(control?.leader_minister_id ?? '')
+                        }
+                    }}
+                    className="h-7 min-w-28 max-w-40 rounded-md border border-input bg-background px-1.5 text-[11px] text-foreground"
+                >
+                    <option value="">Sem líder</option>
+                    {leaders.map(minister => <option key={minister.id} value={minister.id}>{minister.name}</option>)}
+                </select>
+            </label>
+            {isPublished && (
+                <Button
+                    type="button" size="sm" variant={cancelled ? 'outline' : 'destructive'}
+                    className="h-7 px-2 text-[10px]" disabled={saving}
+                    onClick={() => void onSave({ eventDate, eventType, action: cancelled ? 'reactivate' : 'cancel' })}
+                >
+                    {saving ? 'Salvando…' : cancelled ? 'Reativar' : 'Cancelar evento'}
+                </Button>
+            )}
+            {cancelled && <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">Cancelado</span>}
+        </div>
+    )
+}
+
 function RehearsalEditor({
     eventDate,
     eventType,
@@ -137,7 +214,7 @@ function RehearsalEditor({
     eventDate: string
     eventType: 'thursday' | 'sunday'
     rehearsal?: ScheduleRehearsal
-    canEdit: boolean
+    canEdit: boolean | ((eventDate: string, eventType: 'thursday' | 'sunday') => boolean)
     status?: 'ready' | 'loading' | 'error'
     onSave?: (payload: {
         eventDate: string
@@ -193,6 +270,7 @@ function RehearsalEditor({
 
     const rehearsalInfo = rehearsalSummary(rehearsal)
     const hasRehearsal = rehearsal && (rehearsal.rehearsal_date || rehearsal.rehearsal_time || rehearsal.rehearsal_place)
+    const canEditThisRehearsal = typeof canEdit === 'function' ? canEdit(eventDate, eventType) : canEdit
 
     const formContent = (
         <div className="min-w-0 space-y-4">
@@ -269,7 +347,7 @@ function RehearsalEditor({
                 <p className="mb-1 text-[11px] text-muted-foreground">{rehearsalInfo}</p>
             )}
 
-            {canEdit ? (
+            {canEditThisRehearsal ? (
                 <>
                     {isMobile ? (
                         <>
@@ -463,7 +541,7 @@ function CellEditor({
 
                 <div className="border-t px-3 py-2">
                     <label className="flex cursor-pointer items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <span>Em treinamento</span>
+                        <span>Aprendiz neste evento</span>
                         <Checkbox
                             checked={assignment.is_trainee}
                             onCheckedChange={(checked) => handleTraineeChange(Boolean(checked))}
@@ -489,7 +567,15 @@ export function ScheduleGrid({
     rehearsalStatus = 'ready',
     canEditRehearsal = false,
     onSaveRehearsal,
+    eventControls = [],
+    activeMinisters = [],
+    isPublished = false,
+    savingEventKeys = {},
+    onSaveEventControl,
 }: ScheduleGridProps) {
+    const cancelledEventKeys = useMemo(() => new Set(eventControls
+        .filter(control => control.status === 'cancelled')
+        .map(control => `${control.event_date}_${control.event_type}`)), [eventControls])
     const assignmentMap = useMemo(() => {
         const map = new Map<string, ScheduleAssignment>()
         for (const item of assignments) {
@@ -512,7 +598,8 @@ export function ScheduleGrid({
             )
         }
 
-        if (readOnly) {
+        const eventCancelled = cancelledEventKeys.has(`${assignment.event_date}_${assignment.event_type}`)
+        if (readOnly || eventCancelled) {
             return (
                 <div
                     className={[
@@ -528,7 +615,7 @@ export function ScheduleGrid({
                     <span className="truncate">{assignment.minister?.name ?? 'Vazio'}</span>
                     {assignment.minister_id && assignment.is_trainee && (
                         <span className="ml-1.5 shrink-0 rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
-                            aprendiz
+                            Aprendiz
                         </span>
                     )}
                     {assignment.minister_id === highlightedMinisterId && highlightedMinisterId && (
@@ -580,6 +667,11 @@ export function ScheduleGrid({
                                             canEdit={canEditRehearsal}
                                             status={rehearsalStatus}
                                             onSave={onSaveRehearsal}
+                                        />
+                                        <EventControlEditor
+                                            eventDate={date} eventType={eventType} assignments={assignments}
+                                            controls={eventControls} ministers={activeMinisters} isPublished={isPublished}
+                                            saving={Boolean(savingEventKeys[`${date}_${eventType}`])} onSave={onSaveEventControl}
                                         />
                                     </div>
                                 </TableHead>
@@ -639,6 +731,11 @@ export function ScheduleGrid({
                             canEdit={canEditRehearsal}
                             status={rehearsalStatus}
                             onSave={onSaveRehearsal}
+                        />
+                        <EventControlEditor
+                            eventDate={date} eventType={eventType} assignments={assignments}
+                            controls={eventControls} ministers={activeMinisters} isPublished={isPublished}
+                            saving={Boolean(savingEventKeys[`${date}_${eventType}`])} onSave={onSaveEventControl}
                         />
 
                         {/* Role rows */}

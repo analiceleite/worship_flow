@@ -5,6 +5,7 @@ export interface Church {
   status: 'active' | 'inactive'
   environment: 'production' | 'demo' | 'test'
   email_mode: 'real' | 'disabled' | 'test_recipient'
+  timezone: string
   plan: string
   created_at: string
   updated_at: string

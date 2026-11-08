@@ -53,12 +53,14 @@ import {
 	Trash2,
 } from 'lucide-react'
 import { BimesterForm, type BimesterSummary } from '@/components/schedule/BimesterForm'
-import { ScheduleGrid, type ScheduleAssignment, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
+import { ScheduleGrid, type ScheduleAssignment, type ScheduleEventControl, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
 
 interface BimesterAssignmentsResponse {
 	bimester: BimesterSummary
 	roles: ScheduleRole[]
 	assignments: ScheduleAssignment[]
+	event_controls: ScheduleEventControl[]
+	active_ministers: Array<{ id: string; name: string }>
 	dates: {
 		sunday: string[]
 		thursday: string[]
@@ -136,6 +138,9 @@ function EscalaBuilderContent() {
 	const [selectedBimesterId, setSelectedBimesterId] = useState<string>('')
 	const [data, setData] = useState<BimesterAssignmentsResponse | null>(null)
 	const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
+	const [savingEventKeys, setSavingEventKeys] = useState<Record<string, boolean>>({})
+	const [churchTimezone, setChurchTimezone] = useState('America/Sao_Paulo')
+	const [timezoneSaving, setTimezoneSaving] = useState(false)
 	const [publishing, setPublishing] = useState(false)
 	const [deleting, setDeleting] = useState(false)
 	const [importOpen, setImportOpen] = useState(false)
@@ -207,6 +212,40 @@ function EscalaBuilderContent() {
 	}, [loadQuarters])
 
 	useEffect(() => {
+		let active = true
+		selectedChurchFetch('/api/church/settings').then(async response => {
+			const body = await response.json()
+			if (active && response.ok && typeof body.timezone === 'string') setChurchTimezone(body.timezone)
+		}).catch(() => undefined)
+		return () => { active = false }
+	}, [])
+
+	const saveChurchTimezone = async () => {
+		try {
+			setTimezoneSaving(true)
+			const response = await selectedChurchFetch('/api/church/settings', {
+				method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ timezone: churchTimezone.trim() }),
+			})
+			const body = await response.json()
+			if (!response.ok) throw new Error(body.error || 'Não foi possível salvar o fuso horário')
+			setChurchTimezone(body.timezone)
+			const syncWarning = body.calendar_sync?.errors?.length
+				? ' O fuso foi salvo, mas houve falha ao sincronizar um ou mais calendários.'
+				: ''
+			toast({
+				variant: syncWarning ? 'destructive' : 'default',
+				title: 'Fuso horário atualizado',
+				description: `Horários de escala e integrações usarão o fuso da igreja.${syncWarning}`,
+			})
+		} catch (err) {
+			toast({ variant: 'destructive', title: 'Falha ao salvar fuso horário', description: err instanceof Error ? err.message : 'Erro inesperado.' })
+		} finally {
+			setTimezoneSaving(false)
+		}
+	}
+
+	useEffect(() => {
 		if (selectedBimesterId) {
 			loadQuarterData(selectedBimesterId)
 		}
@@ -269,10 +308,7 @@ function EscalaBuilderContent() {
 		})
 
 		try {
-			const response = await selectedChurchFetch('/api/schedule/assignment', {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
+			const requestBody = {
 					id: payload.id,
 					quarter_id: payload.quarter_id,
 					role_id: payload.role_id,
@@ -280,10 +316,21 @@ function EscalaBuilderContent() {
 					event_type: payload.event_type,
 					minister_id: payload.minister_id,
 					is_trainee: payload.is_trainee,
-				}),
+				}
+			let response = await selectedChurchFetch('/api/schedule/assignment', {
+				method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody),
 			})
-
-			const body = await response.json()
+			let body = await response.json()
+			if (response.status === 409 && body.override_allowed) {
+				const date = body.conflict?.event_date ?? 'outro evento'
+				const reason = window.prompt(`${body.error}\nConflito em ${date}. Para prosseguir como admin, informe a justificativa:`)?.trim()
+				if (!reason) throw new Error(body.error)
+				response = await selectedChurchFetch('/api/schedule/assignment', {
+					method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ ...requestBody, conflict_override_reason: reason }),
+				})
+				body = await response.json()
+			}
 			if (!response.ok) {
 				throw new Error(body.error || 'Falha ao salvar a célula')
 			}
@@ -297,6 +344,12 @@ function EscalaBuilderContent() {
 					),
 				}
 			})
+			const warnings = [
+				body.notification_error,
+				body.notification?.failed ? `${body.notification.failed} e-mail(s) aguardam nova tentativa.` : null,
+				body.calendar_sync?.errors?.length ? 'A sincronização do calendário falhou; haverá nova tentativa automática.' : null,
+			].filter(Boolean)
+			if (warnings.length) toast({ variant: 'destructive', title: 'Escala salva com avisos', description: warnings.join(' ') })
 		} catch (err) {
 			toast({
 				variant: 'destructive',
@@ -310,6 +363,53 @@ function EscalaBuilderContent() {
 				delete next[payload.id]
 				return next
 			})
+		}
+	}
+
+	const handleSaveEventControl = async (payload: {
+		eventDate: string
+		eventType: 'thursday' | 'sunday'
+		leaderMinisterId?: string | null
+		action?: 'cancel' | 'reactivate'
+	}) => {
+		if (!selectedBimester || !data) return
+		const key = `${payload.eventDate}_${payload.eventType}`
+		setSavingEventKeys(current => ({ ...current, [key]: true }))
+		try {
+			const response = await selectedChurchFetch('/api/schedule/event-control', {
+				method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					quarter_id: selectedBimester.id, event_date: payload.eventDate, event_type: payload.eventType,
+					...(payload.action ? { action: payload.action } : { leader_minister_id: payload.leaderMinisterId ?? null }),
+				}),
+			})
+			const body = await response.json()
+			if (!response.ok) throw new Error(body.error || 'Não foi possível atualizar o evento')
+			if (body.control) {
+				const leader = data.active_ministers.find(item => item.id === body.control.leader_minister_id)
+				setData(current => current ? {
+					...current,
+					event_controls: [
+						...current.event_controls.filter(item => !(item.event_date === payload.eventDate && item.event_type === payload.eventType)),
+						{ ...body.control, leader: leader ? { id: leader.id, name: leader.name } : null },
+					],
+				} : current)
+			}
+			const warnings = [
+				body.notification_error,
+				body.notification?.failed ? `${body.notification.failed} e-mail(s) aguardam nova tentativa.` : null,
+				body.calendar_sync?.errors?.length ? 'A sincronização do calendário falhou; haverá nova tentativa automática.' : null,
+			].filter(Boolean)
+			toast({
+				variant: warnings.length ? 'destructive' : 'default',
+				title: payload.action === 'cancel' ? 'Evento cancelado' : payload.action === 'reactivate' ? 'Evento reativado' : 'Responsável atualizado',
+				description: warnings.join(' ') || 'Alterações salvas.',
+			})
+		} catch (err) {
+			toast({ variant: 'destructive', title: 'Falha ao atualizar evento', description: err instanceof Error ? err.message : 'Erro inesperado.' })
+			throw err
+		} finally {
+			setSavingEventKeys(current => { const next = { ...current }; delete next[key]; return next })
 		}
 	}
 
@@ -342,11 +442,17 @@ function EscalaBuilderContent() {
 
 			setData((current) => (current ? { ...current, bimester: updated } : current))
 
+			const warnings = [
+				body.notification_error,
+				body.notifications?.failed ? `${body.notifications.failed} e-mail(s) aguardam nova tentativa.` : null,
+				body.calendar_sync?.errors?.length ? 'A sincronização do calendário falhou; haverá nova tentativa automática.' : null,
+			].filter(Boolean)
 			toast({
+				variant: warnings.length ? 'destructive' : 'default',
 				title: updated.is_published ? 'Bimestre publicado' : 'Bimestre despublicado',
-				description: updated.is_published
+				description: warnings.join(' ') || (updated.is_published
 					? 'A nova escala está visível para toda a equipe.'
-					: 'O bimestre voltou para o modo rascunho.',
+					: 'O bimestre voltou para o modo rascunho.'),
 			})
 		} catch (err) {
 			toast({
@@ -699,6 +805,19 @@ function EscalaBuilderContent() {
 					</Alert>
 				)}
 
+				<Card className="mb-4 py-4">
+					<CardHeader className="pb-3">
+						<CardTitle className="text-base">Fuso horário da igreja</CardTitle>
+						<CardDescription>Use um identificador IANA, por exemplo America/Sao_Paulo. O padrão é America/Sao_Paulo.</CardDescription>
+					</CardHeader>
+					<CardContent className="flex flex-wrap items-center gap-2">
+						<Input className="max-w-sm" value={churchTimezone} onChange={event => setChurchTimezone(event.target.value)} aria-label="Fuso horário da igreja" />
+						<Button variant="outline" size="sm" disabled={timezoneSaving || !churchTimezone.trim()} onClick={() => void saveChurchTimezone()}>
+							{timezoneSaving ? 'Salvando…' : 'Salvar fuso'}
+						</Button>
+					</CardContent>
+				</Card>
+
 				<Card className="py-4 mb-4">
 					<CardHeader className="pb-3">
 						<CardTitle className="text-base">Bimestre ativo no builder</CardTitle>
@@ -804,6 +923,11 @@ function EscalaBuilderContent() {
 										assignments={data.assignments}
 										savingKeys={savingMap}
 										onSaveAssignment={handleSaveAssignment}
+										eventControls={data.event_controls}
+										activeMinisters={data.active_ministers}
+										isPublished={selectedBimester?.is_published ?? false}
+										savingEventKeys={savingEventKeys}
+										onSaveEventControl={handleSaveEventControl}
 									/>
 								)}
 							</TabsContent>
@@ -823,6 +947,11 @@ function EscalaBuilderContent() {
 										assignments={data.assignments}
 										savingKeys={savingMap}
 										onSaveAssignment={handleSaveAssignment}
+										eventControls={data.event_controls}
+										activeMinisters={data.active_ministers}
+										isPublished={selectedBimester?.is_published ?? false}
+										savingEventKeys={savingEventKeys}
+										onSaveEventControl={handleSaveEventControl}
 									/>
 								)}
 							</TabsContent>

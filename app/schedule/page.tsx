@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ScheduleGrid, type ScheduleAssignment, type ScheduleRehearsal, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
+import { ScheduleGrid, type ScheduleAssignment, type ScheduleEventControl, type ScheduleRehearsal, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
 import { AlertCircle, BarChart3, MessageCircle, Music2, Settings2, UserCircle2 } from 'lucide-react'
 import {
 	buildPublishedScheduleWhatsAppMessage,
@@ -49,6 +49,7 @@ interface CurrentScheduleApiResponse {
 		quarter: BimesterSummary
 		roles: ScheduleRole[]
 		assignments: ScheduleAssignment[]
+		event_controls: ScheduleEventControl[]
 		dates: {
 			sunday: string[]
 			thursday: string[]
@@ -65,6 +66,7 @@ interface CurrentSchedule {
 	bimester: BimesterSummary
 	roles: ScheduleRole[]
 	assignments: ScheduleAssignment[]
+	event_controls: ScheduleEventControl[]
 	dates: {
 		sunday: string[]
 		thursday: string[]
@@ -147,6 +149,7 @@ export default function EscalaPage() {
 						bimester: body.schedule.quarter,
 						roles: body.schedule.roles,
 						assignments: body.schedule.assignments,
+						event_controls: body.schedule.event_controls ?? [],
 						dates: body.schedule.dates,
 					}
 					: null
@@ -204,7 +207,12 @@ export default function EscalaPage() {
 
 	const isAdmin = viewer?.role === 'admin'
 	const isMedia = viewer?.role === 'midia'
-	const canEditRehearsal = viewer?.role === 'admin' || viewer?.role === 'minister'
+	const canEditRehearsal = useCallback((eventDate: string, eventType: 'thursday' | 'sunday') => {
+		const control = schedule?.event_controls.find(item => item.event_date === eventDate && item.event_type === eventType)
+		if (control?.status === 'cancelled') return false
+		if (viewer?.role === 'admin') return true
+		return Boolean(viewer && control?.leader_minister_id === viewer.id)
+	}, [schedule?.event_controls, viewer])
 	const today = format(new Date(), 'yyyy-MM-dd')
 	const mediaCommitments = useMemo(
 		() => getMediaCommitments(schedule?.assignments ?? [], schedule?.roles ?? [], viewer?.id ?? '', today),
@@ -673,7 +681,8 @@ export default function EscalaPage() {
 												roles={schedule.roles}
 												dates={generalDates.thursday}
 												eventType="thursday"
-												assignments={schedule.assignments}
+											assignments={schedule.assignments}
+													eventControls={schedule.event_controls}
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
 												rehearsalByDate={rehearsalByDate}
@@ -698,7 +707,8 @@ export default function EscalaPage() {
 												roles={schedule.roles}
 												dates={generalDates.sunday}
 												eventType="sunday"
-												assignments={schedule.assignments}
+											assignments={schedule.assignments}
+													eventControls={schedule.event_controls}
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
 												rehearsalByDate={rehearsalByDate}

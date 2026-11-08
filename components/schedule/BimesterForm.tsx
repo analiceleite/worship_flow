@@ -82,7 +82,7 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
 
         if (latestBimester) {
             const latestEndDate = new Date(`${latestBimester.end_date}T12:00:00`)
-            const nextStart = getMonthStart(latestEndDate)
+            const nextStart = getMonthStart(addMonths(latestEndDate, 1))
             const nextEnd = getMonthEnd(addMonths(nextStart, 2))
             setStartDate(toDateString(nextStart))
             setEndDate(toDateString(nextEnd))
@@ -151,7 +151,7 @@ export function BimesterForm({ open, onOpenChange, onCreated, existingBimesters 
                 <DialogHeader>
                     <DialogTitle>Novo Bimestre</DialogTitle>
                     <DialogDescription>
-                        O builder mantém o último mês do período anterior e adiciona os dois próximos meses automaticamente.
+                        O novo período começa no mês seguinte ao anterior e cobre três meses, sem sobreposição.
                     </DialogDescription>
                 </DialogHeader>
 

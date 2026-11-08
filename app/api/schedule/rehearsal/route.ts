@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
+import { randomUUID } from 'node:crypto'
+import { enqueueScheduleEventNotification, processScheduleEmailQueue } from '@/lib/notifications/schedule-email'
+import { reconcileMinistersForQuarter } from '@/lib/google-calendar/reconcile'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +42,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient()
-  if (context.role === 'midia') {
+  if (context.role !== 'admin') {
     const { data: quarter, error } = await supabase
       .from('schedule_quarters')
       .select('id')
@@ -94,6 +97,10 @@ export async function PATCH(request: Request) {
     throw error
   }
 
+  if (context.role !== 'admin' && context.role !== 'minister') {
+    return NextResponse.json({ error: 'Permissão insuficiente para editar ensaio' }, { status: 403 })
+  }
+
   const payload = (await request.json()) as RehearsalPayload
   const { quarter_id, event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place } = payload
 
@@ -103,13 +110,9 @@ export async function PATCH(request: Request) {
 
   const adminSupabase = createAdminClient()
 
-  if (context.role !== 'admin' && context.role !== 'minister') {
-    return NextResponse.json({ error: 'Permissão insuficiente para editar ensaio' }, { status: 403 })
-  }
-
   const { data: quarter, error: quarterError } = await adminSupabase
     .from('schedule_quarters')
-    .select('id')
+    .select('id, is_published, start_date, end_date')
     .eq('id', quarter_id)
     .eq('church_id', context.churchId)
     .maybeSingle()
@@ -121,6 +124,34 @@ export async function PATCH(request: Request) {
   if (!quarter) {
     return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
   }
+
+  if (context.role !== 'admin') {
+    if (!quarter.is_published) return NextResponse.json({ error: 'Rascunhos são privados.' }, { status: 404 })
+    const { data: control, error: controlError } = await adminSupabase.from('schedule_event_controls')
+      .select('leader_minister_id, status')
+      .eq('church_id', context.churchId).eq('quarter_id', quarter_id)
+      .eq('event_date', event_date).eq('event_type', event_type).maybeSingle()
+    if (controlError) return NextResponse.json({ error: controlError.message }, { status: 500 })
+    if (control?.leader_minister_id !== context.ministerId || control.status === 'cancelled') {
+      return NextResponse.json({ error: 'Somente o líder designado do evento pode editar o ensaio.' }, { status: 403 })
+    }
+  }
+
+  if (event_date < quarter.start_date || event_date > quarter.end_date) {
+    return NextResponse.json({ error: 'A data do evento precisa estar dentro do período.' }, { status: 400 })
+  }
+  if (rehearsal_time && !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(rehearsal_time)) {
+    return NextResponse.json({ error: 'Informe um horário de ensaio válido.' }, { status: 400 })
+  }
+
+  const { data: existingRehearsal, error: existingError } = await adminSupabase
+    .from('schedule_rehearsals').select('rehearsal_date, rehearsal_time, rehearsal_place')
+    .eq('church_id', context.churchId).eq('quarter_id', quarter_id)
+    .eq('event_date', event_date).eq('event_type', event_type).maybeSingle()
+  if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 })
+  const hasChanged = existingRehearsal?.rehearsal_date !== (rehearsal_date ?? null)
+    || existingRehearsal?.rehearsal_time !== (rehearsal_time ?? null)
+    || existingRehearsal?.rehearsal_place !== (rehearsal_place ?? null)
 
   // UPSERT
   const { data, error } = await adminSupabase
@@ -144,5 +175,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ rehearsal: data })
+  let notification = { queued: 0, processed: 0, sent: 0, failed: 0, skipped: 0 }
+  let notificationError: string | null = null
+  if (hasChanged && quarter.is_published) {
+    try {
+      const queued = await enqueueScheduleEventNotification({
+        churchId: context.churchId, quarterId: quarter_id, eventDate: event_date!, eventType: event_type!,
+        notificationType: 'schedule_changed', changeId: randomUUID(),
+      })
+      const processed = await processScheduleEmailQueue(200)
+      notification = { queued: queued.queued, processed: processed.processed, sent: processed.sent, failed: processed.failed, skipped: processed.skipped }
+    } catch (notifyError) {
+      notificationError = notifyError instanceof Error ? notifyError.message : 'Falha ao enfileirar avisos.'
+      console.error('Falha ao notificar alteração de ensaio:', notifyError)
+    }
+  }
+  const calendar = await reconcileMinistersForQuarter(quarter_id).catch(syncError => ({
+    ministers: 0,
+    errors: [{ ministerId: '', error: syncError instanceof Error ? syncError.message : 'Falha ao sincronizar calendário.' }],
+  }))
+
+  return NextResponse.json({ rehearsal: data, notification, notification_error: notificationError, calendar_sync: calendar })
 }

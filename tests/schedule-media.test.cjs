@@ -73,6 +73,8 @@ function route(relativePath, { role = 'midia', tables = {}, authError = null } =
   const module = load(relativePath, {
     '@/lib/google-calendar/reconcile': { reconcileMinisterCalendar: async () => {}, reconcileMinistersForQuarter: async () => {} },
     '@/lib/notifications/schedule-email': { enqueueBimesterPublishedNotifications: async () => {}, processScheduleEmailQueue: async () => {} },
+    '@/lib/schedule/wf32-rules': { quarterRangesOverlap: (a, b) => a.start_date <= b.end_date && a.end_date >= b.start_date, intervalsOverlap: () => false },
+    '@/lib/schedule/event-conflicts': { getScheduleEventInterval: () => ({ start: new Date(0), end: new Date(1) }) },
     '@/lib/supabase/admin': { createAdminClient: () => client },
     '@/lib/auth-context': { AuthContextError, getCurrentMinisterContext: async (options = {}) => {
       if (authError) throw authError
@@ -100,10 +102,10 @@ test('current returns only published own church data and explicitly selects sche
   assert.equal((await (await empty.GET()).json()).schedule, null)
 })
 
-test('quarter list filters media drafts, preserving administrator and minister draft access', async () => {
+test('quarter list keeps drafts private to admins', async () => {
   for (const role of ['midia', 'admin', 'minister']) {
     const list = route('app/api/schedule/quarters/route.ts', { tables, role })
-    assert.deepEqual((await (await list.GET()).json()).quarters.map(q => q.id), role === 'midia' ? ['published'] : ['published', 'draft'])
+    assert.deepEqual((await (await list.GET()).json()).quarters.map(q => q.id), role === 'admin' ? ['published', 'draft'] : ['published'])
   }
 })
 
@@ -120,7 +122,7 @@ test('media auxiliary and alternative reads reject drafts, foreign and nonexiste
   }
   for (const role of ['midia', 'minister', 'admin']) {
     const assignments = route('app/api/schedule/quarters/[id]/assignments/route.ts', { tables, role })
-    assert.equal((await assignments.GET(new Request('http://localhost'), { params: Promise.resolve({ id: role === 'midia' ? 'published' : 'draft' }) })).status, 200)
+    assert.equal((await assignments.GET(new Request('http://localhost'), { params: Promise.resolve({ id: role === 'admin' ? 'draft' : 'published' }) })).status, 200)
   }
   const rehearsals = route('app/api/schedule/rehearsal/route.ts', { tables })
   assert.equal((await rehearsals.GET(new Request('http://localhost/api/schedule/rehearsal?quarter_id=published'))).status, 200)
@@ -138,7 +140,7 @@ test('media writes are refused by APIs even when called directly', async () => {
   ]) {
     const api = route(file, { tables })
     assert.equal((await api[method](jsonRequest(), params)).status, 403, file)
-    assert.equal(api.queries.length, 0)
+    assert.equal(api.queries.length, 0, file)
   }
 })
 

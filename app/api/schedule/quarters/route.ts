@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
+import { quarterRangesOverlap } from '@/lib/schedule/wf32-rules'
 
 type EventType = 'thursday' | 'sunday'
 
@@ -113,7 +114,7 @@ export async function GET() {
     .eq('church_id', context.churchId)
     .order('start_date', { ascending: false })
 
-  if (context.role === 'midia') query = query.eq('is_published', true)
+  if (context.role !== 'admin') query = query.eq('is_published', true)
   const { data, error } = await query
 
   if (error) {
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
       ? new Date(`${latestQuarter.end_date}T12:00:00`)
       : new Date()
 
-    const computedStart = getMonthStart(baseDate)
+    const computedStart = getMonthStart(latestQuarter?.end_date ? addMonths(baseDate, 1) : baseDate)
     const computedEnd = getMonthEnd(addMonths(computedStart, 2))
     startDate = toDateString(computedStart)
     endDate = toDateString(computedEnd)
@@ -206,6 +207,25 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'A data inicial não pode ser maior que a data final' },
       { status: 400 }
+    )
+  }
+
+  const { data: existingPeriods, error: periodsError } = await adminSupabase
+    .from('schedule_quarters')
+    .select('id, start_date, end_date')
+    .eq('church_id', context.churchId)
+
+  if (periodsError) {
+    return NextResponse.json({ error: periodsError.message }, { status: 500 })
+  }
+
+  const overlap = (existingPeriods ?? []).find((period: { start_date: string; end_date: string }) =>
+    quarterRangesOverlap({ start_date: startDate, end_date: endDate }, period)
+  )
+  if (overlap) {
+    return NextResponse.json(
+      { error: 'O período se sobrepõe a outro período cadastrado nesta igreja.' },
+      { status: 409 }
     )
   }
 
@@ -252,6 +272,12 @@ export async function POST(request: Request) {
     .single()
 
   if (quarterError || !quarter) {
+    if (quarterError?.message.includes('WF32_QUARTER_OVERLAP')) {
+      return NextResponse.json(
+        { error: 'O período se sobrepõe a outro período cadastrado nesta igreja.' },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       { error: quarterError?.message ?? 'Erro ao criar bimestre' },
       { status: 500 }

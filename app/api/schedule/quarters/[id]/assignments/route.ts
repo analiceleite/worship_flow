@@ -50,7 +50,7 @@ export async function GET(
       .select('id, church_id, name, start_date, end_date, is_published, created_at')
       .eq('id', id)
       .eq('church_id', context.churchId)
-  if (context.role === 'midia') quarterQuery = quarterQuery.eq('is_published', true)
+  if (context.role !== 'admin') quarterQuery = quarterQuery.eq('is_published', true)
   const quarterRes = await quarterQuery.maybeSingle()
   if (quarterRes.error) {
     return NextResponse.json({ error: 'Não foi possível consultar o período' }, { status: 500 })
@@ -59,7 +59,7 @@ export async function GET(
     return NextResponse.json({ error: 'Período indisponível' }, { status: 404 })
   }
 
-  const [rolesRes, assignmentsRes] = await Promise.all([
+  const [rolesRes, assignmentsRes, controlsRes, ministersRes] = await Promise.all([
     adminSupabase
       .from('schedule_roles')
       .select('id, name, category, display_order')
@@ -71,6 +71,18 @@ export async function GET(
       )
       .eq('church_id', context.churchId)
       .eq('quarter_id', id),
+    adminSupabase
+      .from('schedule_event_controls')
+      .select('event_date, event_type, leader_minister_id, status, leader:ministers!schedule_event_controls_leader_minister_id_fkey(id, name)')
+      .eq('church_id', context.churchId)
+      .eq('quarter_id', id),
+    adminSupabase
+      .from('ministers')
+      .select('id, name')
+      .eq('church_id', context.churchId)
+      .eq('is_active', true)
+      .eq('access_state', 'active')
+      .order('name', { ascending: true }),
   ])
 
   if (rolesRes.error) {
@@ -79,6 +91,9 @@ export async function GET(
 
   if (assignmentsRes.error) {
     return NextResponse.json({ error: assignmentsRes.error.message }, { status: 500 })
+  }
+  if (controlsRes.error || ministersRes.error) {
+    return NextResponse.json({ error: controlsRes.error?.message ?? ministersRes.error?.message }, { status: 500 })
   }
 
   const roles = (rolesRes.data ?? []) as QuarterRole[]
@@ -109,6 +124,8 @@ export async function GET(
     quarter: quarterRes.data,
     roles,
     assignments,
+    event_controls: controlsRes.data ?? [],
+    active_ministers: ministersRes.data ?? [],
     dates: {
       sunday: sundayDates,
       thursday: thursdayDates,

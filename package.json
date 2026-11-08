@@ -18,6 +18,7 @@
     "test:repertoire:browser": "node --test tests/repertoire.browser.test.cjs",
     "test:schedule-media": "node --test tests/navigation.test.cjs tests/schedule-media.test.cjs",
     "test:notifications": "node --test tests/notifications.test.cjs",
+    "test:wf32": "node --test tests/wf32.test.cjs",
     "test:schedule-media:browser": "node --test tests/schedule-media.browser.test.cjs",
     "test:local-tools": "node --test tests/local-supabase.test.mjs tests/compose-transport.test.cjs",
     "local:prepare": "node scripts/supabase-local.mjs prepare",

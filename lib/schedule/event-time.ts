@@ -1,3 +1,5 @@
+import { churchLocalDateTimeToUtc, DEFAULT_CHURCH_TIMEZONE } from '@/lib/schedule/wf32-rules'
+
 export type EventType = 'thursday' | 'sunday'
 
 export type QuarterTimeConfig = {
@@ -32,15 +34,16 @@ export function getServiceTime(eventType: EventType, quarter: QuarterTimeConfig)
   return eventType === 'thursday' ? quarter.thursday_service_time : quarter.sunday_service_time
 }
 
-// America/Sao_Paulo has had no DST since 2019 -> fixed UTC-3 offset. Documented assumption;
-// if Brazil ever reinstates DST this constant needs to become date-aware.
+// Kept for legacy reminder tests/callers; new conversions use the church IANA timezone.
 export const BRAZIL_UTC_OFFSET_HOURS = 3
 
-/** Converts a local (America/Sao_Paulo) date+time into the equivalent UTC instant. */
-export function buildLocalDateTimeUtc(eventDate: string, timeStr: string): Date {
-  const [year, month, day] = eventDate.split('-').map(Number)
-  const { hour, minute } = parseTime(timeStr)
-  return new Date(Date.UTC(year, month - 1, day, hour + BRAZIL_UTC_OFFSET_HOURS, minute, 0))
+/** Converts a local church date+time into the equivalent UTC instant. */
+export function buildLocalDateTimeUtc(
+  eventDate: string,
+  timeStr: string,
+  timeZone = DEFAULT_CHURCH_TIMEZONE,
+): Date {
+  return churchLocalDateTimeToUtc(eventDate, timeStr.slice(0, 5), timeZone)
 }
 
 /** Real UTC instant when ministers should arrive, honoring rehearsal_time overrides. */
@@ -49,7 +52,16 @@ export function computeEventArrivalDateTime(input: {
   eventType: EventType
   quarter: QuarterTimeConfig
   rehearsalTimeOverride?: string | null
+  timeZone?: string
 }): Date {
   const arrivalTimeStr = input.rehearsalTimeOverride || getArrivalTime(input.eventType, input.quarter)
-  return buildLocalDateTimeUtc(input.eventDate, arrivalTimeStr)
+  return buildLocalDateTimeUtc(input.eventDate, arrivalTimeStr, input.timeZone)
+}
+
+export function dateStringInTimeZone(date: Date, timeZone = DEFAULT_CHURCH_TIMEZONE) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
 }

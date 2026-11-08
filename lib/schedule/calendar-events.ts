@@ -2,7 +2,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
   getArrivalTime,
   getServiceTime,
-  addMinutesToTime,
   buildLocalDateTimeUtc,
   type EventType,
   type QuarterTimeConfig,
@@ -20,6 +19,7 @@ export type CalendarEventItem = {
 }
 
 type AssignmentRow = {
+  quarter_id: string
   minister_id: string | null
   event_date: string
   event_type: EventType
@@ -60,10 +60,10 @@ export async function buildMinisterCalendarEvents(
   const ministerName = ministerRes.data.name as string
   const churchId = ministerRes.data.church_id as string
 
-  const [assignmentsRes, rehearsalsRes, quartersRes] = await Promise.all([
+  const [assignmentsRes, rehearsalsRes, quartersRes, churchRes, controlsRes] = await Promise.all([
     admin
       .from('schedule_assignments')
-      .select('minister_id, event_date, event_type, role:schedule_roles(name)')
+      .select('quarter_id, minister_id, event_date, event_type, role:schedule_roles(name)')
       .eq('church_id', churchId)
       .eq('minister_id', ministerId)
       .order('event_date', { ascending: true }),
@@ -74,29 +74,44 @@ export async function buildMinisterCalendarEvents(
     admin
       .from('schedule_quarters')
       .select('*')
-      .eq('church_id', churchId),
+      .eq('church_id', churchId)
+      .eq('is_published', true),
+    admin
+      .from('churches')
+      .select('timezone')
+      .eq('id', churchId)
+      .maybeSingle(),
+    admin
+      .from('schedule_event_controls')
+      .select('quarter_id, event_date, event_type')
+      .eq('church_id', churchId)
+      .eq('status', 'cancelled'),
   ])
 
-  if (assignmentsRes.error || rehearsalsRes.error || quartersRes.error) {
+  if (assignmentsRes.error || rehearsalsRes.error || quartersRes.error || churchRes.error || controlsRes.error) {
     throw new Error('Database error building calendar events')
   }
 
   const assignments = (assignmentsRes.data || []) as AssignmentRow[]
   const rehearsals = ((rehearsalsRes.data || []) as RehearsalRow[])
   const quarters = ((quartersRes.data || []) as QuarterRow[])
+  const timeZone = churchRes.data?.timezone || 'America/Sao_Paulo'
+  const quarterById = new Map(quarters.map(quarter => [quarter.id, quarter]))
+  const cancelledKeys = new Set((controlsRes.data ?? []).map((item: { quarter_id: string; event_date: string; event_type: string }) =>
+    `${item.quarter_id}_${item.event_date}_${item.event_type}`
+  ))
 
   const rehearsalsByEvent = new Map<string, RehearsalRow>()
   for (const r of rehearsals) {
     rehearsalsByEvent.set(`${r.event_date}_${r.event_type}`, r)
   }
 
-  // Use the most recent quarter for time defaults (same rule as the ICS route).
-  const quarter = quarters.sort((a, b) => b.start_date.localeCompare(a.start_date))[0]
-  if (!quarter) return { ministerName, events: [] }
+  if (!quarters.length) return { ministerName, events: [] }
 
   // Group assignments by event_date and event_type to handle multiple roles per day.
   const eventMap = new Map<string, AssignmentRow[]>()
   for (const assignment of assignments) {
+    if (cancelledKeys.has(`${assignment.quarter_id}_${assignment.event_date}_${assignment.event_type}`)) continue
     const key = `${assignment.event_date}_${assignment.event_type}`
     if (!eventMap.has(key)) eventMap.set(key, [])
     eventMap.get(key)!.push(assignment)
@@ -106,12 +121,13 @@ export async function buildMinisterCalendarEvents(
 
   for (const [eventKey, eventAssignments] of eventMap.entries()) {
     const firstAssignment = eventAssignments[0]
+    const quarter = quarterById.get(firstAssignment.quarter_id)
+    if (!quarter) continue
 
     const rehearsal = rehearsalsByEvent.get(eventKey)
     const arrivalTimeStr = rehearsal?.rehearsal_time || getArrivalTime(firstAssignment.event_type, quarter)
     const serviceTimeStr = getServiceTime(firstAssignment.event_type, quarter)
-    const { hour: endHour, minute: endMinute } = addMinutesToTime(serviceTimeStr, 90)
-    const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`
+    const serviceUtc = buildLocalDateTimeUtc(firstAssignment.event_date, serviceTimeStr, timeZone)
 
     const roleNames = eventAssignments
       .map((a) => a.role?.name ?? 'Função')
@@ -132,8 +148,8 @@ export async function buildMinisterCalendarEvents(
       roleNames,
       eventLabel,
       description,
-      arrivalUtc: buildLocalDateTimeUtc(firstAssignment.event_date, arrivalTimeStr),
-      endUtc: buildLocalDateTimeUtc(firstAssignment.event_date, endTimeStr),
+      arrivalUtc: buildLocalDateTimeUtc(firstAssignment.event_date, arrivalTimeStr, timeZone),
+      endUtc: new Date(serviceUtc.getTime() + 90 * 60_000),
     })
   }
 
