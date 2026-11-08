@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
     const { data: publishedBimesters, error } = await admin
       .from('schedule_quarters')
-      .select('id, church_id, name')
+      .select('id, church_id, name, publication_revision')
       .eq('is_published', true)
       .order('start_date', { ascending: false })
 
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
         bimesterId: publishedBimester.id,
         bimesterName: publishedBimester.name,
         churchId: publishedBimester.church_id,
+        publicationRevision: publishedBimester.publication_revision,
       })
       queued += result.queued
     }

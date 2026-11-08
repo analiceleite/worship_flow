@@ -2,13 +2,20 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ROUTES } from '@/lib/routes'
 import {
   computeEventArrivalDateTime,
-  BRAZIL_UTC_OFFSET_HOURS,
+  dateStringInTimeZone,
   type EventType,
   type QuarterTimeConfig,
 } from '@/lib/schedule/event-time'
 
 type NotificationStatus = 'pending' | 'sent' | 'failed' | 'skipped'
-type NotificationType = 'quarter_published' | 'reminder_7days' | 'reminder_1day' | 'reminder_offset'
+type NotificationType =
+  | 'quarter_published'
+  | 'reminder_7days'
+  | 'reminder_1day'
+  | 'reminder_offset'
+  | 'schedule_changed'
+  | 'event_cancelled'
+  | 'event_reactivated'
 const BIMESTER_PUBLISHED_NOTIFICATION_TYPE: NotificationType = 'quarter_published'
 
 type QueueRow = {
@@ -150,10 +157,11 @@ export async function enqueueBimesterPublishedNotifications(input: {
   bimesterId: string
   bimesterName: string
   churchId: string
+  publicationRevision?: number
 }) {
   const admin = createAdminClient()
 
-  const [assignmentsRes, rehearsalsRes] = await Promise.all([
+  const [assignmentsRes, rehearsalsRes, cancelledRes] = await Promise.all([
     admin
       .from('schedule_assignments')
       .select(
@@ -167,25 +175,29 @@ export async function enqueueBimesterPublishedNotifications(input: {
       .select('event_date, event_type, rehearsal_date, rehearsal_time, rehearsal_place')
       .eq('church_id', input.churchId)
       .eq('quarter_id', input.bimesterId),
+    admin.from('schedule_event_controls').select('event_date, event_type')
+      .eq('church_id', input.churchId).eq('quarter_id', input.bimesterId).eq('status', 'cancelled'),
   ])
 
   if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
   if (rehearsalsRes.error) throw new Error(rehearsalsRes.error.message)
+  if (cancelledRes.error) throw new Error(cancelledRes.error.message)
 
   const rehearsalsByEvent = new Map<string, RehearsalRow>()
   for (const rehearsal of (rehearsalsRes.data ?? []) as RehearsalRow[]) {
     rehearsalsByEvent.set(`${rehearsal.event_date}_${rehearsal.event_type}`, rehearsal)
   }
 
+  const cancelledKeys = new Set((cancelledRes.data ?? []).map((item: { event_date: string; event_type: string }) => `${item.event_date}_${item.event_type}`))
   const grouped = groupAssignmentsByMinister(
-    (assignmentsRes.data ?? []) as AssignmentWithRelations[],
+    ((assignmentsRes.data ?? []) as AssignmentWithRelations[]).filter(item => !cancelledKeys.has(`${item.event_date}_${item.event_type}`)),
     rehearsalsByEvent
   )
   if (grouped.length === 0) return { queued: 0 }
 
   const rows: QueueRow[] = grouped.map((g) => ({
     church_id: input.churchId,
-    dedupe_key: `quarter_published:${input.churchId}:${input.bimesterId}:${g.minister_id}`,
+    dedupe_key: `quarter_published:${input.churchId}:${input.bimesterId}:${input.publicationRevision ?? 0}:${g.minister_id}`,
     notification_type: BIMESTER_PUBLISHED_NOTIFICATION_TYPE,
     quarter_id: input.bimesterId,
     minister_id: g.minister_id,
@@ -217,10 +229,144 @@ export async function enqueueBimesterPublishedNotifications(input: {
 
   const { error: insertError } = await admin
     .from('schedule_email_notifications')
-    .upsert(rowsToUpsert, { onConflict: 'dedupe_key' })
+    .upsert(rowsToUpsert, { onConflict: 'dedupe_key', ignoreDuplicates: true })
 
   if (insertError) throw new Error(insertError.message)
   return { queued: rowsToUpsert.length }
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]!)
+}
+
+export async function enqueueBimesterUnpublishedNotifications(input: {
+  bimesterId: string
+  bimesterName: string
+  churchId: string
+  publicationRevision: number
+}) {
+  const admin = createAdminClient()
+  const [assignmentsRes, cancelledRes] = await Promise.all([
+    admin.from('schedule_assignments')
+    .select('minister_id, event_date, event_type, minister:ministers(id,name,email,is_active), role:schedule_roles(name)')
+    .eq('church_id', input.churchId).eq('quarter_id', input.bimesterId).not('minister_id', 'is', null),
+    admin.from('schedule_event_controls').select('event_date, event_type')
+      .eq('church_id', input.churchId).eq('quarter_id', input.bimesterId).eq('status', 'cancelled'),
+  ])
+  if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
+  if (cancelledRes.error) throw new Error(cancelledRes.error.message)
+  const cancelledKeys = new Set((cancelledRes.data ?? []).map((item: { event_date: string; event_type: string }) => `${item.event_date}_${item.event_type}`))
+  const recipients = new Map<string, { name: string; email: string | null; items: Array<{ event_date: string; event_type: string; role_name: string }> }>()
+  for (const row of (assignmentsRes.data ?? []) as Array<{
+    minister_id: string; event_date: string; event_type: string;
+    minister: { name: string; email: string | null; is_active: boolean } | null;
+    role: { name: string } | null;
+  }>) {
+    if (cancelledKeys.has(`${row.event_date}_${row.event_type}`)) continue
+    if (!row.minister?.is_active) continue
+    const entry = recipients.get(row.minister_id) ?? { name: row.minister.name, email: row.minister.email, items: [] }
+    entry.items.push({ event_date: row.event_date, event_type: row.event_type, role_name: row.role?.name ?? 'Função' })
+    recipients.set(row.minister_id, entry)
+  }
+  const rows = [...recipients.entries()].filter(([, recipient]) => recipient.email).map(([ministerId, recipient]) => ({
+    church_id: input.churchId,
+    dedupe_key: `quarter_unpublished:${input.churchId}:${input.bimesterId}:${input.publicationRevision}:${ministerId}`,
+    notification_type: 'schedule_changed',
+    quarter_id: input.bimesterId,
+    minister_id: ministerId,
+    event_date: null,
+    status: 'pending',
+    attempts: 0,
+    last_error: null,
+    sent_at: null,
+    payload_json: {
+      bimester_name: input.bimesterName,
+      minister_name: recipient.name,
+      minister_email: recipient.email,
+      message_kind: 'quarter_unpublished',
+      items: recipient.items,
+    },
+  }))
+  if (!rows.length) return { queued: 0 }
+  const { error: enqueueError } = await admin.from('schedule_email_notifications').upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true })
+  if (enqueueError) throw new Error(enqueueError.message)
+  return { queued: rows.length }
+}
+
+export async function enqueueScheduleEventNotification(input: {
+  churchId: string
+  quarterId: string
+  eventDate: string
+  eventType: EventType
+  notificationType: 'schedule_changed' | 'event_cancelled' | 'event_reactivated'
+  changeId: string
+  includeMinisterIds?: string[]
+}) {
+  const admin = createAdminClient()
+  const [quarterRes, assignmentsRes, controlRes] = await Promise.all([
+    admin.from('schedule_quarters').select('id, name, is_published').eq('id', input.quarterId).eq('church_id', input.churchId).maybeSingle(),
+    admin.from('schedule_assignments')
+      .select('minister_id, minister:ministers(id, name, email, is_active), role:schedule_roles(name)')
+      .eq('church_id', input.churchId).eq('quarter_id', input.quarterId)
+      .eq('event_date', input.eventDate).eq('event_type', input.eventType)
+      .not('minister_id', 'is', null),
+    admin.from('schedule_event_controls')
+      .select('leader_minister_id')
+      .eq('church_id', input.churchId).eq('quarter_id', input.quarterId)
+      .eq('event_date', input.eventDate).eq('event_type', input.eventType).maybeSingle(),
+  ])
+  if (quarterRes.error) throw new Error(quarterRes.error.message)
+  if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
+  if (controlRes.error) throw new Error(controlRes.error.message)
+  if (!quarterRes.data?.is_published) return { queued: 0 }
+
+  const recipientIds = new Set(input.includeMinisterIds ?? [])
+  for (const row of (assignmentsRes.data ?? []) as Array<{ minister_id: string; minister: { id: string; is_active: boolean } | null }>) {
+    if (row.minister?.is_active) recipientIds.add(row.minister_id)
+  }
+  const leaderId = controlRes.data?.leader_minister_id
+  if (leaderId) recipientIds.add(leaderId)
+  if (!recipientIds.size) return { queued: 0 }
+
+  const { data: recipients, error: recipientsError } = await admin.from('ministers')
+    .select('id, name, email, is_active')
+    .eq('church_id', input.churchId)
+    .in('id', [...recipientIds])
+  if (recipientsError) throw new Error(recipientsError.message)
+
+  const roleNames = (assignmentsRes.data ?? [])
+    .map((item: { role: { name: string } | null }) => item.role?.name)
+    .filter((name: string | undefined): name is string => Boolean(name))
+  const eventTypeLabel = input.eventType === 'thursday' ? 'Quinta-feira' : 'Domingo'
+  const rows = (recipients ?? [])
+    .filter((recipient: { is_active: boolean; email: string | null }) => recipient.is_active && recipient.email)
+    .map((recipient: { id: string; name: string; email: string }) => ({
+      church_id: input.churchId,
+      dedupe_key: `${input.notificationType}:${input.churchId}:${input.changeId}:${recipient.id}`,
+      notification_type: input.notificationType,
+      quarter_id: input.quarterId,
+      minister_id: recipient.id,
+      event_date: input.eventDate,
+      status: 'pending' as const,
+      attempts: 0,
+      last_error: null,
+      sent_at: null,
+      payload_json: {
+        bimester_name: quarterRes.data.name,
+        minister_name: recipient.name,
+        minister_email: recipient.email,
+        target_date: input.eventDate,
+        event_type_label: eventTypeLabel,
+        change_id: input.changeId,
+        roles: roleNames,
+      },
+    }))
+  if (!rows.length) return { queued: 0 }
+  const { error } = await admin.from('schedule_email_notifications').upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true })
+  if (error) throw new Error(error.message)
+  return { queued: rows.length }
 }
 
 // Deve casar com o default da coluna ministers.email_reminder_offsets_minutes (migração 025).
@@ -233,10 +379,6 @@ function normalizeReminderOffsets(raw: unknown): number[] {
   return offsets
     .map((v) => (typeof v === 'string' ? parseInt(v, 10) : v))
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0)
-}
-
-function toBrazilDateString(date: Date): string {
-  return new Date(date.getTime() - BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
 export async function enqueueOffsetReminderNotifications(input?: { now?: Date }) {
@@ -253,16 +395,25 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
   if (!publishedBimestersRaw?.length) return { queued: 0 }
 
   const publishedBimesters = publishedBimestersRaw as Array<QuarterTimeConfig & { id: string; church_id: string; name: string }>
-
-  const todayStr = toBrazilDateString(now)
   const lookaheadEnd = new Date(now.getTime() + OFFSET_REMINDER_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000)
-  const lookaheadEndStr = toBrazilDateString(lookaheadEnd)
+  const churchIds = [...new Set(publishedBimesters.map(quarter => quarter.church_id))]
+  const { data: churches, error: churchesError } = await admin
+    .from('churches')
+    .select('id, timezone')
+    .in('id', churchIds)
+  if (churchesError) throw new Error(churchesError.message)
+  const timezoneByChurch = new Map<string, string>((churches ?? []).map((church: { id: string; timezone: string | null }) => [
+    church.id, church.timezone || 'America/Sao_Paulo',
+  ]))
 
   const rows: QueueRow[] = []
 
   for (const publishedBimester of publishedBimesters) {
+  const timeZone = timezoneByChurch.get(publishedBimester.church_id) ?? 'America/Sao_Paulo'
+  const todayStr = dateStringInTimeZone(now, timeZone)
+  const lookaheadEndStr = dateStringInTimeZone(lookaheadEnd, timeZone)
 
-  const [assignmentsRes, rehearsalsRes] = await Promise.all([
+  const [assignmentsRes, rehearsalsRes, cancelledRes] = await Promise.all([
     admin
       .from('schedule_assignments')
       .select(
@@ -278,12 +429,21 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
       .select('event_date, event_type, rehearsal_time')
       .eq('church_id', publishedBimester.church_id)
       .eq('quarter_id', publishedBimester.id),
+    admin
+      .from('schedule_event_controls')
+      .select('event_date, event_type')
+      .eq('church_id', publishedBimester.church_id)
+      .eq('quarter_id', publishedBimester.id)
+      .eq('status', 'cancelled'),
   ])
 
   if (assignmentsRes.error) throw new Error(assignmentsRes.error.message)
   if (rehearsalsRes.error) throw new Error(rehearsalsRes.error.message)
+  if (cancelledRes.error) throw new Error(cancelledRes.error.message)
 
-  const assignments = (assignmentsRes.data ?? []) as AssignmentWithRelations[]
+  const cancelledEventKeys = new Set((cancelledRes.data ?? []).map((item: { event_date: string; event_type: string }) => `${item.event_date}_${item.event_type}`))
+  const assignments = ((assignmentsRes.data ?? []) as AssignmentWithRelations[])
+    .filter(item => !cancelledEventKeys.has(`${item.event_date}_${item.event_type}`))
 
   const rehearsalTimeByEvent = new Map<string, string | null>()
   for (const r of (rehearsalsRes.data ?? []) as Array<{ event_date: string; event_type: EventType; rehearsal_time: string | null }>) {
@@ -302,6 +462,7 @@ export async function enqueueOffsetReminderNotifications(input?: { now?: Date })
         eventType: row.event_type,
         quarter: publishedBimester,
         rehearsalTimeOverride: rehearsalTimeByEvent.get(eventKey) ?? null,
+        timeZone,
       })
     )
   }
@@ -433,6 +594,10 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   const isOneDayPhrasing = offsetMinutes === 1440
   const isLongLeadReminder = isReminder && offsetMinutes >= 10080
   const targetDate = String(input.payload.target_date ?? '')
+  const isScheduleChange = input.notificationType === 'schedule_changed'
+  const isEventCancelled = input.notificationType === 'event_cancelled'
+  const isEventReactivated = input.notificationType === 'event_reactivated'
+  const isQuarterUnpublished = input.payload.message_kind === 'quarter_unpublished'
 
   const groupedByEvent = new Map<string, {
     eventDate: string
@@ -498,9 +663,9 @@ function buildEmailTemplate(input: EmailTemplateInput) {
     .map((line) => {
       const rehearsalBlock =
         line.rehearsal && !isReminder
-          ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${line.rehearsal}</div>`
+          ? `<div style="margin-top:6px;font-size:12px;color:#6b7280;"><strong>Ensaio:</strong> ${escapeHtml(line.rehearsal)}</div>`
           : ''
-      return `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${line.header}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.join(', ')}</div>${rehearsalBlock}</div>`
+      return `<div style="border:1px solid #e4e4e7;border-radius:12px;padding:12px 14px;background:#f6f6f7;margin-bottom:10px;font-size:14px;line-height:1.5;color:#1f2937;"><div style="font-weight:700;margin-bottom:4px;">${escapeHtml(line.header)}</div><div style="font-size:13px;color:#4b5563;"><strong>Funções:</strong> ${line.roles.map(escapeHtml).join(', ')}</div>${rehearsalBlock}</div>`
     })
     .join('')
 
@@ -517,10 +682,10 @@ function buildEmailTemplate(input: EmailTemplateInput) {
         <div style="height:4px;background:#ff3b30;"></div>
         <div style="padding:28px 28px 20px;background:${content.accentSoft};border-bottom:1px solid #e4e4e7;">
           <div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#ffffff;color:${content.accentColor};border:1px solid #e4e4e7;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">
-            ${content.eyebrow}
+            ${escapeHtml(content.eyebrow)}
           </div>
-          <h1 style="margin:16px 0 8px;font-size:26px;line-height:1.2;color:#1f2937;">${content.title}</h1>
-          <p style="margin:0;font-size:15px;line-height:1.7;color:#6b7280;">${content.message}</p>
+          <h1 style="margin:16px 0 8px;font-size:26px;line-height:1.2;color:#1f2937;">${escapeHtml(content.title)}</h1>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#6b7280;">${escapeHtml(content.message)}</p>
         </div>
 
         <div style="padding:24px 28px;">
@@ -534,7 +699,7 @@ function buildEmailTemplate(input: EmailTemplateInput) {
 
           <div style="text-align:center;margin-bottom:10px;">
             <a href="${scheduleUrl}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:${content.accentColor};color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
-              ${content.ctaLabel}
+              ${escapeHtml(content.ctaLabel)}
             </a>
           </div>
 
@@ -543,7 +708,40 @@ function buildEmailTemplate(input: EmailTemplateInput) {
           </p>
         </div>
       </div>
-    </div>`
+  </div>`
+
+  if (isScheduleChange || isEventCancelled || isEventReactivated) {
+    const eventTypeLabel = String(input.payload.event_type_label ?? 'Evento')
+    const dateLabel = targetDate ? formatEventDateLabel(targetDate) : 'Data não informada'
+    const title = isQuarterUnpublished
+      ? 'Escala despublicada'
+      : isEventCancelled
+      ? 'Evento cancelado'
+      : isEventReactivated ? 'Evento reativado' : 'Sua escala foi atualizada'
+    const message = isQuarterUnpublished
+      ? `A escala bimestral "${bimesterName}" foi retirada da publicação. Confira abaixo as datas que foram afetadas.`
+      : isEventCancelled
+      ? `O evento de ${eventTypeLabel.toLowerCase()} em ${dateLabel} foi cancelado.`
+      : isEventReactivated
+        ? `O evento de ${eventTypeLabel.toLowerCase()} em ${dateLabel} foi reativado.`
+        : `Houve uma alteração na escala de ${eventTypeLabel.toLowerCase()} em ${dateLabel}. Consulte os detalhes atualizados no sistema.`
+    const roles = Array.isArray(input.payload.roles) ? input.payload.roles.map(String) : []
+    const text = [
+      `Olá, ${ministerName}!`, '', message,
+      roles.length ? `Funções relacionadas: ${roles.join(', ')}` : '',
+      '', `Acesse a escala: ${scheduleUrl}`,
+    ].filter(Boolean).join('\n')
+    return {
+      subject: `${title} — ${dateLabel}`,
+      text,
+      html: emailShell({
+        eyebrow: 'Atualização da escala', title, message,
+        accentColor: isEventCancelled || isQuarterUnpublished ? '#b91c1c' : '#1d4ed8',
+        accentSoft: isEventCancelled || isQuarterUnpublished ? '#fef2f2' : '#eff6ff',
+        ctaLabel: 'Ver escala atualizada',
+      }),
+    }
+  }
 
   if (input.notificationType === BIMESTER_PUBLISHED_NOTIFICATION_TYPE) {
     return {
@@ -607,7 +805,9 @@ function buildEmailTemplate(input: EmailTemplateInput) {
   }
 }
 
-async function sendEmail(params: { to: string; subject: string; text: string; html: string }) {
+type Delivery = { to: string; subject: string; text: string; html: string }
+
+async function sendEmail(params: Delivery, idempotencyKey: string) {
   const apiKey = process.env.RESEND_API_KEY
   const from = process.env.RESEND_FROM_EMAIL
 
@@ -620,6 +820,7 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({
       from,
@@ -628,6 +829,7 @@ async function sendEmail(params: { to: string; subject: string; text: string; ht
       html: params.html,
       text: params.text,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!response.ok) {
@@ -648,12 +850,12 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function sendEmailWithRetry(params: { to: string; subject: string; text: string; html: string }) {
+async function sendEmailWithRetry(params: Delivery, idempotencyKey: string) {
   const maxAttempts = 3
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      await sendEmail(params)
+      await sendEmail(params, idempotencyKey)
       return
     } catch (err) {
       const error = err as Error & { status?: number; retryAfterMs?: number | null }
@@ -713,8 +915,8 @@ export async function processScheduleEmailQueue(batchSize = 50) {
 
   const { data: rows, error } = await admin
     .from('schedule_email_notifications')
-    .select('id, church_id, minister_id, notification_type, attempts, payload_json, status, church:churches(status, environment, email_mode)')
-    .in('status', ['pending', 'failed'])
+    .select('id, church_id, minister_id, notification_type, attempts, payload_json, status, delivery_json, delivery_started_at, church:churches(status, environment, email_mode)')
+    .or(`status.in.(pending,failed),and(status.eq.processing,claimed_at.lt.${new Date(Date.now() - 10 * 60_000).toISOString()})`)
     .lt('attempts', 3)
     .order('created_at', { ascending: true })
     .limit(batchSize)
@@ -762,10 +964,15 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   let failed = 0
   let skipped = 0
   let lastSendAt = 0
+  let processedCount = 0
 
   for (const row of rows ?? []) {
+    const claim = await admin.rpc('wf32_claim_email', { p_id: row.id })
+    if (claim.error) throw new Error(claim.error.message)
+    if (!claim.data) continue // Another worker owns this row.
+    processedCount += 1
     const payload = (row.payload_json ?? {}) as Record<string, unknown>
-    const attempts = Number(row.attempts ?? 0) + 1
+    const attempts = Number(claim.data)
     const church = Array.isArray(row.church) ? row.church[0] : row.church
     const emailMode = church?.email_mode as string | null | undefined
     const environment = church?.environment as string | null | undefined
@@ -829,7 +1036,11 @@ export async function processScheduleEmailQueue(batchSize = 50) {
       continue
     }
 
-    if (minister.email_reminders_enabled === false) {
+    const notificationType = row.notification_type as NotificationType
+    const isReminderNotification = notificationType === 'reminder_offset'
+      || notificationType === 'reminder_7days'
+      || notificationType === 'reminder_1day'
+    if (isReminderNotification && minister.email_reminders_enabled === false) {
       await markQueueStatus({
         id: row.id,
         status: 'skipped',
@@ -866,7 +1077,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
 
     try {
       const template = buildEmailTemplate({
-        notificationType: row.notification_type as NotificationType,
+        notificationType,
         payload: { ...payload, minister_name: minister.name, minister_email: email },
       })
 
@@ -876,12 +1087,30 @@ export async function processScheduleEmailQueue(batchSize = 50) {
         await sleep(minIntervalMs - elapsedMs)
       }
 
-      await sendEmailWithRetry({
-        to: recipient,
-        subject: template.subject,
-        text: template.text,
-        html: template.html,
-      })
+      // Persist the exact provider request before sending: retries must use the
+      // same key AND body even if a name, address or template changes afterwards.
+      let delivery = row.delivery_json as Delivery | null
+      if (row.delivery_started_at && Date.now() - new Date(row.delivery_started_at).getTime() >= 23 * 60 * 60_000) {
+        // Resend retains idempotency for 24h. Never blindly resend an uncertain
+        // delivery outside that window; leave a visible failure for manual review.
+        await markQueueStatus({ id: row.id, status: 'failed', attempts: 3,
+          lastError: 'Entrega incerta fora da janela de idempotência; requer conferência manual.' })
+        failed += 1
+        continue
+      }
+      if (!delivery) {
+        delivery = { to: recipient, subject: template.subject, text: template.text, html: template.html }
+        const { error: snapshotError } = await admin.from('schedule_email_notifications')
+          .update({ delivery_json: delivery, delivery_started_at: new Date().toISOString() }).eq('id', row.id)
+        if (snapshotError) throw new Error(snapshotError.message)
+      }
+      if (delivery.to !== recipient) {
+        await markQueueStatus({ id: row.id, status: 'failed', attempts: 3,
+          lastError: 'Destinatário mudou após tentativa de envio; requer conferência manual.' })
+        failed += 1
+        continue
+      }
+      await sendEmailWithRetry(delivery, `wf-schedule-${row.id}`)
       lastSendAt = Date.now()
 
       await markQueueStatus({
@@ -905,7 +1134,7 @@ export async function processScheduleEmailQueue(batchSize = 50) {
   }
 
   return {
-    processed: (rows ?? []).length,
+    processed: processedCount,
     sent,
     failed,
     skipped,

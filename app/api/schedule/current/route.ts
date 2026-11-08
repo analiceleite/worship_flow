@@ -63,7 +63,7 @@ export async function GET() {
     return NextResponse.json({ schedule: null, viewer: viewer ?? null }, { status: 200 })
   }
 
-  const [rolesRes, assignmentsRes] = await Promise.all([
+  const [rolesRes, assignmentsRes, controlsRes] = await Promise.all([
     adminSupabase
       .from('schedule_roles')
       .select('id, name, category, display_order')
@@ -75,6 +75,11 @@ export async function GET() {
       )
       .eq('church_id', context.churchId)
       .eq('quarter_id', publishedQuarter.id),
+    adminSupabase
+      .from('schedule_event_controls')
+      .select('event_date, event_type, leader_minister_id, status, leader:ministers!schedule_event_controls_leader_minister_id_fkey(id, name)')
+      .eq('church_id', context.churchId)
+      .eq('quarter_id', publishedQuarter.id),
   ])
 
   if (rolesRes.error) {
@@ -84,6 +89,7 @@ export async function GET() {
   if (assignmentsRes.error) {
     return NextResponse.json({ error: assignmentsRes.error.message }, { status: 500 })
   }
+  if (controlsRes.error) return NextResponse.json({ error: controlsRes.error.message }, { status: 500 })
 
   const roles = (rolesRes.data ?? []) as QuarterRole[]
   const roleOrderMap = new Map<string, number>()
@@ -91,7 +97,12 @@ export async function GET() {
     roleOrderMap.set(role.id, role.display_order)
   }
 
-  const assignments = ((assignmentsRes.data ?? []) as AssignmentRow[]).sort((a, b) => {
+  const cancelledKeys = new Set((controlsRes.data ?? [])
+    .filter((control: { status: string }) => control.status === 'cancelled')
+    .map((control: { event_date: string; event_type: string }) => `${control.event_date}_${control.event_type}`))
+  const assignments = ((assignmentsRes.data ?? []) as AssignmentRow[])
+    .filter(item => !cancelledKeys.has(`${item.event_date}_${item.event_type}`))
+    .sort((a, b) => {
     if (a.event_date !== b.event_date) {
       return a.event_date < b.event_date ? -1 : 1
     }
@@ -99,7 +110,7 @@ export async function GET() {
     const roleA = roleOrderMap.get(a.role_id) ?? 999
     const roleB = roleOrderMap.get(b.role_id) ?? 999
     return roleA - roleB
-  })
+    })
 
   const sundayDates = uniqueSorted(
     assignments.filter((item) => item.event_type === 'sunday').map((item) => item.event_date)
@@ -114,6 +125,7 @@ export async function GET() {
       quarter: publishedQuarter,
       roles,
       assignments,
+      event_controls: controlsRes.data ?? [],
       dates: {
         sunday: sundayDates,
         thursday: thursdayDates,

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
-import crypto from 'node:crypto'
 import pg from 'pg'
+import { migrationChecksum, migrationMatches } from './migration-checksum.mjs'
 
 const url = new URL(process.env.LOCAL_DATABASE_URL || '')
 if (process.env.LOCAL_DOCKER !== 'true' || url.hostname !== 'db' || url.port !== '5432' || url.pathname !== '/postgres') {
@@ -14,10 +14,10 @@ try {
   await client.query('CREATE TABLE IF NOT EXISTS worship_local.migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())')
   for (const name of fs.readdirSync('/local/migrations').filter((name) => /^\d{3}_.+\.sql$/.test(name)).sort()) {
     const sql = fs.readFileSync(`/local/migrations/${name}`, 'utf8')
-    const checksum = crypto.createHash('sha256').update(sql).digest('hex')
+    const checksum = migrationChecksum(sql)
     const existing = await client.query('SELECT checksum FROM worship_local.migrations WHERE name = $1', [name])
     if (existing.rowCount) {
-      if (existing.rows[0].checksum !== checksum) throw new Error(`Already applied migration changed: ${name}. No data was reset.`)
+      if (!migrationMatches(sql, existing.rows[0].checksum)) throw new Error(`Already applied migration changed: ${name}. No data was reset.`)
       continue
     }
     await client.query('BEGIN')

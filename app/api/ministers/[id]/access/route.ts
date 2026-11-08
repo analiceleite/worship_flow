@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isTrustedMutationOrigin } from '@/lib/auth/request-origin'
+import { processScheduleEmailQueue } from '@/lib/notifications/schedule-email'
 
 const bodySchema = z.object({ state: z.enum(['active', 'suspended']) }).strict()
 
@@ -36,7 +37,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
       return NextResponse.json({ error: 'Não foi possível alterar o acesso. Tente novamente.' }, { status: 503 })
     }
-    return NextResponse.json({ membership: data }, { headers: { 'Cache-Control': 'no-store' } })
+    let leadershipWarning: string | null = null
+    // Migration 043 revokes leadership and records notices atomically with access.
+    if (body.data.state === 'suspended') {
+      try { await processScheduleEmailQueue(200) } catch {
+        leadershipWarning = 'O acesso foi suspenso; avisos estão na fila para nova tentativa.'
+      }
+    }
+    return NextResponse.json({ membership: data, warning: leadershipWarning }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     if (error instanceof AuthContextError) {
       return NextResponse.json({ error: error.message }, { status: error.status })

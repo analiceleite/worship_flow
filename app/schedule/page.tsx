@@ -7,6 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
 import { selectedChurchFetch } from '@/lib/auth/client-context'
+import { useScheduleMutation } from '@/components/schedule/builder/use-schedule-mutation'
 import { ROUTES } from '@/lib/routes'
 import { getMediaCommitments, getScheduleTimeLabels, type ScheduleTimes } from '@/lib/schedule/media'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ScheduleGrid, type ScheduleAssignment, type ScheduleRehearsal, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
+import { ScheduleGrid, type ScheduleAssignment, type ScheduleEventControl, type ScheduleRehearsal, type ScheduleRole } from '@/components/schedule/ScheduleGrid'
 import { AlertCircle, BarChart3, MessageCircle, Music2, Settings2, UserCircle2 } from 'lucide-react'
 import {
 	buildPublishedScheduleWhatsAppMessage,
@@ -49,6 +50,7 @@ interface CurrentScheduleApiResponse {
 		quarter: BimesterSummary
 		roles: ScheduleRole[]
 		assignments: ScheduleAssignment[]
+		event_controls: ScheduleEventControl[]
 		dates: {
 			sunday: string[]
 			thursday: string[]
@@ -65,6 +67,7 @@ interface CurrentSchedule {
 	bimester: BimesterSummary
 	roles: ScheduleRole[]
 	assignments: ScheduleAssignment[]
+	event_controls: ScheduleEventControl[]
 	dates: {
 		sunday: string[]
 		thursday: string[]
@@ -112,6 +115,7 @@ function formatRehearsalSummary(rehearsal?: ScheduleRehearsal) {
 
 export default function EscalaPage() {
 	const { toast } = useToast()
+	const { request: scheduleMutationFetch, conflictDialog } = useScheduleMutation()
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [schedule, setSchedule] = useState<CurrentSchedule | null>(null)
@@ -147,6 +151,7 @@ export default function EscalaPage() {
 						bimester: body.schedule.quarter,
 						roles: body.schedule.roles,
 						assignments: body.schedule.assignments,
+						event_controls: body.schedule.event_controls ?? [],
 						dates: body.schedule.dates,
 					}
 					: null
@@ -204,7 +209,12 @@ export default function EscalaPage() {
 
 	const isAdmin = viewer?.role === 'admin'
 	const isMedia = viewer?.role === 'midia'
-	const canEditRehearsal = viewer?.role === 'admin' || viewer?.role === 'minister'
+	const canEditRehearsal = useCallback((eventDate: string, eventType: 'thursday' | 'sunday') => {
+		const control = schedule?.event_controls.find(item => item.event_date === eventDate && item.event_type === eventType)
+		if (control?.status === 'cancelled') return false
+		if (viewer?.role === 'admin') return true
+		return Boolean(viewer && control?.leader_minister_id === viewer.id)
+	}, [schedule?.event_controls, viewer])
 	const today = format(new Date(), 'yyyy-MM-dd')
 	const mediaCommitments = useMemo(
 		() => getMediaCommitments(schedule?.assignments ?? [], schedule?.roles ?? [], viewer?.id ?? '', today),
@@ -328,7 +338,7 @@ export default function EscalaPage() {
 	}) => {
 		if (!schedule) return
 
-		const response = await selectedChurchFetch('/api/schedule/rehearsal', {
+		const response = await scheduleMutationFetch('/api/schedule/rehearsal', {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -339,9 +349,12 @@ export default function EscalaPage() {
 				rehearsal_time: payload.rehearsalTime,
 				rehearsal_place: payload.rehearsalPlace,
 			}),
-		})
+		}, viewer?.role === 'admin')
 
-		const body = (await response.json()) as { rehearsal?: ScheduleRehearsal; error?: string }
+		const body = (await response.json()) as {
+			rehearsal?: ScheduleRehearsal; error?: string; notification_error?: string
+			notification?: { failed: number }; calendar_sync?: { errors: unknown[] }
+		}
 		if (!response.ok || !body.rehearsal) {
 			const message = body.error || 'Não foi possível salvar o ensaio'
 			toast({
@@ -357,14 +370,18 @@ export default function EscalaPage() {
 			[`${body.rehearsal!.event_date}_${body.rehearsal!.event_type}`]: body.rehearsal!,
 		}))
 
+		const warnings = [body.notification_error,
+			body.notification?.failed ? 'Um ou mais avisos requerem nova tentativa ou conferência administrativa.' : null,
+			body.calendar_sync?.errors?.length ? 'Houve falha ao sincronizar o calendário.' : null].filter(Boolean)
 		toast({
-			title: 'Ensaio atualizado',
-			description: 'As informações já estão visíveis para toda a equipe.',
+			variant: warnings.length ? 'destructive' : 'default', title: 'Ensaio atualizado',
+			description: warnings.join(' ') || 'As informações já estão visíveis para toda a equipe.',
 		})
-	}, [schedule, toast])
+	}, [schedule, toast, viewer?.role, scheduleMutationFetch])
 
 	return (
 		<div className="min-h-screen bg-background">
+			{conflictDialog}
 
 			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
 				<div className="mb-6">
@@ -673,7 +690,8 @@ export default function EscalaPage() {
 												roles={schedule.roles}
 												dates={generalDates.thursday}
 												eventType="thursday"
-												assignments={schedule.assignments}
+											assignments={schedule.assignments}
+													eventControls={schedule.event_controls}
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
 												rehearsalByDate={rehearsalByDate}
@@ -698,7 +716,8 @@ export default function EscalaPage() {
 												roles={schedule.roles}
 												dates={generalDates.sunday}
 												eventType="sunday"
-												assignments={schedule.assignments}
+											assignments={schedule.assignments}
+													eventControls={schedule.event_controls}
 												readOnly
 												highlightedMinisterId={viewer?.id ?? null}
 												rehearsalByDate={rehearsalByDate}

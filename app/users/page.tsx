@@ -18,6 +18,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck, RefreshCw, Ban } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { churchFetch, loadChurchContext } from '@/lib/auth/client-context'
@@ -36,6 +37,10 @@ export default function MinistrosPage() {
     const [accessMinister, setAccessMinister] = useState<Minister | null>(null)
     const [accessSaving, setAccessSaving] = useState(false)
     const [accessError, setAccessError] = useState<string | null>(null)
+    const [transferMinister, setTransferMinister] = useState<Minister | null>(null)
+    const [transferTargetId, setTransferTargetId] = useState('')
+    const [transferSaving, setTransferSaving] = useState(false)
+    const [transferError, setTransferError] = useState<string | null>(null)
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
     const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
     const [loadError, setLoadError] = useState<string | null>(null)
@@ -94,6 +99,26 @@ export default function MinistrosPage() {
             setAccessError(error instanceof Error ? error.message : 'Erro ao alterar o acesso')
         } finally {
             setAccessSaving(false)
+        }
+    }
+
+    const handleTransferSongs = async () => {
+        if (!transferMinister || !transferTargetId || transferSaving || !effectiveChurchId) return
+        setTransferSaving(true)
+        setTransferError(null)
+        try {
+            const response = await churchFetch(effectiveChurchId, '/api/songs/transfer', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from_minister_id: transferMinister.id, to_minister_id: transferTargetId }),
+            })
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Não foi possível transferir as músicas.')
+            setTransferMinister(null)
+            setTransferTargetId('')
+        } catch (error) {
+            setTransferError(error instanceof Error ? error.message : 'Não foi possível transferir as músicas.')
+        } finally {
+            setTransferSaving(false)
         }
     }
 
@@ -257,6 +282,18 @@ export default function MinistrosPage() {
 
                                             {/* Actions */}
                                             <div className="flex shrink-0 items-center">
+                                                {viewerIsAdmin && minister.access_state === 'suspended' && ministers.some(item => item.access_state === 'active' && item.is_active && item.id !== minister.id) && (
+                                                    <Button
+                                                        variant="outline" size="sm" className="mr-1"
+                                                        onClick={() => {
+                                                            setTransferError(null)
+                                                            setTransferMinister(minister)
+                                                            setTransferTargetId('')
+                                                        }}
+                                                    >
+                                                        Transferir músicas
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
@@ -353,6 +390,36 @@ export default function MinistrosPage() {
                         )}
                     </section>
                 )}
+
+                <Dialog open={Boolean(transferMinister)} onOpenChange={open => { if (!open && !transferSaving) setTransferMinister(null) }}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Transferir músicas</DialogTitle>
+                            <DialogDescription>
+                                As músicas de {transferMinister?.name} serão atribuídas ao integrante escolhido. A transferência é registrada e não altera atribuições ou histórico da escala.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <label className="space-y-2 text-sm font-medium">
+                            Integrante ativo de destino
+                            <select
+                                value={transferTargetId}
+                                onChange={event => setTransferTargetId(event.target.value)}
+                                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                            >
+                                <option value="">Selecione uma pessoa</option>
+                                {ministers.filter(item => item.access_state === 'active' && item.is_active && item.id !== transferMinister?.id)
+                                    .map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                            </select>
+                        </label>
+                        {transferError && <Alert variant="destructive"><AlertDescription role="alert">{transferError}</AlertDescription></Alert>}
+                        <DialogFooter>
+                            <Button variant="outline" disabled={transferSaving} onClick={() => setTransferMinister(null)}>Cancelar</Button>
+                            <Button disabled={!transferTargetId || transferSaving} onClick={() => void handleTransferSongs()}>
+                                {transferSaving ? 'Transferindo…' : 'Confirmar transferência'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </main>
 
             {/* ── Minister form ── */}

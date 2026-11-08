@@ -1,223 +1,55 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AuthContextError, getCurrentMinisterContext } from '@/lib/auth-context'
 import { reconcileMinisterCalendar } from '@/lib/google-calendar/reconcile'
+import { processScheduleEmailQueue } from '@/lib/notifications/schedule-email'
+import { scheduleMutationError } from '@/lib/schedule/mutation-result'
 
-interface AssignmentPayload {
-  id?: string
-  quarter_id?: string
-  role_id?: string
-  event_date?: string
-  event_type?: 'thursday' | 'sunday'
-  minister_id?: string | null
-  is_trainee?: boolean
-}
+const bodySchema = z.object({
+  id: z.string().uuid().optional(),
+  quarter_id: z.string().uuid().optional(),
+  role_id: z.string().uuid().optional(),
+  event_date: z.string().date().optional(),
+  event_type: z.enum(['thursday', 'sunday']).optional(),
+  minister_id: z.string().uuid().nullable(),
+  is_trainee: z.boolean().optional(),
+  conflict_override_reason: z.string().trim().min(1).max(500).optional(),
+}).strict().refine(body => body.id || (body.quarter_id && body.role_id && body.event_date && body.event_type))
 
 export async function PATCH(request: Request) {
   let context
   try {
     context = await getCurrentMinisterContext({ requireAdmin: true })
   } catch (error) {
-    if (error instanceof AuthContextError) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
-    }
+    if (error instanceof AuthContextError) return NextResponse.json({ error: error.message }, { status: error.status })
     throw error
   }
-
-  const payload = (await request.json()) as AssignmentPayload
-
-  if (!payload.id && (!payload.quarter_id || !payload.role_id || !payload.event_date || !payload.event_type)) {
-    return NextResponse.json(
-      { error: 'Dados insuficientes para atualizar a célula da escala' },
-      { status: 400 }
-    )
-  }
-
-  const adminSupabase = createAdminClient()
-
-  let roleId = payload.role_id ?? null
-  if (!roleId && payload.id) {
-    const { data: existingAssignment, error: existingAssignmentError } = await adminSupabase
-      .from('schedule_assignments')
-      .select('role_id')
-      .eq('id', payload.id)
-      .eq('church_id', context.churchId)
-      .single()
-
-    if (existingAssignmentError || !existingAssignment?.role_id) {
-      return NextResponse.json(
-        { error: existingAssignmentError?.message ?? 'Célula da escala não encontrada' },
-        { status: 400 }
-      )
-    }
-
-    roleId = existingAssignment.role_id
-  }
-
-  const { data: role, error: roleError } = await adminSupabase
-    .from('schedule_roles')
-    .select('id, name, category')
-    .eq('id', roleId as string)
-    .single()
-
-  if (roleError || !role) {
-    return NextResponse.json(
-      { error: roleError?.message ?? 'Função da escala não encontrada' },
-      { status: 400 }
-    )
-  }
-
-  if (role.category === 'midia' && payload.minister_id) {
-    const { data: selectedMinister, error: selectedMinisterError } = await adminSupabase
-      .from('ministers')
-      .select('id, role')
-      .eq('id', payload.minister_id)
-      .eq('church_id', context.churchId)
-      .single()
-
-    if (selectedMinisterError || selectedMinister?.role !== 'midia') {
-      return NextResponse.json(
-        { error: 'A função Sonoplasta aceita apenas usuários do grupo Mídia' },
-        { status: 400 }
-      )
-    }
-  }
-
-  let assignmentId = payload.id
-  let previousMinisterId: string | null = null
-
-  if (assignmentId) {
-    const { data: existingById, error: existingByIdError } = await adminSupabase
-      .from('schedule_assignments')
-      .select('minister_id')
-      .eq('id', assignmentId)
-      .eq('church_id', context.churchId)
-      .maybeSingle()
-
-    if (existingByIdError) {
-      return NextResponse.json({ error: existingByIdError.message }, { status: 500 })
-    }
-
-    previousMinisterId = existingById?.minister_id ?? null
-  } else {
-    const { data: quarter, error: quarterError } = await adminSupabase
-      .from('schedule_quarters')
-      .select('id')
-      .eq('id', payload.quarter_id as string)
-      .eq('church_id', context.churchId)
-      .maybeSingle()
-
-    if (quarterError) {
-      return NextResponse.json({ error: quarterError.message }, { status: 500 })
-    }
-
-    if (!quarter) {
-      return NextResponse.json({ error: 'Bimestre não encontrado' }, { status: 404 })
-    }
-
-    const { data: existing, error: existingError } = await adminSupabase
-      .from('schedule_assignments')
-      .select('id, minister_id')
-      .eq('church_id', context.churchId)
-      .eq('quarter_id', payload.quarter_id as string)
-      .eq('role_id', payload.role_id as string)
-      .eq('event_date', payload.event_date as string)
-      .eq('event_type', payload.event_type as string)
-      .maybeSingle()
-
-    if (existingError) {
-      return NextResponse.json({ error: existingError.message }, { status: 500 })
-    }
-
-    if (existing?.id) {
-      assignmentId = existing.id
-      previousMinisterId = existing.minister_id ?? null
-    }
-  }
-
-  const writePayload = {
-    minister_id: payload.minister_id ?? null,
-    is_trainee: payload.minister_id ? Boolean(payload.is_trainee) : false,
-  }
-
-  if (payload.minister_id) {
-    const { data: selectedMinister, error: selectedMinisterError } = await adminSupabase
-      .from('ministers')
-      .select('id')
-      .eq('id', payload.minister_id)
-      .eq('church_id', context.churchId)
-      .maybeSingle()
-
-    if (selectedMinisterError) {
-      return NextResponse.json({ error: selectedMinisterError.message }, { status: 500 })
-    }
-
-    if (!selectedMinister) {
-      return NextResponse.json({ error: 'Ministro não encontrado nesta igreja' }, { status: 400 })
-    }
-  }
-
-  let writeError: string | null = null
-
-  if (assignmentId) {
-    const { error } = await adminSupabase
-      .from('schedule_assignments')
-      .update(writePayload)
-      .eq('id', assignmentId)
-      .eq('church_id', context.churchId)
-
-    if (error) writeError = error.message
-  } else {
-    const { error } = await adminSupabase
-      .from('schedule_assignments')
-      .insert({
-        church_id: context.churchId,
-        quarter_id: payload.quarter_id,
-        role_id: payload.role_id,
-        event_date: payload.event_date,
-        event_type: payload.event_type,
-        ...writePayload,
-      })
-
-    if (error) writeError = error.message
-  }
-
-  if (writeError) {
-    return NextResponse.json({ error: writeError }, { status: 500 })
-  }
-
-  const query = adminSupabase
-    .from('schedule_assignments')
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos para atualizar a célula.' }, { status: 400 })
+  const { conflict_override_reason, ...payload } = parsed.data
+  const admin = createAdminClient()
+  // The database derives identity from id, validates every path, locks conflicting
+  // mutations, and commits the assignment, exception audit and email outbox together.
+  const { data, error } = await admin.rpc('wf32_mutate_schedule', {
+    p_church: context.churchId, p_actor: context.ministerId, p_operation: 'assignment',
+    p_payload: payload, p_reason: conflict_override_reason ?? null,
+  })
+  if (error) return scheduleMutationError(error, true)
+  const { data: assignment, error: readError } = await admin.from('schedule_assignments')
     .select('id, church_id, quarter_id, role_id, minister_id, is_trainee, event_date, event_type, minister:ministers(id, name, avatar_url)')
-    .eq('church_id', context.churchId)
-
-  const { data: assignment, error: assignmentError } = assignmentId
-    ? await query.eq('id', assignmentId).single()
-    : await query
-        .eq('quarter_id', payload.quarter_id as string)
-        .eq('role_id', payload.role_id as string)
-        .eq('event_date', payload.event_date as string)
-        .eq('event_type', payload.event_type as string)
-        .single()
-
-  if (assignmentError || !assignment) {
-    return NextResponse.json(
-      { error: assignmentError?.message ?? 'Falha ao retornar a célula atualizada' },
-      { status: 500 }
-    )
-  }
-
-  const newMinisterId = payload.minister_id ?? null
-  const affectedMinisterIds = new Set(
-    [newMinisterId, previousMinisterId].filter((v): v is string => v !== null)
-  )
-  for (const id of affectedMinisterIds) {
-    try {
-      await reconcileMinisterCalendar(id)
-    } catch (syncError) {
-      console.error('Erro ao sincronizar Google Calendar após edição de célula:', syncError)
+    .eq('church_id', context.churchId).eq('id', data.id).single()
+  if (readError) return NextResponse.json({ error: 'A célula foi salva; atualize a página para carregá-la.' }, { status: 500 })
+  const calendarErrors: Array<{ ministerId: string; error: string }> = []
+  for (const id of new Set<string>((data.affected_minister_ids ?? []).filter(Boolean))) {
+    try { await reconcileMinisterCalendar(id) } catch (syncError) {
+      calendarErrors.push({ ministerId: id, error: syncError instanceof Error ? syncError.message : 'Falha ao sincronizar calendário.' })
     }
   }
-
-  return NextResponse.json({ assignment })
+  let notification = { processed: 0, sent: 0, failed: 0, skipped: 0 }
+  let notificationError: string | null = null
+  try { notification = await processScheduleEmailQueue(200) } catch {
+    notificationError = 'Alteração salva. Os avisos estão na fila para nova tentativa automática.'
+  }
+  return NextResponse.json({ assignment, notification, notification_error: notificationError, calendar_sync: { errors: calendarErrors } })
 }

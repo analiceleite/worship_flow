@@ -27,9 +27,23 @@ function fakeAdmin(tables) {
       if (filter.op === 'eq') return row[filter.column] === filter.value
       if (filter.op === 'in') return filter.value.includes(row[filter.column])
       if (filter.op === 'lt') return row[filter.column] < filter.value
+      if (filter.op === 'notNull') return row[filter.column] != null
       return true
     })
+    if (query.upsert) {
+      for (const row of query.upsert) {
+        const existing = table.find(item => item.dedupe_key === row.dedupe_key)
+        if (!existing) table.push(row)
+        else if (!query.ignoreDuplicates) Object.assign(existing, row)
+      }
+      tables[query.table] = table
+      return { data: null, error: null }
+    }
     if (query.update) {
+      if (query.update.status === 'sent') {
+        const failing = table.find(row => matches(row) && row.fail_next_sent)
+        if (failing) { failing.fail_next_sent = false; return { data: null, error: { message: 'Simulated DB failure after provider accepted email' } } }
+      }
       for (const row of table.filter(matches)) Object.assign(row, query.update)
       return { data: null, error: null }
     }
@@ -37,14 +51,25 @@ function fakeAdmin(tables) {
   }
 
   return {
+    async rpc(name, { p_id }) {
+      assert.equal(name, 'wf32_claim_email')
+      const row = (tables.schedule_email_notifications ?? []).find(row => row.id === p_id)
+      if (!row || !['pending', 'failed'].includes(row.status) || row.attempts >= 3) return { data: null, error: null }
+      row.status = 'processing'
+      row.attempts += 1
+      return { data: row.attempts, error: null }
+    },
     from(table) {
       const query = { table, filters: [], update: null }
       const builder = {
         select() { return builder },
         update(values) { query.update = values; return builder },
+        upsert(values, options) { query.upsert = values; query.ignoreDuplicates = options.ignoreDuplicates; return builder },
+        not(column) { query.filters.push({ column, op: 'notNull' }); return builder },
         eq(column, value) { query.filters.push({ column, op: 'eq', value }); return builder },
         in(column, value) { query.filters.push({ column, op: 'in', value }); return builder },
         lt(column, value) { query.filters.push({ column, op: 'lt', value }); return builder },
+        or() { return builder },
         order() { return builder },
         limit() { return builder },
         then(resolve, reject) { return Promise.resolve(run(query)).then(resolve, reject) },
@@ -111,6 +136,7 @@ test('send-time revalidation uses the current identity and sends only when allow
     const scheduler = schedulerWith(tables, async (url, init) => {
       calls += 1
       assert.equal(url, 'https://api.resend.com/emails')
+      assert.equal(init.headers['Idempotency-Key'], 'wf-schedule-queue-1')
       const body = JSON.parse(init.body)
       assert.deepEqual(body.to, ['current@example.com'])
       assert.match(body.text, /Pessoa atual/)
@@ -125,5 +151,79 @@ test('send-time revalidation uses the current identity and sends only when allow
     else process.env.RESEND_API_KEY = previousKey
     if (previousFrom === undefined) delete process.env.RESEND_FROM_EMAIL
     else process.env.RESEND_FROM_EMAIL = previousFrom
+  }
+})
+
+test('concurrent workers claim an email once', async () => {
+  const tables = fixture({ queueRow: { church: { status: 'active', environment: 'test', email_mode: 'disabled' } } })
+  const scheduler = schedulerWith(tables, () => assert.fail('No real mail in this test'))
+  const results = await Promise.all([scheduler.processScheduleEmailQueue(), scheduler.processScheduleEmailQueue()])
+  assert.equal(results.reduce((total, result) => total + result.processed, 0), 1)
+  assert.equal(tables.schedule_email_notifications[0].attempts, 1)
+})
+
+test('retry after provider success and database failure reuses exact request and idempotency key', async () => {
+  const previousKey = process.env.RESEND_API_KEY, previousFrom = process.env.RESEND_FROM_EMAIL
+  process.env.RESEND_API_KEY = 'local-test-only'
+  process.env.RESEND_FROM_EMAIL = 'test@local.test'
+  try {
+    const tables = fixture({ queueRow: { fail_next_sent: true } })
+    const requests = []
+    const scheduler = schedulerWith(tables, async (_, init) => {
+      requests.push({ key: init.headers['Idempotency-Key'], body: init.body })
+      return new Response('{}', { status: 200 })
+    })
+    assert.equal((await scheduler.processScheduleEmailQueue()).failed, 1)
+    tables.ministers[0].name = 'Renamed between attempts'
+    assert.equal((await scheduler.processScheduleEmailQueue()).sent, 1)
+    assert.equal(requests.length, 2)
+    assert.deepEqual(requests[0], requests[1])
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = previousKey
+    if (previousFrom === undefined) delete process.env.RESEND_FROM_EMAIL; else process.env.RESEND_FROM_EMAIL = previousFrom
+  }
+})
+
+test('uncertain delivery is not resent beyond provider idempotency window', async () => {
+  const tables = fixture({ queueRow: { delivery_started_at: new Date(Date.now() - 25 * 3600_000).toISOString() } })
+  const scheduler = schedulerWith(tables, () => assert.fail('Must not resend after idempotency expiry'))
+  const result = await scheduler.processScheduleEmailQueue()
+  assert.equal(result.failed, 1)
+  assert.equal(tables.schedule_email_notifications[0].attempts, 3)
+  assert.match(tables.schedule_email_notifications[0].last_error, /conferência manual/)
+})
+
+test('publication reconciliation preserves queued retries, attempts and original payload', async () => {
+  const tables = {
+    schedule_assignments: [{ church_id:'church', quarter_id:'quarter', minister_id:'person', event_date:'2026-01-08', event_type:'thursday',
+      minister:{ id:'person', name:'Person', email:'person@local.test', is_active:true }, role:{ name:'Voice' } }],
+    schedule_email_notifications: [],
+  }
+  const scheduler = schedulerWith(tables)
+  const input = { churchId:'church', bimesterId:'quarter', bimesterName:'Quarter', publicationRevision:4 }
+  await scheduler.enqueueBimesterPublishedNotifications(input)
+  assert.equal(tables.schedule_email_notifications.length, 1)
+  assert.equal(tables.schedule_email_notifications[0].dedupe_key, 'quarter_published:church:quarter:4:person')
+  tables.schedule_email_notifications[0].status = 'failed'
+  tables.schedule_email_notifications[0].attempts = 2
+  const snapshot = JSON.stringify(tables.schedule_email_notifications[0])
+  await scheduler.enqueueBimesterPublishedNotifications({ ...input, bimesterName:'Cosmetic rename' })
+  assert.equal(JSON.stringify(tables.schedule_email_notifications[0]), snapshot)
+})
+
+test('cron passes the same publication revision as the publication operation', async () => {
+  const previous = process.env.CRON_SECRET
+  process.env.CRON_SECRET = 'local-cron-test'
+  try {
+    const calls = []
+    const api = load('app/api/notifications/schedule/enqueue-published/route.ts', {
+      '@/lib/supabase/admin': { createAdminClient: () => fakeAdmin({ schedule_quarters:[{id:'quarter',church_id:'church',name:'Quarter',is_published:true,publication_revision:4}] }) },
+      '@/lib/notifications/schedule-email': { enqueueBimesterPublishedNotifications: async input => { calls.push(input); return {queued:0} } },
+    })
+    const response = await api.POST(new Request('http://localhost', {method:'POST',headers:{'x-cron-secret':'local-cron-test'}}))
+    assert.equal(response.status, 200)
+    assert.equal(calls[0].publicationRevision, 4)
+  } finally {
+    if (previous === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = previous
   }
 })
