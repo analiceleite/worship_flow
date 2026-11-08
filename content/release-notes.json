@@ -1,11 +1,21 @@
 [
   {
+    "id": "wf-32-mobile-schedule-builder",
+    "version": "1.3.0",
+    "date": "2026-11-08",
+    "title": "Montar e gerenciar escalas ficou mais simples no celular",
+    "summary": "Administradores agora montam a escala por uma agenda de cultos, com filtros para encontrar funções em aberto e eventos cancelados. Abra um culto para escolher a equipe, definir o responsável e organizar o ensaio. As alterações são salvas automaticamente, com opção de tentar novamente em caso de falha. Antes de publicar, confira as pendências e os avisos que serão enviados à equipe. Conflitos de horário são verificados, e exceções administrativas exigem justificativa. Também é possível cancelar e reativar cultos preservando o histórico. No computador, a visualização em grade continua disponível.",
+    "href": "/schedule",
+    "published": true,
+    "notify": true
+  },
+  {
     "id": "wf-04-invitations-multichurch",
     "version": "1.2.0",
     "date": "2026-11-07",
     "title": "Convites para entrar na igreja e acesso a mais de uma igreja",
     "summary": "Administradores agora convidam integrantes por e-mail, sem criar senhas temporárias. A pessoa abre o link do convite, cria a própria conta, confirma o e-mail e entra na igreja. Quem já tem conta usa a mesma conta para participar de outra igreja. Administradores acompanham os convites pendentes na tela de Ministros e podem reenviar ou revogar um convite.",
-    "published": false,
+    "published": true,
     "notify": false
   },
   {

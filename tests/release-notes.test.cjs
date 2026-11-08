@@ -26,11 +26,8 @@ const releaseNotes = loadReleaseNotes()
 
 test('release groups are ordered by version newest first, even when published on the same date', () => {
   const groups = releaseNotes.groupReleaseNotesByVersion(notes)
-  assert.deepEqual(groups.map(group => group.version), ['1.1.2', '1.1.1', '1.1.0', '1.0.0'])
-  assert.equal(groups[0].notes.length, 1)
-  assert.equal(groups[1].notes.length, 1)
-  assert.equal(groups[2].notes.length, 3)
-  assert.equal(groups[3].notes.length, 1)
+  assert.deepEqual(groups.map(group => group.version), ['1.3.0', '1.2.0', '1.1.2', '1.1.1', '1.1.0', '1.0.0'])
+  assert.deepEqual(groups.map(group => group.notes.length), [1, 1, 1, 1, 3, 1])
   assert.deepEqual(releaseNotes.getPublishedReleaseNotes(new Date('2026-11-06')).map(note => note.version), ['1.1.1', '1.1.0', '1.1.0', '1.1.0', '1.0.0'])
 })
 
@@ -118,14 +115,8 @@ test('WF-11 is the 1.1.2 patch release with a published schedule link and its ow
   assert.equal(note.date, '2026-11-07')
   assert.equal(note.published, true)
   assert.equal(note.notify, true)
-  assert.equal(releaseNotes.getPublishedReleaseNotes(new Date('2026-11-07'))[0].id, note.id)
+  assert.equal(releaseNotes.getPublishedReleaseNotes(new Date('2026-11-07')).some(item => item.id === note.id), true)
   assert.equal(releaseNotes.getPublishedReleaseNotes(new Date('2026-11-06')).some(item => item.id === note.id), false)
-  assert.equal(releaseNotes.getAppVersion(), process.env.NEXT_PUBLIC_APP_VERSION || '1.1.2')
-  const metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-  const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'))
-  assert.equal(metadata.version, note.version)
-  assert.equal(lock.version, metadata.version)
-  assert.equal(lock.packages[''].version, metadata.version)
   const oldIds = notes.filter(item => item.id !== note.id).map(item => item.id)
   const route = routeFor('existing-media-user', { 'existing-media-user': oldIds })
   assert.equal((await (await route.GET()).json()).unreadCount, 1)
@@ -136,14 +127,15 @@ test('previously read notes do not hide new notes and reading is specific to eac
   const reads = { first: [...oldIds], second: [...oldIds] }
   const first = routeFor('first', reads)
   const second = routeFor('second', reads)
-  assert.equal((await (await first.GET()).json()).unreadCount, 4)
+  const expectedUnread = notes.filter(note => note.published && note.notify !== false && !oldIds.includes(note.id)).length
+  assert.equal((await (await first.GET()).json()).unreadCount, expectedUnread)
   const response = await first.POST(new Request('http://localhost/api/release-notes', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ noteIds: notes.map(note => note.id) }),
   }))
   assert.equal(response.status, 200)
   assert.equal((await (await first.GET()).json()).unreadCount, 0)
-  assert.equal((await (await second.GET()).json()).unreadCount, 4)
+  assert.equal((await (await second.GET()).json()).unreadCount, expectedUnread)
 })
 
 test('reading only a subset leaves other unread notes visible in the indicator', async () => {
@@ -154,6 +146,31 @@ test('reading only a subset leaves other unread notes visible in the indicator',
     body: JSON.stringify({ noteIds: ['wf-110-profile-photos'] }),
   }))
   assert.equal((await (await route.GET()).json()).unreadCount, count - 1)
+})
+
+test('WF-32 is published as 1.3.0 after production validation and independently unread', async () => {
+  const note = notes.find(item => item.id === 'wf-32-mobile-schedule-builder')
+  assert.ok(note)
+  assert.equal(note.version, '1.3.0')
+  assert.equal(note.date, '2026-11-08')
+  assert.equal(note.href, '/schedule')
+  assert.equal(note.published, true)
+  assert.equal(note.notify, true)
+  assert.equal(releaseNotes.getPublishedReleaseNotes(new Date('2026-11-08'))[0].id, note.id)
+  assert.equal(releaseNotes.getPublishedReleaseNotes(new Date('2026-11-07')).some(item => item.id === note.id), false)
+  const metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'))
+  assert.equal(metadata.version, note.version)
+  assert.equal(lock.version, metadata.version)
+  assert.equal(lock.packages[''].version, metadata.version)
+  assert.equal(releaseNotes.getAppVersion(), process.env.NEXT_PUBLIC_APP_VERSION || metadata.version)
+  const reads = { 'existing-user': notes.filter(item => item.id !== note.id).map(item => item.id) }
+  const route = routeFor('existing-user', reads)
+  assert.equal((await (await route.GET()).json()).unreadCount, 1)
+  await route.POST(new Request('http://localhost/api/release-notes', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ noteIds: [note.id] }),
+  }))
+  assert.equal((await (await route.GET()).json()).unreadCount, 0)
 })
 
 test('navigation alert has an accessible count and remains visible when collapsed', () => {
