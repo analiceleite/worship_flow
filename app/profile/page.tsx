@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ErrorState } from '@/components/ui/error-state'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { ProfilePhoto } from '@/components/profile-photo'
@@ -43,7 +42,6 @@ type GoogleCalendarStatus = {
 
 export default function ProfilePage() {
   const router = useRouter()
-  const [supabase] = useState(() => createClient())
 
   const [loading, setLoading] = useState(true)
   const [minister, setMinister] = useState<any>(null)
@@ -53,49 +51,77 @@ export default function ProfilePage() {
   const [selectedAlarms, setSelectedAlarms] = useState<number[]>([720, 60])
   const [selectedEmailReminders, setSelectedEmailReminders] = useState<number[]>([10080, 1440])
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveBusy = useRef(false)
   const [googleStatus, setGoogleStatus] = useState<GoogleCalendarStatus | null>(null)
   const [googleActionLoading, setGoogleActionLoading] = useState(false)
+  const [globalPreferencesError, setGlobalPreferencesError] = useState<string | null>(null)
+  const [globalPreferencesLoading, setGlobalPreferencesLoading] = useState(true)
+  const [globalPreferencesLoaded, setGlobalPreferencesLoaded] = useState(false)
+  const [googleError, setGoogleError] = useState<string | null>(null)
+  const [googleLoading, setGoogleLoading] = useState(true)
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { context } = await loadChurchContext()
-        const data = await loadSelectedMinister(context)
-        if (!data) throw new Error('Perfil local indisponível neste contexto de suporte.')
-        setMinister(data)
-        setEmailRemindersEnabled(data.email_reminders_enabled ?? true)
-        setSelectedAlarms(data.calendar_alarm_offsets_minutes || [720, 60])
-        setSelectedEmailReminders(data.email_reminder_offsets_minutes || [10080, 1440])
-
-        try {
-          const profileResponse = await churchFetch(data.church_id, '/api/profile')
-          if (profileResponse.ok) {
-            const { profile } = await profileResponse.json()
-            setOptionalPaused(profile?.optional_notifications_paused ?? false)
-          }
-        } catch {
-          // The local preferences remain usable if the global projection is unavailable.
-        }
-      } catch (error) {
-        setContextError(error instanceof Error ? error.message : 'Não foi possível consultar seu perfil.')
-      } finally {
-        setLoading(false)
-      }
+  const loadGlobalPreferences = useCallback(async (churchId: string) => {
+    setGlobalPreferencesLoading(true)
+    setGlobalPreferencesError(null)
+    try {
+      const response = await churchFetch(churchId, '/api/profile')
+      if (!response.ok) throw new Error('Profile unavailable')
+      const { profile } = await response.json()
+      if (typeof profile?.optional_notifications_paused !== 'boolean') throw new Error('Invalid profile')
+      setOptionalPaused(profile.optional_notifications_paused)
+      setGlobalPreferencesLoaded(true)
+    } catch {
+      setGlobalPreferencesLoaded(false)
+      setGlobalPreferencesError('Não foi possível consultar a pausa global. Ela não será alterada ao salvar as preferências locais.')
+    } finally {
+      setGlobalPreferencesLoading(false)
     }
+  }, [])
 
-    checkAuth()
-  }, [supabase, router])
+  const loadProfile = useCallback(async () => {
+    setLoading(true)
+    setContextError(null)
+    try {
+      const { context } = await loadChurchContext()
+      const data = await loadSelectedMinister(context)
+      if (!data) throw new Error('Perfil local indisponível neste contexto de suporte.')
+      setMinister(data)
+      setEmailRemindersEnabled(data.email_reminders_enabled ?? true)
+      setSelectedAlarms(data.calendar_alarm_offsets_minutes || [720, 60])
+      setSelectedEmailReminders(data.email_reminder_offsets_minutes || [10080, 1440])
+
+      await loadGlobalPreferences(data.church_id)
+    } catch (error) {
+      setContextError(error instanceof Error ? error.message : 'Não foi possível consultar seu perfil.')
+    } finally {
+      setLoading(false)
+    }
+  }, [loadGlobalPreferences])
 
   useEffect(() => {
-    const churchId = minister?.church_id
-    if (!churchId) return
-    let active = true
-    churchFetch(churchId, '/api/google-calendar/status')
-      .then((r) => r.json())
-      .then((status) => { if (active) setGoogleStatus(status) })
-      .catch(() => {})
-    return () => { active = false }
-  }, [minister?.church_id])
+    void loadProfile()
+  }, [loadProfile])
+
+  const loadGoogleStatus = useCallback(async (churchId: string) => {
+    setGoogleLoading(true)
+    setGoogleError(null)
+    try {
+      const response = await churchFetch(churchId, '/api/google-calendar/status')
+      if (!response.ok) throw new Error('Status unavailable')
+      const status = await response.json()
+      if (typeof status.connected !== 'boolean') throw new Error('Invalid status')
+      setGoogleStatus(status)
+    } catch {
+      setGoogleError('Não foi possível consultar o Google Calendar. O estado da conexão é desconhecido.')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (minister?.church_id) void loadGoogleStatus(minister.church_id)
+  }, [minister?.church_id, loadGoogleStatus])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -120,13 +146,8 @@ export default function ProfilePage() {
     }
   }, [router])
 
-  const refreshGoogleStatus = async (churchId: string) => {
-    const response = await churchFetch(churchId, '/api/google-calendar/status')
-    if (!response.ok) throw new Error('Falha ao consultar o Google Calendar.')
-    setGoogleStatus(await response.json())
-  }
-
   const handleDisconnectGoogle = async () => {
+    if (googleActionLoading) return
     setGoogleActionLoading(true)
     try {
       if (!minister) throw new Error('Não foi possível identificar a igreja atual.')
@@ -137,8 +158,8 @@ export default function ProfilePage() {
       })
       if (!res.ok) throw new Error('Failed to disconnect')
       toast.success('Conta Google desconectada.')
-      await refreshGoogleStatus(minister.church_id)
-    } catch (error) {
+      await loadGoogleStatus(minister.church_id)
+    } catch {
       toast.error('Erro ao desconectar.')
     } finally {
       setGoogleActionLoading(false)
@@ -146,6 +167,7 @@ export default function ProfilePage() {
   }
 
   const handleChurchSyncToggle = async (enabled: boolean) => {
+    if (googleActionLoading) return
     setGoogleActionLoading(true)
     try {
       if (!minister) throw new Error('Não foi possível identificar a igreja atual.')
@@ -156,8 +178,8 @@ export default function ProfilePage() {
       })
       if (!res.ok) throw new Error('Failed to update sync selection')
       toast.success(enabled ? 'Sincronização desta igreja ativada.' : 'Sincronização desta igreja parada.')
-      await refreshGoogleStatus(minister.church_id)
-    } catch (error) {
+      await loadGoogleStatus(minister.church_id)
+    } catch {
       toast.error('Erro ao atualizar a sincronização.')
     } finally {
       setGoogleActionLoading(false)
@@ -181,9 +203,12 @@ export default function ProfilePage() {
   }
 
   const handleSavePreferences = async () => {
+    if (saveBusy.current) return
+    saveBusy.current = true
     setSaving(true)
+    setSaveError(null)
     try {
-      if (!minister) return
+      if (!minister) throw new Error('Não foi possível identificar a igreja atual.')
       const response = await churchFetch(minister.church_id, '/api/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -191,28 +216,23 @@ export default function ProfilePage() {
           calendar_alarm_offsets_minutes: selectedAlarms,
           email_reminders_enabled: emailRemindersEnabled,
           email_reminder_offsets_minutes: selectedEmailReminders,
-          optional_notifications_paused: optionalPaused,
+          ...(globalPreferencesLoaded ? { optional_notifications_paused: optionalPaused } : {}),
         }),
       })
 
-      if (!response.ok) throw new Error('Failed to save preferences')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || 'Não foi possível salvar as preferências. Tente novamente.')
+      }
 
       toast.success('Preferências salvas com sucesso!')
 
-      // Refresh minister data
-      const { data } = await supabase
-        .from('ministers')
-        .select('*')
-        .eq('id', minister.id)
-        .eq('church_id', minister.church_id)
-        .single()
-
-      if (data) {
-        setMinister(data)
-      }
     } catch (error) {
-      toast.error('Erro ao salvar preferências')
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar as preferências. Tente novamente.'
+      setSaveError(message)
+      toast.error(message)
     } finally {
+      saveBusy.current = false
       setSaving(false)
     }
   }
@@ -222,7 +242,16 @@ export default function ProfilePage() {
   }
 
   if (!minister) {
-    return <main className="p-4"><Alert variant="destructive"><AlertDescription role="alert">{contextError ?? 'Sua participação nesta igreja está indisponível.'}</AlertDescription><Button variant="outline" onClick={() => window.location.reload()}>Tentar novamente</Button></Alert></main>
+    return (
+      <main className="p-4">
+        <ErrorState
+          title="Não foi possível consultar seu perfil"
+          message={contextError ?? 'Sua participação nesta igreja está indisponível.'}
+          onRetry={() => void loadProfile()}
+          retrying={loading}
+        />
+      </main>
+    )
   }
 
   return (
@@ -285,7 +314,12 @@ export default function ProfilePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {googleStatus?.connected ? (
+              {googleLoading ? (
+                <p role="status">Consultando Google Calendar…</p>
+              ) : googleError ? (
+                <ErrorState title="Google Calendar indisponível" message={googleError}
+                  onRetry={() => void loadGoogleStatus(minister.church_id)} />
+              ) : googleStatus?.connected ? (
                 <div className="space-y-3">
                   <div className="rounded-lg border border-border bg-muted/50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -394,21 +428,37 @@ export default function ProfilePage() {
                     Vale para todas as igrejas. Convites, recuperação de conta e avisos essenciais de segurança continuam sendo enviados.
                   </p>
                 </div>
-                <Switch
-                  id="optional-communications-paused"
-                  aria-describedby="optional-communications-description"
-                  checked={optionalPaused}
-                  onCheckedChange={setOptionalPaused}
-                />
-              </div>
+                  <Switch
+                    id="optional-communications-paused"
+                    aria-describedby="optional-communications-description"
+                    checked={optionalPaused}
+                    disabled={!globalPreferencesLoaded || globalPreferencesLoading || saving}
+                    onCheckedChange={setOptionalPaused}
+                  />
+                </div>
+                {globalPreferencesLoading && <p role="status">Consultando pausa global…</p>}
+                {globalPreferencesError && (
+                  <ErrorState title="Pausa global indisponível" message={globalPreferencesError}
+                    onRetry={() => void loadGlobalPreferences(minister.church_id)}
+                    retrying={globalPreferencesLoading} />
+                )}
             </CardContent>
           </Card>
 
           {/* Save Button */}
-          <div className="pt-2">
+          <div className="space-y-3 pt-2">
+            {saveError && (
+              <ErrorState
+                title="Não foi possível salvar as preferências"
+                message={saveError}
+                onRetry={() => void handleSavePreferences()}
+                retrying={saving}
+              />
+            )}
             <Button
               onClick={handleSavePreferences}
               disabled={saving}
+              aria-busy={saving}
               className="w-full sm:w-auto"
               size="lg"
             >

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -28,37 +29,61 @@ export function DeleteDialog({
   onConfirm,
 }: DeleteDialogProps) {
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const busy = useRef(false)
+
+  useEffect(() => {
+    if (open) setError(null)
+  }, [open])
 
   const handleConfirm = async () => {
+    if (busy.current) return
+    busy.current = true
     setLoading(true)
+    setError(null)
     try {
       await onConfirm()
       onOpenChange(false)
-    } catch (error) {
-      console.error('Erro ao excluir:', error)
+    } catch (err) {
+      console.error('Erro ao excluir:', err)
+      setError(err instanceof Error && err.message
+        ? err.message
+        : 'Não foi possível concluir a exclusão. Tente novamente.')
     } finally {
+      busy.current = false
       setLoading(false)
     }
   }
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!busy.current) onOpenChange(nextOpen)
+  }
+
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+      <AlertDialogContent aria-busy={loading}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>Não foi possível excluir</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
         <AlertDialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
             Cancelar
           </Button>
           <Button
             variant="destructive"
             onClick={handleConfirm}
             disabled={loading}
+            aria-busy={loading}
           >
             {loading && <Spinner className="mr-2" />}
-            Excluir
+            {loading ? 'Excluindo…' : 'Excluir'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

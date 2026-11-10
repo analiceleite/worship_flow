@@ -17,7 +17,9 @@ import { CifraViewer } from '@/components/cifra-viewer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ErrorState } from '@/components/ui/error-state'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 import {
     Select,
     SelectContent,
@@ -277,12 +279,22 @@ export default function RepertorioPage() {
     const [formOpen, setFormOpen] = useState(false)
     const [deletingItem, setDeletingItem] = useState<RepertoireItem | null>(null)
     const [deletingEvent, setDeletingEvent] = useState<SpecialEvent | null>(null)
+    const [deleteError, setDeleteError] = useState<string | null>(null)
+    const [deleteSaving, setDeleteSaving] = useState(false)
     const [createEventOpen, setCreateEventOpen] = useState(false)
     const [editingEvent, setEditingEvent] = useState<SpecialEvent | null>(null)
     const [editEventName, setEditEventName] = useState('')
     const [editEventError, setEditEventError] = useState<string | null>(null)
     const [reorderEnabled, setReorderEnabled] = useState(false)
     const [reorderError, setReorderError] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [catalogError, setCatalogError] = useState<string | null>(null)
+    const [catalogLoading, setCatalogLoading] = useState(false)
+    const [catalogRetry, setCatalogRetry] = useState(0)
+    const [eventsError, setEventsError] = useState<string | null>(null)
+    const [eventsRetry, setEventsRetry] = useState(0)
+    const [eventSaving, setEventSaving] = useState(false)
+    const eventBusy = useRef(false)
     const [contextError, setContextError] = useState<string | null>(null)
     const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
@@ -335,11 +347,12 @@ export default function RepertorioPage() {
         if (!effectiveChurchId) return [] as SpecialEvent[]
 
         const supabase = createClient()
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('special_events')
             .select('*')
             .eq('church_id', effectiveChurchId)
             .order('event_date')
+        if (error) throw new Error('Não foi possível consultar os eventos especiais.')
         if (data) { setSpecialEvents(data); return data }
         return [] as SpecialEvent[]
     }, [effectiveChurchId])
@@ -359,10 +372,15 @@ export default function RepertorioPage() {
 
     useEffect(() => {
         if (!currentMinister) return
+        let active = true
         setWeekLoading(true)
+        setEventsError(null)
         const days = getWeekDays(weekAnchor)
-        fetchSpecialEvents().then(events => buildDayInfoMap(events, days))
-    }, [weekAnchor, currentMinister, fetchSpecialEvents, buildDayInfoMap])
+        void fetchSpecialEvents().then(events => { if (active) buildDayInfoMap(events, days) })
+            .catch(() => { if (active) setEventsError('Não foi possível consultar os eventos especiais desta semana.') })
+            .finally(() => { if (active) setWeekLoading(false) })
+        return () => { active = false }
+    }, [weekAnchor, currentMinister, fetchSpecialEvents, buildDayInfoMap, eventsRetry])
 
     // ── Repertoire ─────────────────────────────────────────────────────────────
 
@@ -371,6 +389,7 @@ export default function RepertorioPage() {
         const generation = ++requestGeneration.current
         const key = currentContext.current
         setLoading(true)
+        setLoadError(null)
         try {
             const params = new URLSearchParams({ date: toDateStr(selectedDay.date), eventName: selectedDay.eventName })
             const response = await churchFetch(effectiveChurchId, `/api/repertoire?${params}`)
@@ -381,13 +400,14 @@ export default function RepertorioPage() {
             setRepertoire(snapshot.items)
             setRevision(snapshot.revision)
             setSnapshotContext(key)
+            setLoadError(null)
             setPage(p => clampRepertoirePage(p, snapshot.total))
             return snapshot
         } catch (error) {
             if (generation === requestGeneration.current && key === currentContext.current) {
                 setRepertoire([])
                 setSnapshotContext(null)
-                setReorderError(error instanceof Error ? error.message : 'Erro ao carregar repertório.')
+                setLoadError(error instanceof Error ? error.message : 'Erro ao carregar repertório.')
             }
         } finally {
             if (generation === requestGeneration.current && key === currentContext.current) setLoading(false)
@@ -411,6 +431,8 @@ export default function RepertorioPage() {
     useEffect(() => {
         if (!effectiveChurchId) return
         let active = true
+        setCatalogLoading(true)
+        setCatalogError(null)
         setSongs([])
         setMinisters([])
         void churchFetch(effectiveChurchId, '/api/repertoire/catalog').then(async response => {
@@ -420,10 +442,10 @@ export default function RepertorioPage() {
             setSongs(result.songs.sort((a: Song, b: Song) => a.title.localeCompare(b.title, 'pt-BR')))
             setMinisters(result.ministers.sort((a: Minister, b: Minister) => a.name.localeCompare(b.name, 'pt-BR')))
         }).catch(() => {
-            if (active) setReorderError('Não foi possível carregar músicas e ministros. Atualize a página.')
-        })
+            if (active) setCatalogError('Não foi possível carregar músicas e ministros.')
+        }).finally(() => { if (active) setCatalogLoading(false) })
         return () => { active = false }
-    }, [effectiveChurchId])
+    }, [effectiveChurchId, catalogRetry])
 
     const mutateRepertoire = async (command: RepertoireCommand, event = selectedDay, expectedRevision = revision) => {
         if (!event || !effectiveChurchId || operationBusy.current || loading || snapshotContext !== currentContext.current) return false
@@ -483,23 +505,38 @@ export default function RepertorioPage() {
     }
 
     const handleDeleteItem = async () => {
-        if (!deletingItem || !effectiveChurchId) return
+        if (!deletingItem || !effectiveChurchId || deleteSaving) return
         if (!(isAdmin || isSinger)) {
             setDeletingItem(null)
+            toast.error('Você não tem permissão para remover músicas do repertório.')
             return
         }
-        await mutateRepertoire({ action: 'remove', itemId: deletingItem.id })
+        setDeleteSaving(true)
+        setDeleteError(null)
+        const success = await mutateRepertoire({ action: 'remove', itemId: deletingItem.id })
+        setDeleteSaving(false)
+        if (!success) {
+            setReorderError(null)
+            setDeleteError('Não foi possível confirmar a remoção. Confira o repertório atualizado antes de tentar novamente.')
+            return
+        }
         setDeletingItem(null)
     }
 
     const handleDeleteEvent = async () => {
-        if (!deletingEvent || !effectiveChurchId) return
+        if (!deletingEvent || !effectiveChurchId || deleteSaving) return
+        setDeleteSaving(true)
+        setDeleteError(null)
         const success = await mutateRepertoire({ action: 'deleteEvent', eventId: deletingEvent.id })
-        if (!success) return
+        setDeleteSaving(false)
+        if (!success) {
+            setReorderError(null)
+            setDeleteError('Não foi possível confirmar a exclusão. Confira o evento e o repertório atualizado antes de tentar novamente.')
+            return
+        }
         setDeletingEvent(null)
         if (selectedDay?.specialEventId === deletingEvent.id) setSelectedDay(getNearestServiceDay(new Date()))
-        const events = await fetchSpecialEvents()
-        buildDayInfoMap(events, getWeekDays(weekAnchor))
+        setEventsRetry(value => value + 1)
     }
 
     const handleRenameEvent = async (e: React.FormEvent) => {
@@ -507,18 +544,28 @@ export default function RepertorioPage() {
         setEditEventError(null)
         if (!editingEvent || !effectiveChurchId) return
         if (!editEventName.trim()) { setEditEventError('Informe o nome do evento.'); return }
-        const { error } = await createClient()
-            .from('special_events')
-            .update({ name: editEventName.trim() })
-            .eq('id', editingEvent.id)
-            .eq('church_id', effectiveChurchId)
-        if (error) { setEditEventError(error.message); return }
-        if (selectedDay?.specialEventId === editingEvent.id) {
-            setSelectedDay(prev => prev ? { ...prev, eventName: editEventName.trim() } : prev)
+        if (eventBusy.current) return
+        eventBusy.current = true
+        setEventSaving(true)
+        try {
+            const { data, error } = await createClient()
+                .from('special_events')
+                .update({ name: editEventName.trim() })
+                .eq('id', editingEvent.id)
+                .eq('church_id', effectiveChurchId)
+                .select('id').single()
+            if (error || !data) throw new Error('Update not confirmed')
+            if (selectedDay?.specialEventId === editingEvent.id) {
+                setSelectedDay(prev => prev ? { ...prev, eventName: editEventName.trim() } : prev)
+            }
+            setEditingEvent(null)
+            setEventsRetry(value => value + 1)
+        } catch {
+            setEditEventError('Não foi possível confirmar a alteração. Confira o evento antes de tentar novamente.')
+        } finally {
+            eventBusy.current = false
+            setEventSaving(false)
         }
-        setEditingEvent(null)
-        const events = await fetchSpecialEvents()
-        buildDayInfoMap(events, getWeekDays(weekAnchor))
     }
 
     const handleCreateEvent = async (e: React.FormEvent) => {
@@ -527,16 +574,25 @@ export default function RepertorioPage() {
         if (!newEventName.trim()) { setNewEventError('Informe o nome do evento.'); return }
         if (!newEventDate) { setNewEventError('Informe a data.'); return }
         if (!currentMinister || !effectiveChurchId) { setNewEventError('Não foi possível identificar a igreja atual.'); return }
-        const { data, error } = await createClient().from('special_events').insert({ church_id: effectiveChurchId, name: newEventName.trim(), event_date: newEventDate, created_by: currentMinister.id }).select().single()
-        if (error) { setNewEventError(error.message); return }
-        setCreateEventOpen(false)
-        setNewEventName('')
-        setNewEventDate('')
-        const newDate = fromDateStr(newEventDate)
-        const events = await fetchSpecialEvents()
-        setWeekAnchor(newDate)
-        buildDayInfoMap(events, getWeekDays(newDate))
-        setSelectedDay({ date: newDate, serviceType: 'special', eventName: data.name, specialEventId: data.id })
+        if (eventBusy.current) return
+        eventBusy.current = true
+        setEventSaving(true)
+        try {
+            const { data, error } = await createClient().from('special_events').insert({ church_id: effectiveChurchId, name: newEventName.trim(), event_date: newEventDate, created_by: currentMinister.id }).select().single()
+            if (error || !data) throw new Error('Creation not confirmed')
+            setCreateEventOpen(false)
+            setNewEventName('')
+            setNewEventDate('')
+            const newDate = fromDateStr(newEventDate)
+            setWeekAnchor(newDate)
+            setEventsRetry(value => value + 1)
+            setSelectedDay({ date: newDate, serviceType: 'special', eventName: data.name, specialEventId: data.id })
+        } catch {
+            setNewEventError('Não foi possível confirmar a criação. Confira a semana antes de tentar novamente para evitar duplicar o evento.')
+        } finally {
+            eventBusy.current = false
+            setEventSaving(false)
+        }
     }
 
     const handleOpenAddForm = () => {
@@ -761,6 +817,10 @@ export default function RepertorioPage() {
                 </div>
 
                 {/* ── Content ── */}
+                {eventsError && <ErrorState className="mb-4" title="Eventos especiais indisponíveis"
+                    message={eventsError} onRetry={() => setEventsRetry(value => value + 1)} retrying={weekLoading} />}
+                {catalogError && <ErrorState className="mb-4" title="Catálogo indisponível"
+                    message={catalogError} onRetry={() => setCatalogRetry(value => value + 1)} retrying={catalogLoading} />}
                 {!selectedDay ? (
                     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16 text-center">
                         <CalendarDays className="mb-3 h-8 w-8 text-muted-foreground/40" />
@@ -833,7 +893,7 @@ export default function RepertorioPage() {
                                             </Button>
                                             <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                                 aria-label={`Excluir evento ${activeSpecialEvent.name}`}
-                                                title="Excluir evento especial" onClick={() => setDeletingEvent(activeSpecialEvent!)}>
+                                                title="Excluir evento especial" onClick={() => { setDeleteError(null); setDeletingEvent(activeSpecialEvent!) }}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>
@@ -961,17 +1021,24 @@ export default function RepertorioPage() {
                         {saving && <p role="status" className="text-sm text-muted-foreground">Salvando repertório…</p>}
                         {exporting && <p role="status" className="text-sm text-muted-foreground">Preparando exportação…</p>}
                         {reorderError && (
-                            <Alert variant="destructive">
-                                <AlertDescription>{reorderError}</AlertDescription>
-                                <Button type="button" variant="outline" size="sm" disabled={saving || loading}
-                                    onClick={() => { setReorderError(null); void fetchRepertoire() }}>Atualizar repertório</Button>
-                            </Alert>
+                            <ErrorState title="Confira o repertório" message={reorderError}
+                                retryLabel="Atualizar repertório" retrying={saving || loading}
+                                onRetry={() => { setReorderError(null); void fetchRepertoire() }} />
+                        )}
+
+                        {loadError && !loading && (
+                            <ErrorState
+                                title="Não foi possível carregar o repertório"
+                                message={loadError}
+                                onRetry={() => void fetchRepertoire()}
+                                retrying={loading}
+                            />
                         )}
 
                         {/* ── List + Pagination ── */}
                         {loading ? (
                             <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
-                        ) : snapshotContext !== contextKey ? (
+                        ) : loadError ? null : snapshotContext !== contextKey ? (
                             <p role="status" className="py-8 text-center text-sm text-muted-foreground">Aguardando carregamento do repertório. Use “Atualizar repertório” se houver erro.</p>
                         ) : repertoire.length === 0 ? (
                             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-14 text-center">
@@ -1071,7 +1138,7 @@ export default function RepertorioPage() {
                                                 {(isAdmin || isSinger) && (
                                                     <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                                         aria-label={`Remover ${item.song?.title ?? 'música'}`} disabled={saving}
-                                                        onClick={() => setDeletingItem(item)}>
+                                                        onClick={() => { setDeleteError(null); setDeletingItem(item) }}>
                                                         <Trash2 className="h-3.5 w-3.5" />
                                                     </Button>
                                                 )}
@@ -1186,7 +1253,7 @@ export default function RepertorioPage() {
             </Dialog>
 
             {/* ── Create event dialog ── */}
-            <Dialog open={createEventOpen} onOpenChange={setCreateEventOpen}>
+            <Dialog open={createEventOpen} onOpenChange={open => { if (!eventBusy.current) setCreateEventOpen(open) }}>
                 <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
@@ -1206,29 +1273,36 @@ export default function RepertorioPage() {
                             <Input type="date" value={newEventDate} onChange={e => setNewEventDate(e.target.value)} />
                         </div>
                         <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setCreateEventOpen(false)}>Cancelar</Button>
-                            <Button type="submit">Criar evento</Button>
+                            <Button type="button" variant="outline" disabled={eventSaving} onClick={() => setCreateEventOpen(false)}>Cancelar</Button>
+                            <Button type="submit" disabled={eventSaving} aria-busy={eventSaving}>{eventSaving ? 'Criando…' : 'Criar evento'}</Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>
             </Dialog>
 
             {/* ── Delete song dialog ── */}
-            <AlertDialog open={!!deletingItem} onOpenChange={open => !open && setDeletingItem(null)}>
-                <AlertDialogContent>
+            <AlertDialog open={!!deletingItem} onOpenChange={open => { if (!open && !deleteSaving) { setDeletingItem(null); setDeleteError(null) } }}>
+                <AlertDialogContent aria-busy={deleteSaving}>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Remover do Repertório</AlertDialogTitle>
                         <AlertDialogDescription>Tem certeza que deseja remover "{deletingItem?.song?.title}" do repertório?</AlertDialogDescription>
                     </AlertDialogHeader>
+                    {deleteError && <Alert variant="destructive"><AlertDescription>{deleteError}</AlertDescription></Alert>}
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteItem} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Remover</AlertDialogAction>
+                        <AlertDialogCancel disabled={deleteSaving}>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={deleteSaving}
+                            onClick={event => { event.preventDefault(); void handleDeleteItem() }}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {deleteSaving ? 'Removendo…' : 'Remover'}
+                        </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
 
             {/* ── Rename event dialog ── */}
-            <Dialog open={!!editingEvent} onOpenChange={open => !open && setEditingEvent(null)}>
+            <Dialog open={!!editingEvent} onOpenChange={open => { if (!open && !eventBusy.current) setEditingEvent(null) }}>
                 <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
@@ -1244,26 +1318,31 @@ export default function RepertorioPage() {
                             <Input value={editEventName} onChange={e => setEditEventName(e.target.value)} autoFocus />
                         </div>
                         <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setEditingEvent(null)}>Cancelar</Button>
-                            <Button type="submit">Salvar</Button>
+                            <Button type="button" variant="outline" disabled={eventSaving} onClick={() => setEditingEvent(null)}>Cancelar</Button>
+                            <Button type="submit" disabled={eventSaving} aria-busy={eventSaving}>{eventSaving ? 'Salvando…' : 'Salvar'}</Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>
             </Dialog>
 
             {/* ── Delete event dialog ── */}
-            <AlertDialog open={!!deletingEvent} onOpenChange={open => !open && setDeletingEvent(null)}>
-                <AlertDialogContent>
+            <AlertDialog open={!!deletingEvent} onOpenChange={open => { if (!open && !deleteSaving) { setDeletingEvent(null); setDeleteError(null) } }}>
+                <AlertDialogContent aria-busy={deleteSaving}>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Excluir Evento Especial</AlertDialogTitle>
                         <AlertDialogDescription>
                             Tem certeza que deseja excluir "{deletingEvent?.name}"? Todo o repertório vinculado também será removido. Esta ação não pode ser desfeita.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    {deleteError && <Alert variant="destructive"><AlertDescription>{deleteError}</AlertDescription></Alert>}
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteEvent} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Excluir evento e repertório
+                        <AlertDialogCancel disabled={deleteSaving}>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={deleteSaving}
+                            onClick={event => { event.preventDefault(); void handleDeleteEvent() }}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {deleteSaving ? 'Excluindo…' : 'Excluir evento e repertório'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

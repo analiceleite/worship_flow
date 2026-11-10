@@ -5,6 +5,7 @@ import { PrivacyAwareAnalytics } from '@/components/privacy-aware-analytics'
 import { PwaRegister } from '@/components/pwa-register'
 import { ThemeProvider } from '@/components/theme-provider'
 import { ApplicationShell } from '@/components/application-shell'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -52,6 +53,7 @@ export default function RootLayout({
           {isProduction ? <PwaRegister /> : null}
           <ApplicationShell>{children}</ApplicationShell>
           <PrivacyAwareAnalytics />
+          <Toaster position="top-right" closeButton />
         </ThemeProvider>
       </body>
     </html>

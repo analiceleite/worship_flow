@@ -7,6 +7,7 @@ import { MinisterForm } from '@/components/minister-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ErrorState } from '@/components/ui/error-state'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
     AlertDialog,
@@ -23,6 +24,8 @@ import { Plus, Search, Users, Pencil, UserRoundX, UserRoundCheck, RefreshCw, Ban
 import { Spinner } from '@/components/ui/spinner'
 import { churchFetch, loadChurchContext } from '@/lib/auth/client-context'
 import type { InvitationSummary } from '@/lib/invitations/types'
+import { toast } from 'sonner'
+import { invitationDeliveryFeedback } from '@/lib/operation-feedback'
 
 export default function MinistrosPage() {
     const [ministers, setMinisters] = useState<Minister[]>([])
@@ -44,12 +47,14 @@ export default function MinistrosPage() {
     const [currentMinister, setCurrentMinister] = useState<Minister | null>(null)
     const [effectiveChurchId, setEffectiveChurchId] = useState<string | null>(null)
     const [loadError, setLoadError] = useState<string | null>(null)
+    const [invitationsError, setInvitationsError] = useState<string | null>(null)
     const [viewerIsAdmin, setViewerIsAdmin] = useState(false)
     const loadedChurchId = useRef<string | null>(null)
 
     const fetchMinisters = useCallback(async () => {
         setLoading(true)
         setLoadError(null)
+        setInvitationsError(null)
         try {
             const { context } = await loadChurchContext(loadedChurchId.current ?? undefined)
             const [membersResult, invitationsResult] = await Promise.all([
@@ -64,11 +69,20 @@ export default function MinistrosPage() {
             setEffectiveChurchId(context.churchId)
             loadedChurchId.current = context.churchId
             setMinisters(rows)
-            if (invitationsResult?.ok) {
-                const payload = await invitationsResult.json().catch(() => ({}))
-                setInvitations(Array.isArray(payload.invitations) ? payload.invitations : [])
-            } else {
+            if (!invitationsResult) {
                 setInvitations([])
+                setInvitationsError('Não foi possível carregar os convites. A lista de integrantes continua disponível.')
+            } else if (!invitationsResult.ok) {
+                setInvitations([])
+                setInvitationsError('Não foi possível carregar os convites. A lista de integrantes continua disponível.')
+            } else {
+                try {
+                    const payload = await invitationsResult.json()
+                    if (!Array.isArray(payload.invitations)) throw new Error('Invalid invitations')
+                    setInvitations(payload.invitations)
+                } catch {
+                    setInvitationsError('Não foi possível carregar os convites. Tente novamente.')
+                }
             }
         } catch (error) {
             setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar a equipe.')
@@ -93,6 +107,7 @@ export default function MinistrosPage() {
             })
             const result = await response.json()
             if (!response.ok) throw new Error(result.error || 'Erro ao alterar o acesso')
+            toast.success(accessMinister.access_state === 'suspended' ? 'Acesso reativado.' : 'Acesso suspenso.')
             setAccessMinister(null)
             await fetchMinisters()
         } catch (error: unknown) {
@@ -113,6 +128,7 @@ export default function MinistrosPage() {
             })
             const result = await response.json()
             if (!response.ok) throw new Error(result.error || 'Não foi possível transferir as músicas.')
+            toast.success('Músicas transferidas.')
             setTransferMinister(null)
             setTransferTargetId('')
         } catch (error) {
@@ -132,6 +148,12 @@ export default function MinistrosPage() {
             })
             const result = await response.json().catch(() => ({}))
             if (!response.ok) throw new Error(result.error || 'Não foi possível concluir a ação do convite.')
+            if (action === 'resend') {
+                const feedback = invitationDeliveryFeedback(result.delivery?.status)
+                toast[feedback.kind](feedback.message)
+            } else {
+                toast.success('Convite revogado.')
+            }
             if (action === 'revoke') setRevokeInvite(null)
             await fetchMinisters()
         } catch (error: unknown) {
@@ -215,7 +237,12 @@ export default function MinistrosPage() {
                     </div>
 
                 ) : loadError ? (
-                    <Alert variant="destructive"><AlertDescription role="alert">{loadError}</AlertDescription><Button variant="outline" onClick={() => void fetchMinisters()}>Tentar novamente</Button></Alert>
+                    <ErrorState
+                        title="Não foi possível carregar a equipe"
+                        message={loadError}
+                        onRetry={() => void fetchMinisters()}
+                        retrying={loading}
+                    />
                 ) : filteredMinisters.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                         <div className="mb-4 rounded-2xl bg-muted p-5">
@@ -334,11 +361,20 @@ export default function MinistrosPage() {
                         <p className="mb-4 text-sm text-muted-foreground">
                             {pendingInvitations.length} {pendingInvitations.length === 1 ? 'convite pendente' : 'convites pendentes'}. Convites aceitos e revogados ficam no histórico.
                         </p>
+                        {invitationsError && (
+                            <ErrorState
+                                className="mb-4"
+                                title="Não foi possível carregar os convites"
+                                message={invitationsError}
+                                onRetry={() => void fetchMinisters()}
+                                retrying={loading}
+                            />
+                        )}
                         {inviteError && (
                             <Alert variant="destructive" className="mb-4"><AlertDescription role="alert">{inviteError}</AlertDescription></Alert>
                         )}
                         {invitations.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">Nenhum convite enviado ainda.</p>
+                            invitationsError ? null : <p className="text-sm text-muted-foreground">Nenhum convite enviado ainda.</p>
                         ) : (
                             <ul className="space-y-2">
                                 {invitations.map(invitation => {
