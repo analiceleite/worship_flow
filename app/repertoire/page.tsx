@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { churchFetch, loadChurchContext, loadSelectedMinister } from '@/lib/auth/client-context'
 
 import { UserAvatar } from '@/components/user-avatar'
@@ -733,13 +734,13 @@ export default function RepertorioPage() {
     // ── Render ─────────────────────────────────────────────────────────────────
 
     if (contextError) return (
-        <main className="p-6"><Alert variant="destructive"><AlertDescription role="alert">{contextError}</AlertDescription><Button variant="outline" onClick={() => void checkUserRole()}>Tentar novamente</Button></Alert></main>
+        <main className={`${PAGE_WIDTH} py-6`}><Alert variant="destructive"><AlertDescription role="alert">{contextError}</AlertDescription><Button variant="outline" onClick={() => void checkUserRole()}>Tentar novamente</Button></Alert></main>
     )
 
     return (
         <div className="min-h-screen bg-background">
 
-            <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <main className={`${PAGE_WIDTH} py-6`}>
 
                 {/* ── Page header ── */}
                 <div className="mb-6 flex items-center justify-between gap-4">

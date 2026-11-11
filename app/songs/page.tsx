@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { loadChurchContext, loadSelectedMinister } from '@/lib/auth/client-context'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -216,7 +217,7 @@ export default function HomePage() {
     return (
         <div className="min-h-screen bg-background">
 
-            <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <main className={`${PAGE_WIDTH} py-6`}>
                 <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-foreground">
