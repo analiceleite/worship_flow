@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { format, getISOWeek, getISOWeekYear } from 'date-fns'
@@ -383,7 +384,7 @@ export default function EscalaPage() {
 		<div className="min-h-screen bg-background">
 			{conflictDialog}
 
-			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+			<main className={`${PAGE_WIDTH} py-6`}>
 				<div className="mb-6">
 					<h1 className="text-2xl font-bold text-foreground">Escala de Louvor</h1>
 					<p className="text-sm text-muted-foreground">

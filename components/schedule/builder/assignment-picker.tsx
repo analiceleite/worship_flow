@@ -10,12 +10,22 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { UserAvatar } from '@/components/user-avatar'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { selectedChurchFetch } from '@/lib/auth/client-context'
+import { sortByLoad } from '@/lib/schedule/montar-escala'
 import type { AssignmentMinister, ScheduleAssignment, ScheduleRole } from '@/components/schedule/ScheduleGrid'
 
 export type SaveAssignment = (assignment: ScheduleAssignment, minister: AssignmentMinister | null, trainee: boolean) => Promise<void>
 
-export function AssignmentPicker({ assignment, role, eventLabel, disabled, onSave }: {
+function countLabel(count: number) {
+  if (count === 0) return 'Sem cultos neste período'
+  return count === 1 ? '1 culto neste período' : `${count} cultos neste período`
+}
+
+export function AssignmentPicker({ assignment, role, eventLabel, disabled, onSave, load, sameEvent }: {
   assignment: ScheduleAssignment; role: ScheduleRole; eventLabel: string; disabled: boolean; onSave: SaveAssignment
+  /** Cultos do período em que cada pessoa está escalada. */
+  load: Map<string, number>
+  /** Nomes das outras funções que a pessoa já ocupa neste culto. Não bloqueia a escolha. */
+  sameEvent: (ministerId: string, assignmentId: string) => string[]
 }) {
   const mobile = useIsMobile()
   const [open, setOpen] = useState(false)
@@ -73,12 +83,14 @@ export function AssignmentPicker({ assignment, role, eventLabel, disabled, onSav
         {loading ? <div className="space-y-2" aria-label="Buscando integrantes">{[0, 1, 2].map(i => <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />)}</div>
           : searchError ? <div role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm"><p>{searchError}</p><Button variant="outline" className="mt-3 min-h-11" onClick={() => setRetry(value => value + 1)}>Tentar busca novamente</Button></div>
           : options.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">Nenhum integrante encontrado. Tente outro nome.</p>
-          : <ul className="space-y-1">{options.map(option => (
+          : <ul className="space-y-1">{sortByLoad(options, load).map(option => (
             <li key={option.id}>
               <button type="button" disabled={saving || disabled} onClick={() => void pick(option)} className="flex min-h-16 w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
                 <UserAvatar name={option.name} avatarUrl={option.avatar_url} className="h-10 w-10 shrink-0" />
                 <span className="min-w-0 flex-1"><span className="block break-words text-sm font-medium">{option.name}</span>
                   {options.some(other => other.id !== option.id && other.name === option.name) && option.email ? <span className="block break-all text-xs text-muted-foreground">{option.email}</span> : null}
+                  <span className="block text-xs text-muted-foreground">{countLabel(load.get(option.id) ?? 0)}</span>
+                  {sameEvent(option.id, assignment.id).length ? <span className="block text-xs font-medium text-amber-800 dark:text-amber-300">Já escalado neste culto: {sameEvent(option.id, assignment.id).join(', ')}</span> : null}
                   {assignment.minister_id === option.id ? <span className="block text-xs text-muted-foreground">Escalado nesta função</span> : null}
                 </span>
                 {assignment.minister_id === option.id ? <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> : null}

@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { BuilderData, BuilderEvent } from '@/lib/schedule/builder-model'
 import { eventTime } from '@/lib/schedule/builder-model'
+import { ministerLoad, rolesInSameEvent, type CopyItem } from '@/lib/schedule/montar-escala'
+import { CopyTeamSheet } from './copy-team-sheet'
 import type { ScheduleRehearsal } from '@/components/schedule/ScheduleGrid'
 import { AssignmentPicker, type SaveAssignment } from './assignment-picker'
 import { eventDateLabel } from './schedule-event-list'
@@ -17,8 +19,8 @@ import { ScheduleSaveStatus, type SaveState } from './schedule-save-status'
 export interface EventControlChange { leaderMinisterId?: string | null; action?: 'cancel' | 'reactivate' }
 export type RehearsalChange = Pick<ScheduleRehearsal, 'rehearsal_date' | 'rehearsal_time' | 'rehearsal_place'>
 
-export function ScheduleEventEditor({ data, event, statuses, busy, initialAction, onInitialActionHandled, rehearsalError, onRetryRehearsals, onBack, onNavigate, hasPrevious, hasNext, onSaveAssignment, onSaveControl, onSaveRehearsal }: {
-  data: BuilderData; event: BuilderEvent; statuses: Record<string, SaveState>; busy: boolean
+export function ScheduleEventEditor({ data, event, events, statuses, busy, initialAction, onInitialActionHandled, rehearsalError, onRetryRehearsals, onBack, onNavigate, hasPrevious, hasNext, onSaveAssignment, onSaveControl, onSaveRehearsal }: {
+  data: BuilderData; event: BuilderEvent; events: BuilderEvent[]; statuses: Record<string, SaveState>; busy: boolean
   initialAction?: 'cancel' | 'reactivate'
   onInitialActionHandled: () => void
   rehearsalError: string | null; onRetryRehearsals: () => void
@@ -40,6 +42,21 @@ export function ScheduleEventEditor({ data, event, statuses, busy, initialAction
   const assigned = new Set(event.assignments.map(item => item.minister_id).filter(Boolean))
   const leaders = data.active_ministers.filter(person => assigned.has(person.id))
   const roleMap = new Map(data.roles.map(role => [role.id, role]))
+  const load = ministerLoad(data)
+  const [copyOpen, setCopyOpen] = useState(false)
+  const sources = events.filter(item => item.key !== event.key && !item.cancelled && item.filled > 0)
+  // Salva uma vaga por vez, pelo mesmo fluxo das demais edições. Se uma falhar,
+  // para e informa quantas já foram salvas; a prévia recalcula ao tentar de novo.
+  const copyTeam = async (items: CopyItem[]) => {
+    for (const [index, item] of items.entries()) {
+      try {
+        await onSaveAssignment(item.assignment, { id: item.ministerId, name: item.ministerName, avatar_url: item.ministerAvatar }, item.isTrainee)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'Não foi possível salvar.'
+        throw new Error(`${index} de ${items.length} vagas copiadas. ${reason} As demais vagas não foram alteradas.`)
+      }
+    }
+  }
   const groups = [
     { category: 'ministro', title: 'Ministração' }, { category: 'vocal', title: 'Vozes' },
     { category: 'instrumento', title: 'Instrumentos' }, { category: 'midia', title: 'Equipe técnica' },
@@ -75,10 +92,12 @@ export function ScheduleEventEditor({ data, event, statuses, busy, initialAction
         if (!assignments.length) return null
         return <section key={group.category} aria-label={group.title}><h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.title}</h3><div className="divide-y divide-border/60">{assignments.map(assignment => {
           const role = roleMap.get(assignment.role_id)!
-          return <div key={assignment.id}><AssignmentPicker assignment={assignment} role={role} eventLabel={eventDateLabel(event.date)} disabled={busy || event.cancelled} onSave={onSaveAssignment} /><ScheduleSaveStatus status={statuses[assignment.id]} /></div>
+          return <div key={assignment.id}><AssignmentPicker assignment={assignment} role={role} eventLabel={eventDateLabel(event.date)} disabled={busy || event.cancelled} onSave={onSaveAssignment} load={load}
+            sameEvent={(ministerId, assignmentId) => rolesInSameEvent(event, data.roles, ministerId, assignmentId)} /><ScheduleSaveStatus status={statuses[assignment.id]} /></div>
         })}</div></section>
       })}
     </div>
+    <div className="mx-4 mb-5"><Button variant="outline" className="min-h-11 w-full" disabled={busy || event.cancelled || !sources.length} onClick={() => setCopyOpen(true)}>Copiar equipe de outro culto</Button></div>
     <div className="mx-4 mb-5 divide-y rounded-lg border">
       <div><button type="button" disabled={busy || event.cancelled} onClick={() => { setLocalError(null); setLeaderOpen(true) }} className="flex min-h-20 w-full items-center justify-between gap-3 p-4 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"><span><span className="block text-xs text-muted-foreground">Responsável pelo culto</span><span className="mt-1 block text-sm font-medium">{event.control?.leader?.name ?? 'Definir responsável'}</span></span><ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /></button><ScheduleSaveStatus status={statuses[`control:${event.key}`]} /></div>
       <div><button type="button" disabled={busy || event.cancelled || Boolean(rehearsalError)} onClick={openRehearsal} className="flex min-h-20 w-full items-center gap-3 p-4 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"><CalendarClock className="h-5 w-5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block text-xs text-muted-foreground">Ensaio</span><span className="mt-1 block text-sm font-medium">{event.rehearsal?.rehearsal_date ? new Intl.DateTimeFormat('pt-BR').format(new Date(`${event.rehearsal.rehearsal_date}T12:00:00`)) : 'Data não definida'}{event.rehearsal?.rehearsal_time ? ` · ${event.rehearsal.rehearsal_time.slice(0, 5)}` : ''}</span>{event.rehearsal?.rehearsal_place ? <span className="mt-1 block break-words text-xs text-muted-foreground">{event.rehearsal.rehearsal_place}</span> : null}</span><ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /></button>{rehearsalError ? <div role="alert" className="p-3 text-sm"><p>{rehearsalError}</p><Button variant="outline" className="mt-2 min-h-11" onClick={onRetryRehearsals}>Carregar ensaios novamente</Button></div> : null}<ScheduleSaveStatus status={statuses[`rehearsal:${event.key}`]} /></div>
@@ -96,5 +115,6 @@ export function ScheduleEventEditor({ data, event, statuses, busy, initialAction
       </form>
     </DialogContent></Dialog>
     <Dialog open={action !== null} onOpenChange={value => { if (!value && !busy) setAction(null) }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>{action === 'cancel' ? 'Cancelar este culto?' : 'Reativar este culto?'}</DialogTitle><DialogDescription>{action === 'cancel' ? 'As atribuições e o histórico serão preservados. Os integrantes serão avisados e o evento será retirado dos calendários sincronizados.' : 'O culto voltará à escala. Os conflitos serão verificados, os integrantes serão avisados e os calendários sincronizados serão atualizados.'}</DialogDescription></DialogHeader>{localError ? <p role="alert" className="text-sm text-destructive">{localError}</p> : null}<DialogFooter><Button variant="outline" className="min-h-11" disabled={busy} onClick={() => setAction(null)}>Voltar</Button><Button variant={action === 'cancel' ? 'destructive' : 'default'} className="min-h-11" disabled={busy} onClick={() => { if (action) void save(() => onSaveControl({ action }), () => setAction(null)) }}>{busy ? 'Salvando…' : action === 'cancel' ? 'Cancelar culto' : 'Reativar culto'}</Button></DialogFooter></DialogContent></Dialog>
+    <CopyTeamSheet open={copyOpen} onOpenChange={setCopyOpen} data={data} event={event} sources={sources} busy={busy} onApply={copyTeam} />
   </section>
 }

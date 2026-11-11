@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,7 +36,7 @@ export default function ReleaseNotesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+      <main className={`${PAGE_WIDTH} py-6`}>
         <header className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Novidades</h1>
           <p className="mt-2 text-sm text-muted-foreground">Melhorias recentes no Worship Flow.</p>
