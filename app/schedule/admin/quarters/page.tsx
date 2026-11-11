@@ -57,7 +57,7 @@ export default function EscalaQuartersPage() {
 	)
 
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="bg-background">
 
 			<main className={`${PAGE_WIDTH} py-6`}>
 				<div className="mb-6 flex flex-wrap items-start justify-between gap-3">

@@ -457,7 +457,7 @@ function EventRow({ event, quarterId }: { event: AnalyticsEvent; quarterId: stri
 
 function EventsTable({ events, quarterId }: { events: AnalyticsEvent[]; quarterId: string }) {
     return (
-        <div className="max-h-[560px] overflow-auto rounded-md border">
+        <div className="relative max-h-[560px] overflow-auto rounded-md border">
             <table className="w-full text-sm">
                 <caption className="sr-only">Cultos do bimestre com preenchimento e funções em aberto</caption>
                 <thead className="sticky top-0 bg-card z-10 text-left text-xs text-muted-foreground">
@@ -619,7 +619,7 @@ export default function ScheduleAdminDashboardPage() {
             : null
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="bg-background">
 
             <main className={`${PAGE_WIDTH} py-6 overflow-x-hidden`}>
 

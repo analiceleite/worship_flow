@@ -256,7 +256,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="bg-background">
 
       <main className={`${PAGE_WIDTH} py-6`}>
         {/* Header Section */}

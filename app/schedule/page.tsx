@@ -3,7 +3,7 @@
 import { PAGE_WIDTH } from '@/lib/page-layout'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { format, getISOWeek, getISOWeekYear } from 'date-fns'
+import { differenceInCalendarDays, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
@@ -24,17 +24,29 @@ import {
 	openScheduleWhatsAppShare,
 } from '@/lib/schedule-whatsapp'
 
-function formatWeekTag(dateStr: string) {
-	return `S${getISOWeek(new Date(`${dateStr}T12:00:00`))}`
+type EventType = 'thursday' | 'sunday'
+
+interface Commitment {
+	date: string
+	eventType: EventType
+	roles: Array<{ id: string; name: string; isTrainee: boolean }>
 }
+
+type RehearsalState = 'loading' | 'error' | 'ready'
 
 function formatFullDate(dateStr: string) {
 	return format(new Date(`${dateStr}T12:00:00`), "EEEE, dd 'de' MMMM", { locale: ptBR })
 }
 
-function isoWeekKey(dateStr: string) {
-	const date = new Date(`${dateStr}T12:00:00`)
-	return `${getISOWeekYear(date)}-${String(getISOWeek(date)).padStart(2, '0')}`
+function formatShortDate(dateStr: string) {
+	return format(new Date(`${dateStr}T12:00:00`), 'EEE, dd/MM', { locale: ptBR })
+}
+
+function daysLabel(dateStr: string, now: Date) {
+	const diff = differenceInCalendarDays(new Date(`${dateStr}T12:00:00`), now)
+	if (diff === 0) return 'Hoje'
+	if (diff === 1) return 'Amanhã'
+	return `Em ${diff} dias`
 }
 
 interface BimesterSummary extends ScheduleTimes {
@@ -114,6 +126,62 @@ function formatRehearsalSummary(rehearsal?: ScheduleRehearsal) {
 	return parts.length ? parts.join(' • ') : null
 }
 
+function CommitmentCard({
+	commitment,
+	bimester,
+	rehearsal,
+	rehearsalState,
+	hero,
+	now,
+}: {
+	commitment: Commitment
+	bimester: BimesterSummary
+	rehearsal?: ScheduleRehearsal
+	rehearsalState: RehearsalState
+	hero: boolean
+	now: Date
+}) {
+	const times = getScheduleTimeLabels(commitment.eventType, bimester)
+	const rehearsalSummary = formatRehearsalSummary(rehearsal)
+
+	return (
+		<Card className={hero ? 'border-primary/40 bg-primary/5' : undefined}>
+			<CardContent className={hero ? 'space-y-4 p-5' : 'space-y-2 p-4'}>
+				<div className="flex items-center justify-between gap-2">
+					<p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+						{hero ? 'Próximo compromisso' : commitment.eventType === 'thursday' ? 'Quinta' : 'Domingo'}
+					</p>
+					<Badge variant={hero ? 'default' : 'outline'}>{daysLabel(commitment.date, now)}</Badge>
+				</div>
+
+				<p className={hero ? 'text-xl font-bold capitalize text-foreground' : 'text-sm font-semibold capitalize text-foreground'}>
+					{hero ? formatFullDate(commitment.date) : formatShortDate(commitment.date)}
+				</p>
+
+				<ul className="space-y-1.5">
+					{commitment.roles.map(role => (
+						<li key={role.id} className="flex items-center gap-2 text-sm text-foreground">
+							<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+							{role.name}
+							{role.isTrainee ? <span className="text-muted-foreground">(Aprendiz)</span> : null}
+						</li>
+					))}
+				</ul>
+
+				<p className="text-sm text-muted-foreground">
+					Chegada: {times.arrival ?? 'não informada'} · Início do culto: {times.service ?? 'não informado'}
+				</p>
+
+				{rehearsalState === 'ready' && (
+					<p className="text-sm text-muted-foreground">
+						<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary ?? 'informações não cadastradas'}
+					</p>
+				)}
+			</CardContent>
+		</Card>
+	)
+}
+
 export default function EscalaPage() {
 	const { toast } = useToast()
 	const { request: scheduleMutationFetch, conflictDialog } = useScheduleMutation()
@@ -125,6 +193,8 @@ export default function EscalaPage() {
 	const [rehearsalError, setRehearsalError] = useState<string | null>(null)
 	const [rehearsalLoading, setRehearsalLoading] = useState(false)
 	const [rehearsalAttempt, setRehearsalAttempt] = useState(0)
+	const [generalType, setGeneralType] = useState<EventType>('thursday')
+	const [onlyMine, setOnlyMine] = useState(false)
 	const scheduleRequest = useRef<AbortController | null>(null)
 	const isMobile = useIsMobile()
 
@@ -210,21 +280,60 @@ export default function EscalaPage() {
 
 	const isAdmin = viewer?.role === 'admin'
 	const isMedia = viewer?.role === 'midia'
-	const canEditRehearsal = useCallback((eventDate: string, eventType: 'thursday' | 'sunday') => {
+	const canEditRehearsal = useCallback((eventDate: string, eventType: EventType) => {
 		const control = schedule?.event_controls.find(item => item.event_date === eventDate && item.event_type === eventType)
 		if (control?.status === 'cancelled') return false
 		if (viewer?.role === 'admin') return true
 		return Boolean(viewer && control?.leader_minister_id === viewer.id)
 	}, [schedule?.event_controls, viewer])
-	const today = format(new Date(), 'yyyy-MM-dd')
+	const now = new Date()
+	const today = format(now, 'yyyy-MM-dd')
+	const rehearsalState: RehearsalState = rehearsalLoading ? 'loading' : rehearsalError ? 'error' : 'ready'
+
 	const mediaCommitments = useMemo(
 		() => getMediaCommitments(schedule?.assignments ?? [], schedule?.roles ?? [], viewer?.id ?? '', today),
 		[schedule, viewer?.id, today],
 	)
 
+	// Próximas escalas do ministro (não-mídia), agrupadas por culto, da mais próxima para a mais distante.
+	const viewerCommitments = useMemo<Commitment[]>(() => {
+		if (!schedule || !viewer?.id) return []
+		const slots = new Map<string, Commitment>()
+		for (const a of schedule.assignments) {
+			if (a.minister_id !== viewer.id) continue
+			if (a.event_date < today) continue
+			const role = schedule.roles.find((r) => r.id === a.role_id)
+			if (!role) continue
+			const eventType = a.event_type as EventType
+			const key = `${a.event_date}_${eventType}`
+			if (!slots.has(key)) slots.set(key, { date: a.event_date, eventType, roles: [] })
+			slots.get(key)!.roles.push({ id: role.id, name: role.name, isTrainee: a.is_trainee })
+		}
+		return [...slots.values()].sort((x, y) => x.date.localeCompare(y.date) || x.eventType.localeCompare(y.eventType))
+	}, [schedule, viewer?.id, today])
+
+	// Mídia já usa a regra própria de compromissos; os demais usam o agrupamento acima.
+	const commitments = useMemo<Commitment[]>(() => {
+		if (!isMedia) return viewerCommitments
+		return mediaCommitments.upcoming.map(item => ({
+			date: item.date,
+			eventType: item.eventType as EventType,
+			roles: item.roles.map(role => ({ id: role.id, name: role.name, isTrainee: role.isTrainee })),
+		}))
+	}, [isMedia, viewerCommitments, mediaCommitments])
+
 	const assignedCount = useMemo(() => {
 		if (!schedule || !viewer?.id) return 0
 		return schedule.assignments.filter((item) => item.minister_id === viewer.id).length
+	}, [schedule, viewer?.id])
+
+	const mySlotKeys = useMemo(() => {
+		if (!schedule || !viewer?.id) return new Set<string>()
+		return new Set(
+			schedule.assignments
+				.filter((item) => item.minister_id === viewer.id)
+				.map((item) => `${item.event_date}_${item.event_type}`),
+		)
 	}, [schedule, viewer?.id])
 
 	const generalDates = useMemo(() => {
@@ -239,14 +348,14 @@ export default function EscalaPage() {
 			}
 		}
 
-		const today = new Date()
-		today.setHours(0, 0, 0, 0)
+		const todayStart = new Date()
+		todayStart.setHours(0, 0, 0, 0)
 
 		const filterCurrentAndFutureDates = (dates: string[]) =>
 			dates.filter((date) => {
 				const parsed = new Date(`${date}T12:00:00`)
 				parsed.setHours(0, 0, 0, 0)
-				return parsed >= today
+				return parsed >= todayStart
 			})
 
 		return {
@@ -255,58 +364,10 @@ export default function EscalaPage() {
 		}
 	}, [isMobile, schedule])
 
-	const weekPairs = useMemo(() => {
-		if (!schedule || !viewer?.id) return []
-
-		const weekMap = new Map<string, { thursday: string | null; sunday: string | null }>()
-		for (const date of schedule.dates.thursday) {
-			const week = isoWeekKey(date)
-			if (!weekMap.has(week)) weekMap.set(week, { thursday: null, sunday: null })
-			weekMap.get(week)!.thursday = date
-		}
-		for (const date of schedule.dates.sunday) {
-			const week = isoWeekKey(date)
-			if (!weekMap.has(week)) weekMap.set(week, { thursday: null, sunday: null })
-			weekMap.get(week)!.sunday = date
-		}
-
-		const myRolesBySlot = new Map<string, Array<{ role: ScheduleRole; isTrainee: boolean }>>()
-		for (const a of schedule.assignments) {
-			if (a.minister_id !== viewer.id) continue
-			const slotKey = `${a.event_date}_${a.event_type}`
-			if (!myRolesBySlot.has(slotKey)) myRolesBySlot.set(slotKey, [])
-			const role = schedule.roles.find((r) => r.id === a.role_id)
-			if (role) myRolesBySlot.get(slotKey)!.push({ role, isTrainee: a.is_trainee })
-		}
-
-		const today = new Date()
-		today.setHours(0, 0, 0, 0)
-		const currentISOWeek = getISOWeek(today)
-		const currentYear = getISOWeekYear(today)
-
-		return Array.from(weekMap.entries())
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(([weekKey, { thursday, sunday }]) => {
-				const week = Number(weekKey.split('-')[1])
-				const latestDateStr = sunday ?? thursday!
-				const latestDate = new Date(`${latestDateStr}T12:00:00`)
-				const weekYear = getISOWeekYear(latestDate)
-				const isPast = latestDate < today
-				const isCurrentWeek = week === currentISOWeek && weekYear === currentYear
-				return {
-					weekKey,
-					week,
-					thursday,
-					sunday,
-					// null = date doesn't exist; [] = date exists but user not assigned
-					thursdayRoles: thursday ? (myRolesBySlot.get(`${thursday}_thursday`) ?? []) : null,
-					sundayRoles: sunday ? (myRolesBySlot.get(`${sunday}_sunday`) ?? []) : null,
-					isCurrentWeek,
-					isPast,
-				}
-			})
-			.filter(({ isPast }) => !isPast)
-	}, [schedule, viewer?.id])
+	const generalShownDates = generalDates[generalType].filter(
+		(date) => !onlyMine || mySlotKeys.has(`${date}_${generalType}`),
+	)
+	const generalLabel = generalType === 'thursday' ? 'quinta-feira' : 'domingo'
 
 	const handleShareWhatsApp = useCallback(() => {
 		if (!schedule) return
@@ -332,7 +393,7 @@ export default function EscalaPage() {
 
 	const handleSaveRehearsal = useCallback(async (payload: {
 		eventDate: string
-		eventType: 'thursday' | 'sunday'
+		eventType: EventType
 		rehearsalDate: string | null
 		rehearsalTime: string | null
 		rehearsalPlace: string | null
@@ -380,15 +441,17 @@ export default function EscalaPage() {
 		})
 	}, [schedule, toast, viewer?.role, scheduleMutationFetch])
 
+	const [nextCommitment, ...laterCommitments] = commitments
+
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="bg-background">
 			{conflictDialog}
 
 			<main className={`${PAGE_WIDTH} py-6`}>
 				<div className="mb-6">
 					<h1 className="text-2xl font-bold text-foreground">Escala de Louvor</h1>
 					<p className="text-sm text-muted-foreground">
-						Visualização da escala publicada. Suas células aparecem destacadas.
+						Veja quando você toca e a escala de toda a equipe.
 					</p>
 				</div>
 
@@ -400,37 +463,6 @@ export default function EscalaPage() {
 							<Button variant="outline" className="ml-2" onClick={() => loadSchedule()}>Tentar novamente</Button>
 						</AlertDescription>
 					</Alert>
-				)}
-
-				{isAdmin && (
-					<Card className="mb-6">
-						<CardHeader className="py-4">
-							<CardTitle className="text-base">Gerenciar Escala</CardTitle>
-							<CardDescription>
-								Crie bimestres, preencha o builder e publique para liberar esta visualização.
-							</CardDescription>
-							<div className="flex flex-wrap gap-2 pt-2">
-								<Button asChild size="sm" variant="outline">
-									<Link href={ROUTES.SCHEDULE_ADMIN_DASHBOARD}>
-										<BarChart3 className="mr-2 h-3.5 w-3.5" />
-										Dashboard
-									</Link>
-								</Button>
-								<Button asChild size="sm" variant="outline">
-									<Link href={ROUTES.SCHEDULE_ADMIN_QUARTERS}>
-										<Settings2 className="mr-2 h-3.5 w-3.5" />
-										Bimestres
-									</Link>
-								</Button>
-								<Button asChild size="sm" variant="outline">
-									<Link href={ROUTES.SCHEDULE_ADMIN_BUILDER}>
-										<Settings2 className="mr-2 h-3.5 w-3.5" />
-										Abrir Builder
-									</Link>
-								</Button>
-							</div>
-						</CardHeader>
-					</Card>
 				)}
 
 				{loading ? (
@@ -469,7 +501,9 @@ export default function EscalaPage() {
 									<div className="flex flex-wrap items-center gap-2">
 										<Badge>Publicado</Badge>
 										<Badge variant="outline" className="p-1">
-											{assignedCount} {assignedCount === 1 ? 'atribuição' : 'atribuições'} para você.
+											{commitments.length === 0
+												? 'Sem escalas futuras para você'
+												: `${commitments.length} ${commitments.length === 1 ? 'escala futura' : 'escalas futuras'} para você`}
 										</Badge>
 										<Button
 											type="button"
@@ -496,6 +530,7 @@ export default function EscalaPage() {
 								</AlertDescription>
 							</Alert>
 						)}
+
 						<Tabs defaultValue="mine" className="w-full">
 							<TabsList>
 								<TabsTrigger value="mine">{isMedia ? 'Meus compromissos' : 'Minha Escala'}</TabsTrigger>
@@ -503,235 +538,151 @@ export default function EscalaPage() {
 							</TabsList>
 
 							{/* ── Minha Escala ───────────────────────────────── */}
-							<TabsContent value="mine" className="mt-3">
-								{isMedia ? (
-									<div className="space-y-3">
-										<p className="text-sm text-muted-foreground">Seus compromissos de hoje em diante. Consulte também a aba Escala Geral.</p>
-										{mediaCommitments.upcoming.length === 0 ? (
-											<Card>
-												<CardContent className="py-10 text-center text-sm">
-													{mediaCommitments.total === 0
-														? 'Você não possui atribuições neste período publicado.'
-														: 'Você não possui próximos compromissos neste período publicado.'}
-												</CardContent>
-											</Card>
-										) : mediaCommitments.upcoming.map(commitment => {
-											const times = getScheduleTimeLabels(commitment.eventType, schedule.bimester)
-											const rehearsal = rehearsalByDate[`${commitment.date}_${commitment.eventType}`]
-											return (
-												<Card key={`${commitment.date}_${commitment.eventType}`}>
-													<CardHeader className="pb-2">
-														<CardTitle className="text-base">{formatFullDate(commitment.date)}</CardTitle>
-													</CardHeader>
-													<CardContent className="space-y-2 text-sm">
-														<ul>
-															{commitment.roles.map(role => (
-																<li key={role.id}>{role.name}{role.isTrainee ? ' (Aprendiz)' : ''}</li>
-															))}
-														</ul>
-														<p>Chegada: {times.arrival ?? 'não informada'} · Início do culto: {times.service ?? 'não informado'}</p>
-														{!rehearsalLoading && !rehearsalError && <p>Ensaio: {formatRehearsalSummary(rehearsal) ?? 'informações não cadastradas'}</p>}
-													</CardContent>
-												</Card>
-											)
-										})}
-									</div>
-								) : weekPairs.length === 0 ? (
+							<TabsContent value="mine" className="mt-3 space-y-4">
+								{!nextCommitment ? (
 									<Card>
 										<CardContent className="flex flex-col items-center gap-3 py-16 text-center">
 											<div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted text-muted-foreground">
 												<UserCircle2 className="h-6 w-6" />
 											</div>
 											<div className="space-y-1">
-												<p className="text-sm font-medium text-foreground">Nenhuma próxima data neste período publicado</p>
+												<p className="text-sm font-medium text-foreground">
+													{(isMedia ? mediaCommitments.total : assignedCount) === 0
+														? 'Você não está escalado neste bimestre publicado.'
+														: 'Você não tem escalas futuras neste bimestre.'}
+												</p>
 												<p className="text-xs text-muted-foreground">
-													Consulte a aba Escala Geral para ver as datas disponíveis.
+													Consulte a aba Escala Geral para ver a equipe em cada data.
 												</p>
 											</div>
 										</CardContent>
 									</Card>
 								) : (
-									<div className="space-y-3">
-										{weekPairs.map(({ weekKey, week, thursday, sunday, thursdayRoles, sundayRoles, isCurrentWeek }) => (
-											<Card key={weekKey}>
-												<CardContent className="p-3">
-													{/* Week tag */}
-													<div className="mb-2.5 flex items-center gap-1.5">
-														<span className="inline-flex rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground">
-															S{week}
-														</span>
-														{isCurrentWeek && (
-															<span className="inline-flex rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
-																Semana atual
-															</span>
-														)}
-													</div>
+									<>
+										<CommitmentCard
+											commitment={nextCommitment}
+											bimester={schedule.bimester}
+											rehearsal={rehearsalByDate[`${nextCommitment.date}_${nextCommitment.eventType}`]}
+											rehearsalState={rehearsalState}
+											hero
+											now={now}
+										/>
 
-													{/* Two columns */}
-													<div className="grid grid-cols-2 gap-2">
-														{/* Thursday */}
-														{thursday ? (
-															(() => {
-																const rehearsalSummary = formatRehearsalSummary(rehearsalByDate[`${thursday}_thursday`])
-																return (
-																	<div
-																		className={[
-																			'rounded-lg border p-3',
-																			thursdayRoles && thursdayRoles.length > 0
-																				? 'border-primary/30 bg-primary/5'
-																				: 'border-border bg-muted/20',
-																		].join(' ')}
-																	>
-																		<p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Quinta</p>
-																		<p className="mb-2 text-xs text-foreground">
-																			{format(new Date(`${thursday}T12:00:00`), 'dd/MM')}
-																		</p>
-																		{rehearsalSummary && (
-																			<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
-																				<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
-																			</p>
-																		)}
-																		{thursdayRoles && thursdayRoles.length > 0 ? (
-																			<div className="space-y-1">
-																				{thursdayRoles.map(({ role, isTrainee }) => (
-																					<div key={role.id} className="flex items-center gap-1.5">
-																						<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-																						<span className="text-xs font-medium text-foreground">
-																							{role.name}
-																							{isTrainee ? ' (Aprendiz)' : ''}
-																						</span>
-																					</div>
-																				))}
-																			</div>
-																		) : (
-																			<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
-																		)}
-																	</div>
-																)
-															})()
-														) : (
-															<div className="rounded-lg border border-dashed border-border/50 p-3 opacity-40">
-																<p className="text-[10px] text-muted-foreground">Sem quinta nessa semana</p>
-															</div>
-														)}
-
-														{/* Sunday */}
-														{sunday ? (
-															(() => {
-																const rehearsalSummary = formatRehearsalSummary(rehearsalByDate[`${sunday}_sunday`])
-																return (
-																	<div
-																		className={[
-																			'rounded-lg border p-3',
-																			sundayRoles && sundayRoles.length > 0
-																				? 'border-primary/30 bg-primary/5'
-																				: 'border-border bg-muted/20',
-																		].join(' ')}
-																	>
-																		<p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Domingo</p>
-																		<p className="mb-2 text-xs text-foreground">
-																			{format(new Date(`${sunday}T12:00:00`), 'dd/MM')}
-																		</p>
-																		{rehearsalSummary && (
-																			<p className="mb-2 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
-																				<span className="font-medium text-foreground">Ensaio:</span> {rehearsalSummary}
-																			</p>
-																		)}
-																		{sundayRoles && sundayRoles.length > 0 ? (
-																			<div className="space-y-1">
-																				{sundayRoles.map(({ role, isTrainee }) => (
-																					<div key={role.id} className="flex items-center gap-1.5">
-																						<div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-																						<span className="text-xs font-medium text-foreground">
-																							{role.name}
-																							{isTrainee ? ' (Aprendiz)' : ''}
-																						</span>
-																					</div>
-																				))}
-																			</div>
-																		) : (
-																			<p className="text-[11px] italic text-muted-foreground">Você não toca nessa escala</p>
-																		)}
-																	</div>
-																)
-															})()
-														) : (
-															<div className="rounded-lg border border-dashed border-border/50 p-3 opacity-40">
-																<p className="text-[10px] text-muted-foreground">Sem domingo nessa semana</p>
-															</div>
-														)}
-													</div>
-												</CardContent>
-											</Card>
-										))}
-									</div>
+										{laterCommitments.length > 0 && (
+											<section className="space-y-2">
+												<h2 className="text-sm font-semibold text-foreground">Próximas datas</h2>
+												{laterCommitments.map(commitment => (
+													<CommitmentCard
+														key={`${commitment.date}_${commitment.eventType}`}
+														commitment={commitment}
+														bimester={schedule.bimester}
+														rehearsal={rehearsalByDate[`${commitment.date}_${commitment.eventType}`]}
+														rehearsalState={rehearsalState}
+														hero={false}
+														now={now}
+													/>
+												))}
+											</section>
+										)}
+									</>
 								)}
 							</TabsContent>
 
 							{/* ── Escala Geral ───────────────────────────────── */}
-							<TabsContent value="all" className="mt-3">
-								{isMobile && <p className="mb-3 text-sm text-muted-foreground">No celular, a escala geral mostra as datas de hoje em diante.</p>}
-								<Tabs defaultValue="thursday" className="w-full">
-									<TabsList>
-										<TabsTrigger value="thursday">Quintas</TabsTrigger>
-										<TabsTrigger value="sunday">Domingos</TabsTrigger>
-									</TabsList>
+							<TabsContent value="all" className="mt-3 space-y-3">
+								{isMobile && <p className="text-sm text-muted-foreground">No celular, a escala geral mostra as datas de hoje em diante.</p>}
 
-									<TabsContent value="thursday" className="mt-3">
-										{generalDates.thursday.length === 0 ? (
-											<Card>
-												<CardContent className="py-12 text-center text-sm text-muted-foreground">
-													{isMobile
-														? 'Não há escalas atuais de quinta-feira para mostrar no celular.'
-														: 'O bimestre publicado não possui datas de quinta-feira.'}
-												</CardContent>
-											</Card>
-										) : (
-											<ScheduleGrid
-												roles={schedule.roles}
-												dates={generalDates.thursday}
-												eventType="thursday"
-											assignments={schedule.assignments}
-													eventControls={schedule.event_controls}
-												readOnly
-												highlightedMinisterId={viewer?.id ?? null}
-												rehearsalByDate={rehearsalByDate}
-												rehearsalStatus={rehearsalLoading ? 'loading' : rehearsalError ? 'error' : 'ready'}
-												canEditRehearsal={canEditRehearsal}
-												onSaveRehearsal={handleSaveRehearsal}
-											/>
-										)}
-									</TabsContent>
+								<div className="flex flex-wrap items-center gap-2">
+									<div role="group" aria-label="Tipo de culto" className="inline-flex gap-1 rounded-md border border-border p-1">
+										<Button
+											type="button"
+											size="sm"
+											variant={generalType === 'thursday' ? 'default' : 'ghost'}
+											aria-pressed={generalType === 'thursday'}
+											onClick={() => setGeneralType('thursday')}
+										>
+											Quintas
+										</Button>
+										<Button
+											type="button"
+											size="sm"
+											variant={generalType === 'sunday' ? 'default' : 'ghost'}
+											aria-pressed={generalType === 'sunday'}
+											onClick={() => setGeneralType('sunday')}
+										>
+											Domingos
+										</Button>
+									</div>
+									<Button
+										type="button"
+										size="sm"
+										variant={onlyMine ? 'default' : 'outline'}
+										aria-pressed={onlyMine}
+										onClick={() => setOnlyMine(value => !value)}
+									>
+										Só minhas datas
+									</Button>
+								</div>
 
-									<TabsContent value="sunday" className="mt-3">
-										{generalDates.sunday.length === 0 ? (
-											<Card>
-												<CardContent className="py-12 text-center text-sm text-muted-foreground">
-													{isMobile
-														? 'Não há escalas atuais de domingo para mostrar no celular.'
-														: 'O bimestre publicado não possui datas de domingo.'}
-												</CardContent>
-											</Card>
-										) : (
-											<ScheduleGrid
-												roles={schedule.roles}
-												dates={generalDates.sunday}
-												eventType="sunday"
-											assignments={schedule.assignments}
-													eventControls={schedule.event_controls}
-												readOnly
-												highlightedMinisterId={viewer?.id ?? null}
-												rehearsalByDate={rehearsalByDate}
-												rehearsalStatus={rehearsalLoading ? 'loading' : rehearsalError ? 'error' : 'ready'}
-												canEditRehearsal={canEditRehearsal}
-												onSaveRehearsal={handleSaveRehearsal}
-											/>
-										)}
-									</TabsContent>
-								</Tabs>
+								{generalShownDates.length === 0 ? (
+									<Card>
+										<CardContent className="py-12 text-center text-sm text-muted-foreground">
+											{onlyMine
+												? `Você não toca em nenhum ${generalLabel} ${isMobile ? 'a partir de hoje' : 'neste bimestre'}.`
+												: isMobile
+													? `Não há escalas atuais de ${generalLabel} para mostrar no celular.`
+													: `O bimestre publicado não possui datas de ${generalLabel}.`}
+										</CardContent>
+									</Card>
+								) : (
+									<ScheduleGrid
+										roles={schedule.roles}
+										dates={generalShownDates}
+										eventType={generalType}
+										assignments={schedule.assignments}
+										eventControls={schedule.event_controls}
+										readOnly
+										highlightedMinisterId={viewer?.id ?? null}
+										rehearsalByDate={rehearsalByDate}
+										rehearsalStatus={rehearsalState}
+										canEditRehearsal={canEditRehearsal}
+										onSaveRehearsal={handleSaveRehearsal}
+									/>
+								)}
 							</TabsContent>
 						</Tabs>
 					</div>
+				)}
+
+				{isAdmin && (
+					<Card className="mt-8">
+						<CardHeader className="py-4">
+							<CardTitle className="text-base">Gerenciar Escala</CardTitle>
+							<CardDescription>
+								Crie bimestres, preencha o builder e publique para liberar esta visualização.
+							</CardDescription>
+							<div className="flex flex-wrap gap-2 pt-2">
+								<Button asChild size="sm" variant="outline">
+									<Link href={ROUTES.SCHEDULE_ADMIN_DASHBOARD}>
+										<BarChart3 className="mr-2 h-3.5 w-3.5" />
+										Dashboard
+									</Link>
+								</Button>
+								<Button asChild size="sm" variant="outline">
+									<Link href={ROUTES.SCHEDULE_ADMIN_QUARTERS}>
+										<Settings2 className="mr-2 h-3.5 w-3.5" />
+										Bimestres
+									</Link>
+								</Button>
+								<Button asChild size="sm" variant="outline">
+									<Link href={ROUTES.SCHEDULE_ADMIN_BUILDER}>
+										<Settings2 className="mr-2 h-3.5 w-3.5" />
+										Abrir Builder
+									</Link>
+								</Button>
+							</div>
+						</CardHeader>
+					</Card>
 				)}
 			</main>
 		</div>

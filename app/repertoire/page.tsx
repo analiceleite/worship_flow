@@ -738,7 +738,7 @@ export default function RepertorioPage() {
     )
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="bg-background">
 
             <main className={`${PAGE_WIDTH} py-6`}>
 

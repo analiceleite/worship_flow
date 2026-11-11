@@ -110,7 +110,7 @@ export default function PlatformChurchesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="bg-background">
 
       <main className={`${PAGE_WIDTH} py-6`}>
         <div className="mb-6">
