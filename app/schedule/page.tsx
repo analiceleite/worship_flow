@@ -443,7 +443,7 @@ export default function EscalaPage() {
 	const [nextCommitment, ...laterCommitments] = commitments
 
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="bg-background">
 			{conflictDialog}
 
 			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">

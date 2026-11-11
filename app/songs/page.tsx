@@ -214,7 +214,7 @@ export default function HomePage() {
     const filteredSongs = songs
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="bg-background">
 
             <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
                 <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
