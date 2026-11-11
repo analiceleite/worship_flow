@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ROUTES } from '@/lib/routes'
@@ -58,7 +59,7 @@ export default function EscalaQuartersPage() {
 	return (
 		<div className="bg-background">
 
-			<main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+			<main className={`${PAGE_WIDTH} py-6`}>
 				<div className="mb-6 flex flex-wrap items-start justify-between gap-3">
 					<div>
 						<Button asChild variant="ghost" size="sm" className="mb-2 -ml-2 text-muted-foreground">

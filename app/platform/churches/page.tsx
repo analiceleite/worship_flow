@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { useEffect, useState } from 'react'
 import type { Church } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -111,7 +112,7 @@ export default function PlatformChurchesPage() {
   return (
     <div className="bg-background">
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className={`${PAGE_WIDTH} py-6`}>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Igrejas</h1>
           <p className="text-sm text-muted-foreground">Administração interna da plataforma.</p>

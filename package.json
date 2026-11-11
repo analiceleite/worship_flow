@@ -22,6 +22,8 @@
     "test:wf32:local": "node --test --test-concurrency=1 tests/wf32.local.test.cjs",
     "test:wf15": "node --test tests/wf15-feedback.test.cjs",
     "test:wf36": "node --test tests/wf36-dashboard.test.cjs",
+    "test:montar-escala": "node --test tests/montar-escala.test.ts tests/montar-escala-ui.test.cjs",
+    "test:page-width": "node --test tests/page-width.test.cjs",
     "test:schedule-builder": "node --test tests/schedule-builder.test.cjs",
     "test:schedule-builder:browser": "node --test tests/schedule-builder.browser.test.cjs",
     "test:schedule-media:browser": "node --test tests/schedule-media.browser.test.cjs",

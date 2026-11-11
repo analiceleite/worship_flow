@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -243,7 +244,7 @@ export default function ProfilePage() {
 
   if (!minister) {
     return (
-      <main className="p-4">
+      <main className={`${PAGE_WIDTH} py-6`}>
         <ErrorState
           title="Não foi possível consultar seu perfil"
           message={contextError ?? 'Sua participação nesta igreja está indisponível.'}
@@ -257,7 +258,7 @@ export default function ProfilePage() {
   return (
     <div className="bg-background">
 
-      <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+      <main className={`${PAGE_WIDTH} py-6`}>
         {/* Header Section */}
         <div className="mb-6 flex items-center gap-4">
           <UserAvatar name={minister.name} avatarUrl={minister.avatar_url} className="h-20 w-20 text-5xl" />

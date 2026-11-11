@@ -1,9 +1,10 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { CalendarDays, Check, LayoutGrid, List, Plus } from 'lucide-react'
+import { CalendarDays, Check, ChevronDown, LayoutGrid, List, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BimesterForm } from '@/components/schedule/BimesterForm'
 import type { ScheduleAssignment, ScheduleEventControl, ScheduleRehearsal } from '@/components/schedule/ScheduleGrid'
@@ -71,6 +72,10 @@ export function ScheduleBuilder() {
   const type: TypeFilter = params.get('type') === 'thursday' ? 'thursday' : params.get('type') === 'sunday' ? 'sunday' : 'all'
   const view = params.get('view') === 'grid' ? 'grid' : 'agenda'
   const selectedKey = params.get('event')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filterSummary = `${{ all: 'Todos', pending: 'Com pendências', cancelled: 'Cancelados' }[filter]} · ${{ all: 'Quintas e domingos', thursday: 'Quintas', sunday: 'Domingos' }[type]}`
+  // No celular, a grade só aparece com um tipo de culto escolhido, porque a semana inteira não cabe na tela.
+  const gridOnMobile = view === 'grid' && type !== 'all'
 
   const navigate = (values: Record<string, string | null>, replace = false) => {
     const next = new URLSearchParams(params.toString())
@@ -210,7 +215,7 @@ export function ScheduleBuilder() {
   const selectedIndex = neighboring.findIndex(event => event.key === selectedKey)
   const selectedPeriod = currentData?.quarter ?? period
 
-  return <main className="mx-auto max-w-7xl px-4 pb-36 pt-3 sm:px-6 sm:pt-5 lg:pb-12">
+  return <main className={`${PAGE_WIDTH} pb-36 pt-3 sm:pt-5 lg:pb-12`}>
     <ScheduleBuilderHeader periods={periods} selectedId={quarterId} loading={periodsLoading} busy={busy}
       onSelect={id => navigate({ quarter: id, event: null })} onCreate={() => setCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={() => setSettingsOpen(true)} />
     {periodsError ? <div role="alert" className="mt-5 rounded-xl border border-destructive/30 p-4 text-sm"><p>{periodsError}</p><Button variant="outline" className="mt-3 min-h-11" onClick={() => setPeriodRetry(value => value + 1)}>Tentar novamente</Button></div> : null}
@@ -223,19 +228,23 @@ export function ScheduleBuilder() {
     {currentData ? <>
       <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 ${selectedKey ? 'hidden lg:flex' : ''}`}>
         <p className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{summary.events} cultos</span> · {summary.pendingEvents ? `${summary.pendingEvents} para completar` : 'Equipes preenchidas'}</p>
-        <div className="hidden items-center gap-1 rounded-lg border p-1 lg:flex" role="group" aria-label="Visualização da escala"><Button className="min-h-11" size="sm" variant={view === 'agenda' ? 'secondary' : 'ghost'} aria-pressed={view === 'agenda'} onClick={() => navigate({ view: null }, true)}><List className="mr-2 h-4 w-4" />Agenda</Button><Button className="min-h-11" size="sm" variant={view === 'grid' ? 'secondary' : 'ghost'} aria-pressed={view === 'grid'} onClick={() => navigate({ view: 'grid', event: null }, true)}><LayoutGrid className="mr-2 h-4 w-4" />Grade</Button></div>
+        {type === 'all' ? <span className="text-xs text-muted-foreground lg:hidden">Para ver a grade, filtre por Quintas ou Domingos.</span> : null}
+        <div className={`${type === 'all' ? 'hidden lg:flex' : 'flex'} items-center gap-1 rounded-lg border p-1`} role="group" aria-label="Visualização da escala"><Button className="min-h-11" size="sm" variant={view === 'agenda' ? 'secondary' : 'ghost'} aria-pressed={view === 'agenda'} onClick={() => navigate({ view: null }, true)}><List className="mr-2 h-4 w-4" />Agenda</Button><Button className="min-h-11" size="sm" variant={view === 'grid' ? 'secondary' : 'ghost'} aria-pressed={view === 'grid'} onClick={() => navigate({ view: 'grid', event: null }, true)}><LayoutGrid className="mr-2 h-4 w-4" />Grade</Button></div>
       </div>
-      <div className={`mt-3 flex flex-wrap items-center gap-2 ${selectedKey ? 'hidden lg:flex' : ''}`}>
+      <Button variant="outline" className={`mt-3 min-h-11 w-full justify-between lg:hidden ${selectedKey ? 'hidden' : ''}`} aria-expanded={filtersOpen} aria-controls="builder-filters" onClick={() => setFiltersOpen(open => !open)}>
+        <span className="truncate">Filtros: {filterSummary}</span><ChevronDown className={`ml-2 h-4 w-4 shrink-0 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </Button>
+      <div id="builder-filters" className={`mt-3 flex-wrap items-center gap-2 ${selectedKey ? 'hidden lg:flex' : filtersOpen ? 'flex' : 'hidden lg:flex'}`}>
         <div role="group" aria-label="Filtrar cultos" className="flex min-w-0 flex-wrap gap-1 rounded-lg bg-muted/70 p-1">{([{ value: 'all', label: 'Todos' }, { value: 'pending', label: 'Com pendências' }, { value: 'cancelled', label: 'Cancelados' }] as const).map(item => <Button key={item.value} variant={filter === item.value ? 'secondary' : 'ghost'} size="sm" className="min-h-11 px-3 text-xs sm:text-sm" disabled={busy} aria-pressed={filter === item.value} onClick={() => navigate({ filter: item.value === 'all' ? null : item.value }, true)}>{item.label}</Button>)}</div>
         <label className="ml-auto flex min-h-11 items-center gap-2 text-xs text-muted-foreground"><span className="sr-only">Tipo de culto</span><select value={type} disabled={busy} onChange={e => navigate({ type: e.target.value === 'all' ? null : e.target.value }, true)} className="min-h-11 rounded-lg border bg-background px-2 text-sm text-foreground"><option value="all">Quintas e domingos</option><option value="thursday">Quintas</option><option value="sunday">Domingos</option></select></label>
       </div>
       {minister ? <div role="status" className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span>Mostrando cultos de <span className="font-medium">{ministerName}</span></span><Button variant="outline" size="sm" className="min-h-11" disabled={busy} onClick={() => navigate({ minister: null }, true)}>Mostrar todos os cultos</Button></div> : null}
-      <div className={`mt-2 grid items-start gap-6 ${view === 'grid' ? 'lg:hidden' : 'lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]'}`}>
+      <div className={`mt-2 items-start gap-6 ${view === 'grid' ? (gridOnMobile ? 'hidden' : 'grid lg:hidden') : 'grid lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]'}`}>
         <div className={`min-w-0 ${selectedKey ? 'hidden lg:block' : ''}`}>
           {visible.length ? <ScheduleEventList events={visible} period={currentData.quarter} selectedKey={selectedKey} onOpen={openEvent} /> : <section className="mt-5 rounded-xl border bg-card px-5 py-10 text-center"><h2 className="text-base font-medium">{events.length ? 'Nenhum culto neste filtro' : 'Nenhum culto neste período'}</h2><p className="mt-2 text-sm text-muted-foreground">{events.length ? 'Escolha outro filtro para continuar montando a escala.' : 'Confira as datas e as atribuições do período.'}</p>{events.length ? <Button variant="outline" className="mt-4 min-h-11" onClick={() => navigate({ filter: null, type: null, minister: null }, true)}>Limpar filtros</Button> : null}</section>}
         </div>
         <div className={`min-w-0 pt-5 ${selectedKey ? '' : 'hidden lg:block'}`}>
-          {selected ? <ScheduleEventEditor key={selected.key} data={currentData} event={selected} statuses={statuses} busy={busy}
+          {selected ? <ScheduleEventEditor key={selected.key} data={currentData} event={selected} events={events} statuses={statuses} busy={busy}
             initialAction={requestedAction?.key === selected.key ? requestedAction.action : undefined}
             onInitialActionHandled={() => setRequestedAction(null)}
             rehearsalError={rehearsalError} onRetryRehearsals={() => setReload(value => value + 1)} onBack={() => navigate({ event: null })}
@@ -245,7 +254,7 @@ export function ScheduleBuilder() {
             : <section className="rounded-xl border border-dashed p-8 text-center"><CalendarDays className="mx-auto mb-4 h-7 w-7 text-muted-foreground" /><h2 className="text-lg font-semibold">{selectedKey ? 'Culto não encontrado' : 'Escolha um culto para começar'}</h2><p className="mt-2 text-sm text-muted-foreground">{selectedKey ? 'Ele pode não fazer parte deste período.' : 'Abra uma data ao lado para montar a equipe, definir o responsável e combinar o ensaio.'}</p>{selectedKey ? <Button variant="outline" className="mt-4 min-h-11" onClick={() => navigate({ event: null })}>Voltar aos cultos</Button> : null}</section>}
         </div>
       </div>
-      {view === 'grid' ? <div className="mt-5 hidden space-y-5 lg:block">{!visible.length ? <p className="rounded-xl border p-5 text-sm text-muted-foreground">Nenhum culto neste filtro. Escolha outro filtro acima.</p> : null}{(['thursday', 'sunday'] as const).filter(eventType => visible.some(event => event.type === eventType)).map(eventType => <section key={eventType}><h2 className="mb-3 text-base font-semibold">{eventType === 'thursday' ? 'Quintas' : 'Domingos'}</h2><ScheduleGrid roles={currentData.roles.filter(role => currentData.assignments.some(item => item.role_id === role.id && item.event_type === eventType))} dates={visible.filter(event => event.type === eventType).map(event => event.date)} eventType={eventType}
+      {view === 'grid' ? <div className={`mt-5 space-y-5 ${gridOnMobile ? 'block' : 'hidden lg:block'}`}>{!visible.length ? <p className="rounded-xl border p-5 text-sm text-muted-foreground">Nenhum culto neste filtro. Escolha outro filtro acima.</p> : null}{(['thursday', 'sunday'] as const).filter(eventType => visible.some(event => event.type === eventType)).map(eventType => <section key={eventType}><h2 className="mb-3 text-base font-semibold">{eventType === 'thursday' ? 'Quintas' : 'Domingos'}</h2><ScheduleGrid roles={currentData.roles.filter(role => currentData.assignments.some(item => item.role_id === role.id && item.event_type === eventType))} dates={visible.filter(event => event.type === eventType).map(event => event.date)} eventType={eventType}
         assignments={currentData.assignments} readOnly={busy} savingKeys={Object.fromEntries(Object.entries(statuses).map(([key, status]) => [key, status.state === 'saving']))}
         onSaveAssignment={async payload => { const assignment = currentData.assignments.find(item => item.id === payload.id); if (assignment) await saveAssignment(assignment, payload.minister_id ? { id: payload.minister_id, name: payload.minister_name ?? '', avatar_url: payload.minister_avatar_url } : null, payload.is_trainee) }}
         eventControls={currentData.event_controls} activeMinisters={currentData.active_ministers} isPublished={currentData.quarter.is_published}
@@ -255,7 +264,7 @@ export function ScheduleBuilder() {
       /></section>)}</div> : null}
     </> : null}
     {selectedPeriod ? <footer className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm md:static md:mt-6 md:rounded-xl md:border md:bg-card md:p-4">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">{busy ? 'Salvando alterações…' : failures.length ? 'Há alterações para conferir' : <><Check className="h-3.5 w-3.5" />{Object.keys(statuses).length ? 'Alterações salvas' : 'Salvamento automático'}</>}</p><Button className="min-h-12 flex-1 sm:flex-none" variant={selectedPeriod.is_published ? 'outline' : 'default'} disabled={Boolean(blockedReason)} onClick={() => setReviewOpen(true)}>{selectedPeriod.is_published ? 'Revisar despublicação' : 'Revisar publicação'}</Button></div>
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">{busy ? 'Salvando alterações…' : failures.length ? 'Há alterações não salvas' : <><Check className="h-3.5 w-3.5" />{Object.keys(statuses).length ? 'Alterações salvas automaticamente' : 'Salvamento automático ativo'}</>}</p><Button className="min-h-12 flex-1 sm:flex-none" variant={selectedPeriod.is_published ? 'outline' : 'default'} disabled={Boolean(blockedReason)} onClick={() => setReviewOpen(true)}>{selectedPeriod.is_published ? 'Revisar despublicação' : 'Revisar publicação'}</Button></div>
     </footer> : null}
     <BimesterForm open={createOpen} onOpenChange={setCreateOpen} existingBimesters={periods} onCreated={created => { setPeriods(current => [created, ...current]); navigate({ quarter: created.id, event: null, filter: null, type: null, view: null }) }} />
     <BuilderSettings open={settingsOpen} onOpenChange={setSettingsOpen} periodName={selectedPeriod?.name} busy={busy} onDelete={async () => {

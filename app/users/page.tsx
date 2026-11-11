@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Minister } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
@@ -203,7 +204,7 @@ export default function MinistrosPage() {
     return (
         <div className="bg-background">
 
-            <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <main className={`${PAGE_WIDTH} py-6`}>
 
                 {/* ── Header ── */}
                 <div className="mb-6 flex items-start justify-between gap-4">

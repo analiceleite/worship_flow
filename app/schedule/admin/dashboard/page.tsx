@@ -1,5 +1,6 @@
 'use client'
 
+import { PAGE_WIDTH } from '@/lib/page-layout'
 import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ROUTES } from '@/lib/routes'
@@ -620,7 +621,7 @@ export default function ScheduleAdminDashboardPage() {
     return (
         <div className="bg-background">
 
-            <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8 w-full max-w-full overflow-x-hidden">
+            <main className={`${PAGE_WIDTH} py-6 overflow-x-hidden`}>
 
                 {/* ── Top bar ── */}
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
