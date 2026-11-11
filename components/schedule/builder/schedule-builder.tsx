@@ -138,7 +138,9 @@ export function ScheduleBuilder() {
   }, [reload, quarterId, loadData])
 
   const events = useMemo(() => currentData ? buildEvents(currentData, rehearsals) : [], [currentData, rehearsals])
-  const visible = useMemo(() => filterEvents(events, filter, type), [events, filter, type])
+  const minister = params.get('minister') || ''
+  const ministerName = currentData?.active_ministers.find(item => item.id === minister)?.name ?? 'ministro selecionado'
+  const visible = useMemo(() => filterEvents(events, filter, type).filter(event => !minister || event.assignments.some(item => item.minister_id === minister)), [events, filter, type, minister])
   const summary = useMemo(() => summarizeEvents(events), [events])
   const selected = events.find(event => event.key === selectedKey)
   const listScroll = useRef(0), previousEvent = useRef<string | null>(null)
@@ -227,9 +229,10 @@ export function ScheduleBuilder() {
         <div role="group" aria-label="Filtrar cultos" className="flex min-w-0 flex-wrap gap-1 rounded-lg bg-muted/70 p-1">{([{ value: 'all', label: 'Todos' }, { value: 'pending', label: 'Com pendências' }, { value: 'cancelled', label: 'Cancelados' }] as const).map(item => <Button key={item.value} variant={filter === item.value ? 'secondary' : 'ghost'} size="sm" className="min-h-11 px-3 text-xs sm:text-sm" disabled={busy} aria-pressed={filter === item.value} onClick={() => navigate({ filter: item.value === 'all' ? null : item.value }, true)}>{item.label}</Button>)}</div>
         <label className="ml-auto flex min-h-11 items-center gap-2 text-xs text-muted-foreground"><span className="sr-only">Tipo de culto</span><select value={type} disabled={busy} onChange={e => navigate({ type: e.target.value === 'all' ? null : e.target.value }, true)} className="min-h-11 rounded-lg border bg-background px-2 text-sm text-foreground"><option value="all">Quintas e domingos</option><option value="thursday">Quintas</option><option value="sunday">Domingos</option></select></label>
       </div>
+      {minister ? <div role="status" className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span>Mostrando cultos de <span className="font-medium">{ministerName}</span></span><Button variant="outline" size="sm" className="min-h-11" disabled={busy} onClick={() => navigate({ minister: null }, true)}>Mostrar todos os cultos</Button></div> : null}
       <div className={`mt-2 grid items-start gap-6 ${view === 'grid' ? 'lg:hidden' : 'lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]'}`}>
         <div className={`min-w-0 ${selectedKey ? 'hidden lg:block' : ''}`}>
-          {visible.length ? <ScheduleEventList events={visible} period={currentData.quarter} selectedKey={selectedKey} onOpen={openEvent} /> : <section className="mt-5 rounded-xl border bg-card px-5 py-10 text-center"><h2 className="text-base font-medium">{events.length ? 'Nenhum culto neste filtro' : 'Nenhum culto neste período'}</h2><p className="mt-2 text-sm text-muted-foreground">{events.length ? 'Escolha outro filtro para continuar montando a escala.' : 'Confira as datas e as atribuições do período.'}</p>{events.length ? <Button variant="outline" className="mt-4 min-h-11" onClick={() => navigate({ filter: null, type: null }, true)}>Limpar filtros</Button> : null}</section>}
+          {visible.length ? <ScheduleEventList events={visible} period={currentData.quarter} selectedKey={selectedKey} onOpen={openEvent} /> : <section className="mt-5 rounded-xl border bg-card px-5 py-10 text-center"><h2 className="text-base font-medium">{events.length ? 'Nenhum culto neste filtro' : 'Nenhum culto neste período'}</h2><p className="mt-2 text-sm text-muted-foreground">{events.length ? 'Escolha outro filtro para continuar montando a escala.' : 'Confira as datas e as atribuições do período.'}</p>{events.length ? <Button variant="outline" className="mt-4 min-h-11" onClick={() => navigate({ filter: null, type: null, minister: null }, true)}>Limpar filtros</Button> : null}</section>}
         </div>
         <div className={`min-w-0 pt-5 ${selectedKey ? '' : 'hidden lg:block'}`}>
           {selected ? <ScheduleEventEditor key={selected.key} data={currentData} event={selected} statuses={statuses} busy={busy}
