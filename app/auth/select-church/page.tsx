@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { ROUTES } from '@/lib/routes'
 import type { MembershipCandidate } from '@/lib/auth/membership'
@@ -23,6 +24,17 @@ export default function SelectChurchPage() {
   const [error, setError] = useState<string | null>(null)
   const [selecting, setSelecting] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  // WF-38: offer church creation to accounts without a church, only when the server enables it.
+  const [publicCreation, setPublicCreation] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    fetch('/api/onboarding/availability', { cache: 'no-store' })
+      .then(response => (response.ok ? response.json() : { enabled: false }))
+      .then((data: { enabled?: boolean }) => { if (active) setPublicCreation(data.enabled === true) })
+      .catch(() => { if (active) setPublicCreation(false) })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -87,7 +99,14 @@ export default function SelectChurchPage() {
           {loading ? <p role="status">Consultando suas igrejas...</p> : null}
           {error ? <Alert variant="destructive"><AlertDescription role="alert">{error}</AlertDescription></Alert> : null}
           {!loading && !error && memberships.length === 0 ? (
-            <p>Você ainda não participa de uma igreja. Peça um convite ao administrador ou abra o link que recebeu.</p>
+            <div className="space-y-3">
+              <p>Você ainda não participa de uma igreja. Peça um convite ao administrador ou abra o link que recebeu.</p>
+              {publicCreation ? (
+                <Button asChild className="min-h-11 w-full">
+                  <Link href={ROUTES.AUTH_CRIAR_IGREJA}>Criar ambiente da minha igreja</Link>
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           {!loading ? memberships.map(membership => {
             const active = membership.access_state === 'active' && membership.church_status === 'active'
