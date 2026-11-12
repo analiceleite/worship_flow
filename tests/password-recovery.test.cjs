@@ -348,7 +348,8 @@ test('rate limiter stores only keyed digests and requires an explicit boolean re
 test('request route returns neutral JSON with no-store, not a recovery link', async () => {
   const route = loadTypeScript('app/api/auth/forgot-password/route.ts', {
     '@/lib/auth/password-recovery': core,
-    '@/lib/auth/password-recovery-server': { recoveryDependencies: () => dependencies() },
+    '@/lib/auth/password-recovery-server': { recoveryDependencies: () => dependencies(), recoveryLimiter: () => async () => true },
+    '@/lib/auth/client-ip': { clientIp: () => '203.0.113.1' },
   })
   const response = await route.POST(new Request('https://untrusted.example/api/auth/forgot-password', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
@@ -359,6 +360,24 @@ test('request route returns neutral JSON with no-store, not a recovery link', as
   assert.equal(body.ok, true)
   assert.ok(!Object.hasOwn(body, 'resetUrl'))
   assert.ok(!JSON.stringify(body).includes(tokenHash))
+})
+
+test('request route answers 429 for an address over the WF-46 limit, before any account lookup', async () => {
+  let generated = false
+  const route = loadTypeScript('app/api/auth/forgot-password/route.ts', {
+    '@/lib/auth/password-recovery': core,
+    '@/lib/auth/password-recovery-server': {
+      recoveryDependencies: () => ({ ...dependencies(), generate: async () => { generated = true; return 'hash' } }),
+      recoveryLimiter: () => async (scope) => scope !== 'request-ip',
+    },
+    '@/lib/auth/client-ip': { clientIp: () => '203.0.113.1' },
+  })
+  const response = await route.POST(new Request('https://untrusted.example/api/auth/forgot-password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+  }))
+  assert.equal(response.status, 429)
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+  assert.equal(generated, false)
 })
 
 test('reset route rejects legacy input and malformed JSON before password update', async () => {

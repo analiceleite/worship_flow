@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, MailWarning } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { signInThroughServer } from '@/lib/auth/login-client'
 import { ROUTES } from '@/lib/routes'
 import type { InvitationInspection } from '@/lib/invitations/types'
 import { Button } from '@/components/ui/button'
@@ -105,8 +106,7 @@ export default function InvitePage() {
     setError(null)
     setNotice(null)
     try {
-      const { error: signInError } = await createClient().auth.signInWithPassword(loginForm)
-      if (signInError) throw new Error('E-mail ou senha inválidos.')
+      await signInThroughServer(loginForm.email, loginForm.password)
       await accept()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível entrar.')

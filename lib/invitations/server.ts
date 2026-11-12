@@ -217,6 +217,8 @@ export type CreateInvitationInput = {
 
 export async function createInvitation(input: CreateInvitationInput) {
   await enforceRateLimit('create', `${input.churchId}:${normalizeInvitationEmail(input.email)}`, 5)
+  // WF-46: one admin cannot spray invitations across many addresses.
+  await enforceRateLimit('create-actor', input.actorUserId, 30)
   const token = createInvitationToken()
   const expiresAt = new Date(Date.now() + INVITATION_TTL_MS).toISOString()
   const { data, error } = await createAdminClient().rpc('wf04_create_invitation', {
@@ -252,6 +254,7 @@ export async function resendInvitation(input: {
   invitationId: string
 }) {
   await enforceRateLimit('resend', `${input.churchId}:${input.invitationId}`, 3)
+  await enforceRateLimit('resend-actor', input.actorUserId, 30)
   const token = createInvitationToken()
   const expiresAt = new Date(Date.now() + INVITATION_TTL_MS).toISOString()
   const { data, error } = await createAdminClient().rpc('wf04_rotate_invitation', {

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { ROUTES } from '@/lib/routes'
 import { CHURCH_OWNER_PASSWORD_MIN } from '@/lib/onboarding/rules'
+import { signInThroughServer } from '@/lib/auth/login-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -67,11 +68,8 @@ export default function CriarIgrejaPage() {
     setError(null)
     setNotice(null)
     try {
-      const { data, error: signInError } = await createClient().auth.signInWithPassword(loginForm)
-      if (signInError) {
-        throw new Error('E-mail ou senha inválidos, ou a conta ainda não foi confirmada.')
-      }
-      setMode(data.user?.email_confirmed_at ? 'create' : 'unverified')
+      const { emailConfirmed } = await signInThroughServer(loginForm.email, loginForm.password)
+      setMode(emailConfirmed ? 'create' : 'unverified')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível entrar.')
     } finally {

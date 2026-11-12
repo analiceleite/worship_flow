@@ -8,6 +8,7 @@ import { CHURCH_CONTEXT_COOKIE, churchPreferenceValue } from '@/lib/auth/context
 import { ChurchCreationError, createChurchForVerifiedIdentity } from '@/lib/church-creation/server'
 import { churchCreateSchema, churchCreationHttpError } from '@/lib/onboarding/rules'
 import { publicChurchCreationEnabled } from '@/lib/onboarding/flags'
+import { recoveryLimiter } from '@/lib/auth/password-recovery-server'
 
 const noStore = { 'Cache-Control': 'no-store' }
 
@@ -32,6 +33,10 @@ export async function POST(request: Request) {
     const body = churchCreateSchema.safeParse(await request.json().catch(() => null))
     if (!body.success) {
       return NextResponse.json({ error: 'Revise o nome da igreja e tente novamente.' }, { status: 400, headers: noStore })
+    }
+    // WF-46: per-identity limit. Retries reuse the idempotency key, so legitimate retries stay well under it.
+    if (!await recoveryLimiter()('onboarding-church', user.id, 10)) {
+      return NextResponse.json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' }, { status: 429, headers: noStore })
     }
 
     const admin = createAdminClient()
