@@ -117,6 +117,14 @@ export default function LoginPage() {
               </a>
             </div>
           </form>
+          {process.env.NEXT_PUBLIC_WF38_PUBLIC_CHURCH_CREATION === 'true' && (
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              Quer começar sua própria igreja?{' '}
+              <a href={ROUTES.AUTH_CRIAR_IGREJA} className="text-primary underline hover:text-primary/80">
+                Criar ambiente da minha igreja
+              </a>
+            </p>
+          )}
         </div>
 
       </div>

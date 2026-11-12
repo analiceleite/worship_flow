@@ -24,6 +24,7 @@
     "test:wf36": "node --test tests/wf36-dashboard.test.cjs",
     "test:wf39:local": "node --test tests/wf39-isolation.local.test.cjs",
     "test:wf39:api": "node --test tests/wf39-api.local.test.cjs",
+    "test:wf38:local": "node --test --test-concurrency=1 tests/wf38-church-quota.local.test.cjs",
     "test:montar-escala": "node --test tests/montar-escala.test.ts tests/montar-escala-ui.test.cjs",
     "test:page-width": "node --test tests/page-width.test.cjs",
     "test:schedule-builder": "node --test tests/schedule-builder.test.cjs",

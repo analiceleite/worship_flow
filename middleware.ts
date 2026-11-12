@@ -31,7 +31,7 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isRecoveryRoute = matchesPath(pathname, ROUTES.AUTH_RESET)
   const isInviteRoute = matchesPath(pathname, ROUTES.AUTH_INVITE)
-  const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD, ROUTES.AUTH_RESET, ROUTES.AUTH_INVITE]
+  const publicRoutes = [ROUTES.AUTH_LOGIN, ROUTES.AUTH_SET_PASSWORD, ROUTES.AUTH_FORGOT_PASSWORD, ROUTES.AUTH_RESET, ROUTES.AUTH_INVITE, ROUTES.AUTH_CRIAR_IGREJA]
   const isPublicRoute = publicRoutes.some(route => matchesPath(pathname, route))
   const isSelectionRoute = pathname === ROUTES.AUTH_SELECT_CHURCH
 
@@ -52,6 +52,8 @@ export async function middleware(request: NextRequest) {
   // Selection, recovery and invitation pages must work without an operational
   // membership. Merely possessing ?code=... is not authentication or a bypass
   // for protected pages.
+  // The owner-onboarding page works before any membership exists; its APIs enforce the rules.
+  if (matchesPath(pathname, ROUTES.AUTH_CRIAR_IGREJA)) return response
   if (isSelectionRoute || isRecoveryRoute || isInviteRoute || pathname === ROUTES.AUTH_SET_PASSWORD || pathname === ROUTES.AUTH_FORGOT_PASSWORD) return response
   if (matchesPath(pathname, '/platform')) return response // APIs enforce platform permissions.
 
