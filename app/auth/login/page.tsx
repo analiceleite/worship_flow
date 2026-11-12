@@ -16,7 +16,19 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({ email: '', password: '' })
 
+  const [publicCreation, setPublicCreation] = useState(false)
+
   useEffect(() => { setReady(true) }, [])
+
+  // WF-38: the link appears only when the server reports public church creation as enabled.
+  useEffect(() => {
+    let active = true
+    fetch('/api/onboarding/availability', { cache: 'no-store' })
+      .then(response => (response.ok ? response.json() : { enabled: false }))
+      .then((data: { enabled?: boolean }) => { if (active) setPublicCreation(data.enabled === true) })
+      .catch(() => { if (active) setPublicCreation(false) })
+    return () => { active = false }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,7 +121,7 @@ export default function LoginPage() {
               </a>
             </div>
           </form>
-          {process.env.NEXT_PUBLIC_WF38_PUBLIC_CHURCH_CREATION === 'true' && (
+          {publicCreation && (
             <p className="mt-4 text-center text-sm text-muted-foreground">
               Quer começar sua própria igreja?{' '}
               <a href={ROUTES.AUTH_CRIAR_IGREJA} className="text-primary underline hover:text-primary/80">

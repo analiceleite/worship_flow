@@ -5,12 +5,27 @@ import { getImpersonatedChurchId } from '@/lib/auth-context'
 import { getAuthenticatedIdentity } from '@/lib/auth/identity'
 import { isTrustedMutationOrigin } from '@/lib/auth/request-origin'
 import { CHURCH_CONTEXT_COOKIE, churchPreferenceValue } from '@/lib/auth/context-selection'
-import { ChurchCreationError, createChurchForVerifiedIdentity } from '@/lib/church-creation/server'
+import { ChurchCreationError, createChurchForVerifiedIdentity, getChurchCreationStatus } from '@/lib/church-creation/server'
 import { churchCreateSchema, churchCreationHttpError } from '@/lib/onboarding/rules'
 import { publicChurchCreationEnabled } from '@/lib/onboarding/flags'
 import { recoveryLimiter } from '@/lib/auth/password-recovery-server'
 
 const noStore = { 'Cache-Control': 'no-store' }
+
+// WF-38: read-only quota state, so the page can explain the limit before the form is shown.
+export async function GET() {
+  try {
+    if (!publicChurchCreationEnabled()) {
+      return NextResponse.json({ error: 'Não disponível no momento.' }, { status: 404, headers: noStore })
+    }
+    const user = await getAuthenticatedIdentity()
+    if (!user) return NextResponse.json({ error: 'Entre para criar sua igreja.' }, { status: 401, headers: noStore })
+    const status = await getChurchCreationStatus(user.id)
+    return NextResponse.json(status, { headers: noStore })
+  } catch {
+    return NextResponse.json({ error: 'Não foi possível consultar a criação de igreja agora.' }, { status: 503, headers: noStore })
+  }
+}
 
 // WF-38: the verified owner creates their church and becomes its first ADMIN in one call.
 // The identity comes from the session; the server decides plan, environment and privileges.
