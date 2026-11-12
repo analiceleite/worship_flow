@@ -51,7 +51,7 @@ export async function PATCH(request: Request) {
     } else {
       for (const quarter of quarters ?? []) {
         try {
-          const result = await reconcileMinistersForQuarter(quarter.id)
+          const result = await reconcileMinistersForQuarter(quarter.id, context.churchId)
           calendarErrors.push(...result.errors.map(item => ({ quarterId: quarter.id, error: item.error })))
         } catch (syncError) {
           calendarErrors.push({ quarterId: quarter.id, error: syncError instanceof Error ? syncError.message : 'Falha ao sincronizar calendário.' })

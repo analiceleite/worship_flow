@@ -45,8 +45,9 @@ test('WF-39 isolation: users of church A never read or write church B data (RLS)
 
   await query('BEGIN')
   try {
-    const ready = await query("SELECT to_regclass('public.wf04_invitations') AS inv")
+    const ready = await query("SELECT to_regclass('public.wf04_invitations') AS inv, to_regprocedure('public.wf39_cifra_path_allowed(text)') AS cifra")
     assert.ok(ready.rows[0].inv, 'Apply migrations up to 041 before this test')
+    assert.ok(ready.rows[0].cifra, 'Apply migration 044 (cifras storage isolation) before this test')
 
     const churchA = randomUUID(), churchB = randomUUID()
     const userAdminA = randomUUID(), userAdminB = randomUUID(), userMulti = randomUUID()
@@ -80,6 +81,54 @@ test('WF-39 isolation: users of church A never read or write church B data (RLS)
     await query(`INSERT INTO public.repertoire(id,minister_id,song_id,event_date,order_index,church_id) VALUES
       ($1,$2,$3,CURRENT_DATE,1,$4),($5,$6,$7,CURRENT_DATE,1,$8)`,
     [repertoireA, mAdminA, songA, churchA, repertoireB, mAdminB, songB, churchB])
+    // Cifra PDFs: current layout {churchId}/{songId}/cifra.pdf and legacy layout {songId}/cifra.pdf (migration 022).
+    const cifraA = `${churchA}/${songA}/cifra.pdf`, cifraB = `${churchB}/${songB}/cifra.pdf`
+    const legacyA = `${songA}/cifra.pdf`, legacyB = `${songB}/cifra.pdf`
+    await query(`INSERT INTO storage.objects(bucket_id,name) VALUES
+      ('cifras',$1),('cifras',$2),('cifras',$3),('cifras',$4)`, [cifraA, cifraB, legacyA, legacyB])
+    // Ids are resolved as the owner, before switching roles: a member of church A cannot see church B objects.
+    const objectIds = Object.fromEntries((await query("SELECT name, id FROM storage.objects WHERE bucket_id='cifras'"))
+      .rows.map(r => [r.name, r.id]))
+    const cifraObject = (name) => {
+      assert.ok(objectIds[name], `fixture object missing: ${name}`)
+      return objectIds[name]
+    }
+
+    await asUser(userAdminA, async () => {
+      // Storage: church A members see only church A PDFs (current and legacy layouts).
+      const visible = await query("SELECT name FROM storage.objects WHERE bucket_id='cifras' ORDER BY name")
+      assert.deepEqual(visible.rows.map(r => r.name).sort(), [cifraA, legacyA].sort(), 'admin A must see only church A PDFs')
+      // Positive control: the same statement succeeds on the admin's own church object, so the B denial is real.
+      assert.equal((await attempt("UPDATE storage.objects SET name=name WHERE id=$1", [cifraObject(cifraA)])).rowCount, 1,
+        'admin A can update a church A PDF')
+      assert.equal((await attempt("UPDATE storage.objects SET name=name WHERE id=$1", [cifraObject(cifraB)])).rowCount, 0,
+        'cannot update a church B PDF')
+      assert.equal((await attempt("DELETE FROM storage.objects WHERE id=$1", [cifraObject(legacyB)])).rowCount, 0,
+        'cannot delete a legacy church B PDF')
+      assert.equal((await attempt("INSERT INTO storage.objects(bucket_id,name) VALUES ('cifras',$1)",
+        [`${churchB}/${randomUUID()}/cifra.pdf`])).code, '42501', 'cannot upload into church B path')
+      assert.equal((await attempt("INSERT INTO storage.objects(bucket_id,name) VALUES ('cifras',$1)",
+        [`${songB}/cifra.pdf`])).code, '42501', 'cannot upload over a legacy church B song path')
+      assert.equal((await attempt("INSERT INTO storage.objects(bucket_id,name) VALUES ('cifras',$1)",
+        ['not-a-uuid/cifra.pdf'])).code, '42501', 'malformed folder is denied')
+
+      // Cache: shared by design, but no signed-in user may read or write it directly (server-only via service role).
+      assert.equal((await attempt('SELECT 1 FROM public.youtube_search_cache')).code, '42501', 'cache is not readable by users')
+      assert.equal((await attempt(`INSERT INTO public.youtube_search_cache(query_key,query_text,max_results,results,expires_at)
+        VALUES ('m1:poison','poison',1,'[]'::jsonb,now()+interval '1 day')`)).code, '42501', 'cache is not writable by users')
+    })
+
+    await asUser(userAdminB, async () => {
+      const visible = await query("SELECT name FROM storage.objects WHERE bucket_id='cifras' ORDER BY name")
+      assert.deepEqual(visible.rows.map(r => r.name).sort(), [cifraB, legacyB].sort(), 'admin B must see only church B PDFs')
+      assert.equal((await attempt("DELETE FROM storage.objects WHERE id=$1", [cifraObject(cifraA)])).rowCount, 0)
+    })
+
+    await asUser(userMulti, async () => {
+      // Membership in both churches: both churches' PDFs are readable, each under its own membership.
+      const visible = await query("SELECT name FROM storage.objects WHERE bucket_id='cifras'")
+      assert.equal(visible.rowCount, 4, 'multi-church user sees PDFs of both churches')
+    })
 
     await asUser(userAdminA, async () => {
       // Reads: only church A rows are visible, even when filtering by church B explicitly.

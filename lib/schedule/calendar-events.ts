@@ -45,14 +45,17 @@ export function normalizeAlarmOffsetsMinutes(raw: unknown): number[] {
 /** Builds the consolidated (one event per day, multiple roles merged) calendar event list for a
  *  minister. Shared by the ICS feed and the Google Calendar sync so both stay in lockstep. */
 export async function buildMinisterCalendarEvents(
-  ministerId: string
+  ministerId: string,
+  expectedChurchId: string
 ): Promise<{ ministerName: string; events: CalendarEventItem[] } | null> {
   const admin = createAdminClient()
 
+  // Service role bypasses RLS: the church filter is what keeps this lookup inside the caller's church.
   const ministerRes = await admin
     .from('ministers')
     .select('id, church_id, name')
     .eq('id', ministerId)
+    .eq('church_id', expectedChurchId)
     .single()
 
   if (ministerRes.error || !ministerRes.data) return null

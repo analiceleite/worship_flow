@@ -37,7 +37,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (quartersError) calendarErrors.push({ quarterId: id, error: 'Não foi possível consultar calendários afetados.' })
   for (const quarter of quarters ?? []) {
     try {
-      const result = await reconcileMinistersForQuarter(quarter.id)
+      const result = await reconcileMinistersForQuarter(quarter.id, context.churchId)
       calendarErrors.push(...result.errors.map(item => ({ quarterId: quarter.id, error: item.error })))
     } catch (syncError) {
       calendarErrors.push({ quarterId: quarter.id, error: syncError instanceof Error ? syncError.message : 'Falha ao sincronizar calendário.' })
