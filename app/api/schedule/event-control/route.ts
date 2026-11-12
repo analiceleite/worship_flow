@@ -31,7 +31,7 @@ export async function PATCH(request: Request) {
   try { notification = await processScheduleEmailQueue(200) } catch {
     notificationError = 'Evento salvo. Avisos estão na fila para nova tentativa automática.'
   }
-  const calendar = await reconcileMinistersForQuarter(payload.quarter_id).catch(syncError => ({
+  const calendar = await reconcileMinistersForQuarter(payload.quarter_id, context.churchId).catch(syncError => ({
     ministers: 0, errors: [{ ministerId: '', error: syncError instanceof Error ? syncError.message : 'Falha ao sincronizar calendário.' }],
   }))
   return NextResponse.json({ ok: true, control: data, notification, notification_error: notificationError, calendar_sync: calendar })

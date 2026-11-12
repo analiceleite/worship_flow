@@ -190,7 +190,7 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
   const calendar = google.calendar({ version: 'v3', auth: oauthClient })
 
   const [built, ministerRes, mappingRes] = await Promise.all([
-    buildMinisterCalendarEvents(ministerId),
+    buildMinisterCalendarEvents(ministerId, churchId),
     admin
       .from('ministers')
       .select('calendar_alarm_offsets_minutes')
@@ -351,12 +351,13 @@ export async function reconcileMinisterCalendar(ministerId: string): Promise<Rec
 }
 
 /** Scoped sync for the publish/unpublish hook — only ministers actually assigned in this quarter. */
-export async function reconcileMinistersForQuarter(quarterId: string) {
+export async function reconcileMinistersForQuarter(quarterId: string, churchId: string) {
   const admin = createAdminClient()
   const { data: quarter } = await admin
     .from('schedule_quarters')
     .select('church_id')
     .eq('id', quarterId)
+    .eq('church_id', churchId)
     .maybeSingle()
 
   if (!quarter?.church_id) return { ministers: 0, errors: [] as Array<{ ministerId: string; error: string }> }

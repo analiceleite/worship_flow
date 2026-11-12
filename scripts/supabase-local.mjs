@@ -43,18 +43,19 @@ function status() {
 function prepare() {
   const directory = path.join(root, 'supabase/migrations')
   fs.mkdirSync(directory, { recursive: true })
-  const baseline = buildLocalBaseline(fs.readFileSync(path.join(root, 'scripts/001_create_tables.sql'), 'utf8'))
+  const baseline = buildLocalBaseline(fs.readFileSync(path.join(root, 'scripts/001_create_tables.sql'), 'utf8').replace(/\r\n/g, '\n'))
   const generated = new Map([['20000101000001_local_baseline.sql', baseline]])
   for (const filename of fs.readdirSync(path.join(root, 'scripts')).sort()) {
     const match = /^(\d{3})_(.+\.sql)$/.exec(filename)
     if (!match || Number(match[1]) < 16) continue
     const target = `2000010100${String(Number(match[1])).padStart(4, '0')}_${match[2]}`
-    generated.set(target, fs.readFileSync(path.join(root, 'scripts', filename), 'utf8'))
+    // Normalize CRLF (Windows checkouts with autocrlf) so the comparison with the committed LF migration matches.
+    generated.set(target, fs.readFileSync(path.join(root, 'scripts', filename), 'utf8').replace(/\r\n/g, '\n'))
   }
   for (const [filename, sql] of generated) {
     const target = path.join(directory, filename)
     // Do not rewrite migration history that may have already been applied.
-    if (fs.existsSync(target) && fs.readFileSync(target, 'utf8') !== sql) {
+    if (fs.existsSync(target) && fs.readFileSync(target, 'utf8').replace(/\r\n/g, '\n') !== sql) {
       throw new Error(`Local migration source changed: ${filename}. Review a new incremental migration; no reset was performed.`)
     }
     fs.writeFileSync(target, sql)
