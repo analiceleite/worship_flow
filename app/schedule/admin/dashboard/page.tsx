@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { selectedChurchFetch } from '@/lib/auth/client-context'
+import { FirstStepsCard } from '@/components/onboarding/first-steps-card'
 
 interface BimesterSummary {
     id: string
@@ -622,6 +623,8 @@ export default function ScheduleAdminDashboardPage() {
         <div className="bg-background">
 
             <main className={`${PAGE_WIDTH} py-6 overflow-x-hidden`}>
+
+                <FirstStepsCard />
 
                 {/* ── Top bar ── */}
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-3">

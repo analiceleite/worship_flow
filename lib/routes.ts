@@ -17,4 +17,5 @@ export const ROUTES = {
   AUTH_SET_PASSWORD: '/auth/set-password',
   AUTH_FORGOT_PASSWORD: '/auth/forgot-password',
   AUTH_RESET: '/auth/reset',
+  AUTH_CRIAR_IGREJA: '/auth/criar-igreja',
 } as const
