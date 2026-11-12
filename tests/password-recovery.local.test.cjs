@@ -33,7 +33,8 @@ const adminModule = load('lib/supabase/admin.ts', { './server-fetch': transport 
 const adapter = load('lib/auth/password-recovery-server.ts', {
   '@/lib/supabase/admin': adminModule, './password-recovery': core, '@/lib/supabase/server-fetch': transport,
 })
-const routeAliases = { '@/lib/auth/password-recovery': core, '@/lib/auth/password-recovery-server': adapter }
+const clientIpModule = load('lib/auth/client-ip.ts')
+const routeAliases = { '@/lib/auth/password-recovery': core, '@/lib/auth/password-recovery-server': adapter, '@/lib/auth/client-ip': clientIpModule }
 const requestRoute = load('app/api/auth/forgot-password/route.ts', routeAliases)
 const resetRoute = load('app/api/auth/reset/route.ts', routeAliases)
 
@@ -52,7 +53,7 @@ async function localSql(sql) {
     try { await client.query(sql) } finally { await client.end() }
     return
   }
-  const result = spawnSync('docker', ['exec', 'supabase_db_worship_flow_local', 'psql', '-U', 'postgres', '-d', 'postgres',
+  const result = spawnSync('docker', ['exec', process.env.LOCAL_DB_CONTAINER || 'supabase_db_worship_flow_local', 'psql', '-U', 'postgres', '-d', 'postgres',
     '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8', timeout: 15000 })
   assert.equal(result.status, 0, 'Selective local SQL failed; no SQL output or credentials are printed.')
 }
