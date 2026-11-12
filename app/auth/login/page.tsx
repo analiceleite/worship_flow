@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { signInThroughServer } from '@/lib/auth/login-client'
 import { ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,16 +24,8 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const supabase = createClient()
+      await signInThroughServer(formData.email, formData.password)
 
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      })
-
-      if (signInError) throw signInError
-
-      if (!data.user) throw new Error('Não foi possível identificar sua conta.')
       const response = await fetch('/api/context', { cache: 'no-store' })
       if (response.status === 403 || response.status === 409) {
         router.push(ROUTES.AUTH_SELECT_CHURCH)
