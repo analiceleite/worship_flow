@@ -32,6 +32,29 @@ const ERROR_CODES: Array<[string, ChurchCreationError['code']]> = [
   ['WF38_INVALID_', 'INVALID_INPUT'],
 ]
 
+// Read-only view of the same quota the database enforces, so the UI can explain it before submit.
+export async function getChurchCreationStatus(creatorUserId: string): Promise<{
+  canCreate: boolean
+  limit: number
+  churches: Array<{ id: string; name: string }>
+}> {
+  if (!UUID_PATTERN.test(creatorUserId)) {
+    throw new ChurchCreationError('INVALID_INPUT', 'Solicitação inválida.')
+  }
+  const admin = createAdminClient()
+  const [intents, allowance] = await Promise.all([
+    admin.from('church_creation_intents').select('church_id, church_name').eq('creator_user_id', creatorUserId),
+    admin.from('church_creation_allowances').select('extra_churches').eq('user_id', creatorUserId).maybeSingle(),
+  ])
+  if (intents.error || allowance.error) {
+    throw new ChurchCreationError('UNKNOWN', 'Não foi possível consultar a criação de igreja agora.')
+  }
+  const churches = ((intents.data ?? []) as Array<{ church_id: string; church_name: string }>)
+    .map(row => ({ id: row.church_id, name: row.church_name }))
+  const limit = 1 + Number(allowance.data?.extra_churches ?? 0)
+  return { canCreate: churches.length < limit, limit, churches }
+}
+
 export async function createChurchForVerifiedIdentity(input: {
   creatorUserId: string
   idempotencyKey: string

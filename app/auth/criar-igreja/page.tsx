@@ -14,6 +14,12 @@ import { Spinner } from '@/components/ui/spinner'
 
 type Mode = 'loading' | 'signup' | 'login' | 'create' | 'unverified'
 
+type ChurchQuota = {
+  canCreate: boolean
+  limit: number
+  churches: Array<{ id: string; name: string }>
+}
+
 export default function CriarIgrejaPage() {
   const [mode, setMode] = useState<Mode>('loading')
   const [busy, setBusy] = useState(false)
@@ -23,8 +29,21 @@ export default function CriarIgrejaPage() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [churchName, setChurchName] = useState('')
   const [createdChurch, setCreatedChurch] = useState(false)
+  // Quota read before the form is shown: null while loading, 'failed' if the check itself failed.
+  const [quota, setQuota] = useState<ChurchQuota | 'failed' | null>(null)
   // Retries of the same intention reuse the key, so a timeout cannot create a second church.
   const attemptRef = useRef<{ name: string; key: string } | null>(null)
+
+  // WF-38: the server decides whether public creation is open; the browser never reads a flag.
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  useEffect(() => {
+    let active = true
+    fetch('/api/onboarding/availability', { cache: 'no-store' })
+      .then(response => (response.ok ? response.json() : { enabled: false }))
+      .then((data: { enabled?: boolean }) => { if (active) setEnabled(data.enabled === true) })
+      .catch(() => { if (active) setEnabled(false) })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -35,6 +54,16 @@ export default function CriarIgrejaPage() {
     })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (mode !== 'create' || quota !== null) return
+    let active = true
+    fetch('/api/onboarding/church', { cache: 'no-store' })
+      .then(response => (response.ok ? response.json() : Promise.reject(new Error('quota'))))
+      .then((data: ChurchQuota) => { if (active) setQuota(data) })
+      .catch(() => { if (active) setQuota('failed') })
+    return () => { active = false }
+  }, [mode, quota])
 
   const handleSignup = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -119,7 +148,15 @@ export default function CriarIgrejaPage() {
     }
   }
 
-  if (process.env.NEXT_PUBLIC_WF38_PUBLIC_CHURCH_CREATION !== 'true') {
+  if (enabled === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner />
+      </div>
+    )
+  }
+
+  if (!enabled) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <div className="w-full max-w-md space-y-3 rounded-xl border bg-card p-6 text-center">
@@ -215,7 +252,24 @@ export default function CriarIgrejaPage() {
           </div>
         )}
 
-        {mode === 'create' && !createdChurch && (
+        {mode === 'create' && !createdChurch && quota === null && (
+          <div className="flex justify-center py-4"><Spinner /></div>
+        )}
+
+        {mode === 'create' && !createdChurch && quota !== null && quota !== 'failed' && !quota.canCreate && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Esta conta já criou a igreja{quota.churches.length === 1 ? ` ${quota.churches[0].name}` : 's'}
+              {quota.churches.length === 1 ? '.' : ` ${quota.churches.map(church => church.name).join(', ')}.`}
+              {' '}Cada conta pode criar uma igreja. Para criar outra, use outro e-mail ou fale com o suporte da plataforma.
+            </p>
+            <Button asChild className="w-full">
+              <Link href={ROUTES.SCHEDULE_ADMIN_DASHBOARD}>Ir para o sistema</Link>
+            </Button>
+          </div>
+        )}
+
+        {mode === 'create' && !createdChurch && (quota === 'failed' || (quota !== null && quota.canCreate)) && (
           <form onSubmit={handleCreateChurch} className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="church-name">Nome da igreja</Label>
